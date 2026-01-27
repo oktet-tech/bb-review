@@ -54,32 +54,45 @@ def setup_logging(level: str, log_file: Optional[Path] = None) -> None:
 def main(ctx: click.Context, config: Optional[Path], verbose: bool) -> None:
     """BB Review - AI-powered code review for Review Board."""
     ctx.ensure_object(dict)
+    ctx.obj["config_path"] = config
+    ctx.obj["verbose"] = verbose
     
-    # Load config if available (some commands don't need it)
-    try:
-        cfg = load_config(config)
-        set_config(cfg)
-        ensure_directories(cfg)
-        
-        log_level = "DEBUG" if verbose else cfg.logging.level
-        setup_logging(log_level, cfg.logging.resolved_file)
-        
-        ctx.obj["config"] = cfg
-    except FileNotFoundError:
-        # Config not required for all commands
-        setup_logging("DEBUG" if verbose else "INFO")
-        ctx.obj["config"] = None
+    # Don't load config here - let commands that need it load it themselves
+    # This allows commands like encrypt-password to work without a config
+    setup_logging("DEBUG" if verbose else "INFO")
+    ctx.obj["config"] = None
+
+
+def get_config(ctx: click.Context) -> Config:
+    """Load and return config, caching it in context."""
+    if ctx.obj.get("config") is not None:
+        return ctx.obj["config"]
+    
+    config_path = ctx.obj.get("config_path")
+    verbose = ctx.obj.get("verbose", False)
+    
+    cfg = load_config(config_path)
+    set_config(cfg)
+    ensure_directories(cfg)
+    
+    log_level = "DEBUG" if verbose else cfg.logging.level
+    setup_logging(log_level, cfg.logging.resolved_file)
+    
+    ctx.obj["config"] = cfg
+    return cfg
 
 
 @main.command()
 @click.argument("review_id", type=int)
 @click.option("--dry-run", is_flag=True, help="Don't post, just show what would be posted")
 @click.option("--format", "output_format", type=click.Choice(["text", "json", "markdown"]), default="text")
+@click.option("--dump-response", type=click.Path(path_type=Path), help="Dump raw LLM response to file")
 @click.pass_context
-def analyze(ctx: click.Context, review_id: int, dry_run: bool, output_format: str) -> None:
+def analyze(ctx: click.Context, review_id: int, dry_run: bool, output_format: str, dump_response: Optional[Path]) -> None:
     """Analyze a specific review request."""
-    config: Config = ctx.obj.get("config")
-    if not config:
+    try:
+        config = get_config(ctx)
+    except FileNotFoundError:
         click.echo("Error: Config file required. Use --config or create config.yaml", err=True)
         sys.exit(1)
 
@@ -89,8 +102,11 @@ def analyze(ctx: click.Context, review_id: int, dry_run: bool, output_format: st
         # Initialize components
         rb_client = ReviewBoardClient(
             url=config.reviewboard.url,
-            api_token=config.reviewboard.api_token,
             bot_username=config.reviewboard.bot_username,
+            api_token=config.reviewboard.api_token,
+            username=config.reviewboard.username,
+            password=config.reviewboard.get_password(),
+            use_kerberos=config.reviewboard.use_kerberos,
         )
         rb_client.connect()
 
@@ -121,6 +137,15 @@ def analyze(ctx: click.Context, review_id: int, dry_run: bool, output_format: st
             analyzer=analyzer,
             config=config,
         )
+
+        # Dump raw response if requested
+        if dump_response:
+            raw = analyzer.get_last_raw_response()
+            if raw:
+                dump_response.write_text(raw)
+                click.echo(f"Raw LLM response saved to: {dump_response}")
+            else:
+                click.echo("No raw response available", err=True)
 
         # Output result
         if output_format == "json":
@@ -161,11 +186,11 @@ def process_review(
         pending = PendingReview(
             review_request_id=review_id,
             repository=repo_info["name"],
-            submitter="unknown",
-            summary=rr.summary,
+            submitter=rr.get("submitter", {}).get("username", "unknown"),
+            summary=rr.get("summary", ""),
             diff_revision=diff_info.diff_revision,
             base_commit=diff_info.base_commit_id,
-            branch=getattr(rr, "branch", None),
+            branch=rr.get("branch"),
         )
 
     # Get repository config
@@ -241,8 +266,9 @@ def poll():
 @click.pass_context
 def poll_once(ctx: click.Context) -> None:
     """Run a single poll cycle."""
-    config: Config = ctx.obj.get("config")
-    if not config:
+    try:
+        config = get_config(ctx)
+    except FileNotFoundError:
         click.echo("Error: Config file required", err=True)
         sys.exit(1)
 
@@ -252,8 +278,11 @@ def poll_once(ctx: click.Context) -> None:
         # Initialize components
         rb_client = ReviewBoardClient(
             url=config.reviewboard.url,
-            api_token=config.reviewboard.api_token,
             bot_username=config.reviewboard.bot_username,
+            api_token=config.reviewboard.api_token,
+            username=config.reviewboard.username,
+            password=config.reviewboard.get_password(),
+            use_kerberos=config.reviewboard.use_kerberos,
         )
         rb_client.connect()
 
@@ -310,8 +339,9 @@ def poll_once(ctx: click.Context) -> None:
 @click.pass_context
 def poll_daemon(ctx: click.Context) -> None:
     """Run as a polling daemon."""
-    config: Config = ctx.obj.get("config")
-    if not config:
+    try:
+        config = get_config(ctx)
+    except FileNotFoundError:
         click.echo("Error: Config file required", err=True)
         sys.exit(1)
 
@@ -322,8 +352,11 @@ def poll_daemon(ctx: click.Context) -> None:
         # Initialize components
         rb_client = ReviewBoardClient(
             url=config.reviewboard.url,
-            api_token=config.reviewboard.api_token,
             bot_username=config.reviewboard.bot_username,
+            api_token=config.reviewboard.api_token,
+            username=config.reviewboard.username,
+            password=config.reviewboard.get_password(),
+            use_kerberos=config.reviewboard.use_kerberos,
         )
         rb_client.connect()
 
@@ -387,8 +420,9 @@ def poll_daemon(ctx: click.Context) -> None:
 @click.pass_context
 def poll_status(ctx: click.Context) -> None:
     """Show polling status and statistics."""
-    config: Config = ctx.obj.get("config")
-    if not config:
+    try:
+        config = get_config(ctx)
+    except FileNotFoundError:
         click.echo("Error: Config file required", err=True)
         sys.exit(1)
 
@@ -431,8 +465,9 @@ def repos():
 @click.pass_context
 def repos_list(ctx: click.Context) -> None:
     """List configured repositories."""
-    config: Config = ctx.obj.get("config")
-    if not config:
+    try:
+        config = get_config(ctx)
+    except FileNotFoundError:
         click.echo("Error: Config file required", err=True)
         sys.exit(1)
 
@@ -462,8 +497,9 @@ def repos_list(ctx: click.Context) -> None:
 @click.pass_context
 def repos_sync(ctx: click.Context, repo_name: Optional[str]) -> None:
     """Fetch/sync repositories."""
-    config: Config = ctx.obj.get("config")
-    if not config:
+    try:
+        config = get_config(ctx)
+    except FileNotFoundError:
         click.echo("Error: Config file required", err=True)
         sys.exit(1)
 
@@ -493,8 +529,9 @@ def repos_sync(ctx: click.Context, repo_name: Optional[str]) -> None:
 @click.pass_context
 def repos_init_guidelines(ctx: click.Context, repo_name: str, force: bool) -> None:
     """Create example .ai-review.yaml in a repository."""
-    config: Config = ctx.obj.get("config")
-    if not config:
+    try:
+        config = get_config(ctx)
+    except FileNotFoundError:
         click.echo("Error: Config file required", err=True)
         sys.exit(1)
 
@@ -567,6 +604,69 @@ defaults:
     click.echo("2. Add your repositories to the 'repositories' section")
     click.echo("3. Set ANTHROPIC_API_KEY environment variable")
     click.echo("4. Run 'bb-review repos sync' to clone repositories")
+
+
+@main.command("encrypt-password")
+@click.option("--token", "-t", help="Token to use as encryption key (defaults to api_token from config)")
+@click.option("--output", "-o", type=click.Path(path_type=Path), help="Output file path (defaults to password_file from config or ~/.bb_review/password.enc)")
+@click.pass_context
+def encrypt_password_cmd(ctx: click.Context, token: Optional[str], output: Optional[Path]) -> None:
+    """Encrypt your Review Board password for secure storage.
+    
+    The password will be encrypted using the api_token from your config
+    (or --token if specified). The encrypted file is saved to password_file
+    from config (or --output if specified).
+    
+    Example:
+    
+        # Uses api_token and password_file from config.yaml
+        bb-review encrypt-password
+        
+        # Or specify explicitly
+        bb-review encrypt-password --token "your-token" --output ~/.bb_review/password.enc
+    """
+    from .crypto import encrypt_password_to_file
+    
+    # Try to get token from config if not provided
+    if not token:
+        try:
+            config = get_config(ctx)
+            token = config.reviewboard.api_token or config.reviewboard.encryption_token
+            if not token:
+                click.echo("Error: No --token provided and no api_token in config", err=True)
+                sys.exit(1)
+            click.echo(f"Using api_token from config ({token[:20]}...)")
+        except (FileNotFoundError, Exception) as e:
+            click.echo(f"Error: No --token provided and couldn't load config: {e}", err=True)
+            sys.exit(1)
+    
+    # Try to get output path from config if not provided
+    if not output:
+        try:
+            config = get_config(ctx)
+            if config.reviewboard.password_file:
+                output = Path(config.reviewboard.password_file)
+                click.echo(f"Using password_file from config: {output}")
+            else:
+                output = Path("~/.bb_review/password.enc")
+        except (FileNotFoundError, Exception):
+            output = Path("~/.bb_review/password.enc")
+    
+    password = click.prompt("Enter your Review Board password", hide_input=True)
+    confirm = click.prompt("Confirm password", hide_input=True)
+    
+    if password != confirm:
+        click.echo("Passwords don't match!", err=True)
+        sys.exit(1)
+    
+    output_path = output.expanduser()
+    
+    try:
+        encrypt_password_to_file(password, token, output_path)
+        click.echo(f"\nPassword encrypted and saved to: {output_path}")
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
