@@ -23,6 +23,7 @@ from .opencode_runner import (
     build_review_prompt,
     check_opencode_available,
     parse_opencode_output,
+    run_opencode_command,
     run_opencode_review,
 )
 from .poller import Poller, StateDatabase
@@ -419,9 +420,49 @@ def opencode_cmd(
                 click.echo(f"Error: {e}", err=True)
                 sys.exit(1)
 
+            # Run API review for te-test-suite repos
+            api_analysis = None
+            if repo_config.repo_type == "te-test-suite":
+                click.echo("  Running API review via /review-api command...")
+                
+                # Create temp patch file for the command
+                import tempfile
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    suffix=".patch",
+                    delete=False,
+                    prefix="bb_review_api_",
+                ) as patch_file:
+                    patch_file.write(raw_diff)
+                    patch_path = Path(patch_file.name)
+                
+                try:
+                    api_analysis = run_opencode_command(
+                        repo_path=repo_path,
+                        command="/review-api",
+                        arguments=f"Review the attached patch for API usage issues.",
+                        review_id=review_id,
+                        model=model,
+                        timeout=timeout,
+                        binary_path=binary_path,
+                        patch_file=patch_path,
+                    )
+                except OpenCodeTimeoutError:
+                    click.echo(f"  Warning: API review timed out after {timeout}s", err=True)
+                except OpenCodeError as e:
+                    click.echo(f"  Warning: API review failed: {e}", err=True)
+                finally:
+                    try:
+                        patch_path.unlink()
+                    except Exception:
+                        pass
+
         # Dump raw response if requested
         if dump_response:
-            dump_response.write_text(analysis)
+            dump_content = analysis
+            if api_analysis:
+                dump_content += "\n\n" + "=" * 60 + "\nAPI Review:\n" + "=" * 60 + "\n" + api_analysis
+            dump_response.write_text(dump_content)
             click.echo(f"Raw OpenCode response saved to: {dump_response}")
 
         # Parse the analysis output
@@ -434,17 +475,37 @@ def opencode_cmd(
         click.echo(analysis)
         click.echo("=" * 60)
 
+        # Parse and display API review if available
+        api_parsed = None
+        if api_analysis:
+            api_parsed = parse_opencode_output(api_analysis)
+            click.echo("\n" + "=" * 60)
+            click.echo("API Review (/review-api):")
+            click.echo("=" * 60)
+            click.echo(api_analysis)
+            click.echo("=" * 60)
+
+        # Merge API review issues if available
+        all_issues = list(parsed.issues)
+        if api_parsed:
+            # Tag API issues so we can identify them
+            for issue in api_parsed.issues:
+                issue.title = f"[API] {issue.title}"
+            all_issues.extend(api_parsed.issues)
+
         # Show parsing results
         inline_comments = []
         general_issues = []
 
-        for issue in parsed.issues:
+        for issue in all_issues:
             if issue.file_path and issue.line_number:
                 inline_comments.append(issue)
             else:
                 general_issues.append(issue)
 
-        click.echo(f"\nParsed {len(parsed.issues)} issues:")
+        click.echo(f"\nParsed {len(all_issues)} issues:")
+        if api_parsed:
+            click.echo(f"  - {len(parsed.issues)} from main analysis, {len(api_parsed.issues)} from API review")
         click.echo(f"  - {len(inline_comments)} with file:line (will be inline comments)")
         click.echo(f"  - {len(general_issues)} general (will be in body)")
         if parsed.unparsed_text:
@@ -491,6 +552,14 @@ def opencode_cmd(
 
         if parsed.summary:
             body_parts.append(f"\n## Summary\n{parsed.summary}")
+
+        # Add API review content if available
+        if api_parsed:
+            if api_parsed.unparsed_text:
+                body_parts.append("\n## API Review Notes\n")
+                body_parts.append(api_parsed.unparsed_text)
+            if api_parsed.summary:
+                body_parts.append(f"\n## API Review Summary\n{api_parsed.summary}")
 
         body_top = "\n".join(body_parts)
 
