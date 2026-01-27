@@ -32,7 +32,8 @@ ignore_paths:
 severity_threshold: medium
 
 custom_rules:
-  - "All dynamically allocated memory must be freed in cleanup"
-  - "File descriptors and sockets must be closed on all code paths"
-  - "CHECK_RC should be used for all function return values that indicate errors"
+  - "If system changes were done by API other than via configrator/cfg_ they should be rolled back" 
+  - "CHECK_RC should be used for all function return values that indicate errors and are not checked otherwise"
+  - "rpc_ prefixed functions might not have CHECK_RC or return value checks"
   - "Test names should be descriptive and follow naming conventions"
+  - "CHECK_RC should not be used after cleanup:, CLEANUP_CHECK_RC() should be used instead"
