@@ -82,8 +82,9 @@ class Commenter:
                 ship_it=ship_it,
                 publish=True,
             )
-            logger.info(f"Posted review {review.id} to request {review_request_id}")
-            return review.id
+            review_id = review.get("id") if isinstance(review, dict) else review.id
+            logger.info(f"Posted review {review_id} to request {review_request_id}")
+            return review_id
         except Exception as e:
             logger.error(f"Failed to post review: {e}")
             raise
