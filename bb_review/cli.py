@@ -438,11 +438,10 @@ def opencode_cmd(
                 
                 try:
                     click.echo(f"  Patch file: {patch_path}")
-                    # Simple prompt - agent definition has detailed instructions
+                    # No prompt - agent definition has all instructions
                     api_analysis = run_opencode_agent(
                         repo_path=repo_path,
                         agent="api-reviewer",
-                        prompt="Review the attached patch for API usage issues.",
                         review_id=review_id,
                         model=model,
                         timeout=timeout,
