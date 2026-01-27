@@ -224,6 +224,96 @@ def run_opencode_review(
             pass
 
 
+def run_opencode_command(
+    repo_path: Path,
+    command: str,
+    arguments: str,
+    review_id: int,
+    model: str | None = None,
+    timeout: int = 300,
+    binary_path: str = "opencode",
+    patch_file: Path | None = None,
+) -> str:
+    """Run an opencode custom command (e.g., /review-api).
+
+    Args:
+        repo_path: Path to the repository to run opencode in.
+        command: The command to run (e.g., "/review-api").
+        arguments: Arguments to pass to the command.
+        review_id: Review Board request ID (used for session title).
+        model: Optional model override.
+        timeout: Timeout in seconds for the opencode process.
+        binary_path: Path to the opencode binary.
+        patch_file: Optional path to a patch file to attach.
+
+    Returns:
+        The output from opencode.
+
+    Raises:
+        OpenCodeNotFoundError: If opencode binary is not found.
+        OpenCodeTimeoutError: If execution times out.
+        OpenCodeError: For other execution errors.
+    """
+    # Verify binary exists
+    opencode_bin = find_opencode_binary(binary_path)
+    logger.debug(f"Using opencode binary: {opencode_bin}")
+
+    # Build the full prompt with command
+    full_prompt = f"{command} {arguments}"
+
+    # Build command
+    cmd = [
+        opencode_bin,
+        "run",
+        "--title", f"API Review #{review_id}",
+    ]
+
+    if model:
+        cmd.extend(["--model", model])
+
+    if patch_file:
+        cmd.extend(["-f", str(patch_file)])
+
+    # Add the command prompt
+    cmd.append(full_prompt)
+
+    logger.info(f"Running opencode command '{command}' in {repo_path}")
+    logger.debug(f"Command: {' '.join(cmd[:6])}...")
+
+    try:
+        # Run opencode
+        result = subprocess.run(
+            cmd,
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
+        # Log stderr if present (for debugging)
+        if result.stderr:
+            logger.debug(f"OpenCode stderr: {result.stderr}")
+
+        # Check for errors
+        if result.returncode != 0:
+            error_msg = result.stderr or result.stdout or "Unknown error"
+            raise OpenCodeError(
+                f"OpenCode exited with code {result.returncode}: {error_msg}"
+            )
+
+        output = result.stdout.strip()
+        if not output:
+            raise OpenCodeError("OpenCode returned empty output")
+
+        logger.info(f"OpenCode command complete ({len(output)} chars)")
+        return output
+
+    except subprocess.TimeoutExpired as e:
+        raise OpenCodeTimeoutError(
+            f"OpenCode execution timed out after {timeout} seconds"
+        ) from e
+
+
 def check_opencode_available(binary_path: str = "opencode") -> tuple[bool, str]:
     """Check if opencode is available and working.
 
