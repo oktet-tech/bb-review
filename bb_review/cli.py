@@ -23,7 +23,7 @@ from .opencode_runner import (
     build_review_prompt,
     check_opencode_available,
     parse_opencode_output,
-    run_opencode_command,
+    run_opencode_agent,
     run_opencode_review,
 )
 from .poller import Poller, StateDatabase
@@ -423,9 +423,9 @@ def opencode_cmd(
             # Run API review for te-test-suite repos
             api_analysis = None
             if repo_config.repo_type == "te-test-suite":
-                click.echo("  Running API review via /review-api command...")
+                click.echo("  Running API review via api-reviewer agent...")
                 
-                # Create temp patch file for the command
+                # Create temp patch file for the agent
                 import tempfile
                 with tempfile.NamedTemporaryFile(
                     mode="w",
@@ -437,10 +437,10 @@ def opencode_cmd(
                     patch_path = Path(patch_file.name)
                 
                 try:
-                    api_analysis = run_opencode_command(
+                    api_analysis = run_opencode_agent(
                         repo_path=repo_path,
-                        command="/review-api",
-                        arguments=f"Review the attached patch for API usage issues.",
+                        agent="api-reviewer",
+                        prompt="Review the attached patch for correct API usage against OL Test Environment.",
                         review_id=review_id,
                         model=model,
                         timeout=timeout,
