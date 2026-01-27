@@ -405,8 +405,16 @@ class ReviewBoardClient:
 
     def _fetch_raw_diff(self, review_request_id: int, revision: int) -> str:
         """Fetch the raw diff content."""
-        url = f"{self.url}/api/review-requests/{review_request_id}/diffs/{revision}/patch/"
+        # Use the diff resource endpoint with text/x-patch Accept header
+        url = f"{self.url}/api/review-requests/{review_request_id}/diffs/{revision}/"
         status, body = self._curl(url, accept="text/x-patch")
+        
+        # Check if we got HTML instead of a diff (indicates auth or redirect issue)
+        if body.strip().startswith("<!DOCTYPE") or body.strip().startswith("<html"):
+            logger.error(f"Got HTML instead of diff (status {status}). First 200 chars: {body[:200]}")
+            raise RuntimeError(f"Failed to fetch diff: got HTML response (status {status})")
+        
+        logger.debug(f"Fetched raw diff: {len(body)} chars, status {status}")
         return body
 
     def post_review(

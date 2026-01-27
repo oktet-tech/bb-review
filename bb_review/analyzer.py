@@ -129,7 +129,21 @@ class OpenRouterProvider(LLMProvider):
                 {"role": "user", "content": user_prompt},
             ],
         )
-        return response.choices[0].message.content or ""
+        message = response.choices[0].message
+        content = message.content or ""
+        
+        # Some models (like deepseek-r1) return reasoning in a separate field
+        # and put the actual response in reasoning_content
+        reasoning = getattr(message, "reasoning_content", None) or getattr(message, "reasoning", None)
+        if reasoning:
+            logger.debug(f"Model reasoning ({len(reasoning)} chars)")
+            # If content is empty but we have reasoning, use reasoning as content
+            # This handles deepseek-r1 which puts JSON in reasoning_content
+            if not content:
+                logger.info("Using reasoning_content as response (deepseek-r1 style)")
+                content = reasoning
+        
+        return content
 
 
 class OpenAIProvider(LLMProvider):
@@ -290,10 +304,14 @@ class Analyzer:
 
         try:
             result_text = self.llm.complete(SYSTEM_PROMPT, prompt)
-            logger.debug(f"Raw response: {result_text[:500]}...")
             
-            # Store raw response for debugging
+            # Store raw response for debugging (even if empty)
             self._last_raw_response = result_text
+            
+            if not result_text:
+                logger.warning("LLM returned empty response")
+            else:
+                logger.debug(f"Raw response ({len(result_text)} chars): {result_text[:500]}...")
 
             return self._parse_response(result_text, review_request_id, diff_revision)
 

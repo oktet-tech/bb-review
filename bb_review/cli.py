@@ -141,11 +141,13 @@ def analyze(ctx: click.Context, review_id: int, dry_run: bool, output_format: st
         # Dump raw response if requested
         if dump_response:
             raw = analyzer.get_last_raw_response()
-            if raw:
-                dump_response.write_text(raw)
+            if raw is not None:
+                dump_response.write_text(raw if raw else "(empty response)")
                 click.echo(f"Raw LLM response saved to: {dump_response}")
+                if not raw:
+                    click.echo("Warning: LLM returned empty response", err=True)
             else:
-                click.echo("No raw response available", err=True)
+                click.echo("No raw response available (analysis may have failed)", err=True)
 
         # Output result
         if output_format == "json":
