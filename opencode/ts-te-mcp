@@ -1,0 +1,9 @@
+{
+  "mcp": {
+    "ol-te-dev": {
+      "type": "local",
+      "command": ["npx", "-y", "@anthropic-ai/mcp-filesystem", "../ol-te-dev"],
+      "enabled": true
+    }
+  }
+}

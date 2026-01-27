@@ -1,0 +1,17 @@
+<!-- TS .opencode/command/review-api.md -->
+---
+description: "Review API usage against OL Test Environment"
+agent: "api-reviewer"
+---
+
+Review the following changes for correct repo-B API usage:
+
+1. Read the relevant API definitions from OL Test Environment (use mcp:ol-te-dev)
+2. Compare against usage in this repo
+3. Report any issues:
+   - Wrong parameters
+   - Missing error handling  
+   - Type mismatches
+   - Deprecated API usage
+
+$ARGUMENTS
