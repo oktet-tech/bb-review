@@ -93,6 +93,7 @@ class RepositoryConfig(BaseModel):
     local_path: str
     remote_url: str
     default_branch: str = "main"
+    type: Optional[str] = None  # e.g., "te-test-suite" for OpenCode MCP setup
 
     def to_repo_config(self) -> RepoConfig:
         """Convert to RepoConfig dataclass."""
@@ -102,6 +103,7 @@ class RepositoryConfig(BaseModel):
             remote_url=self.remote_url,
             rb_repo_name=self.rb_repo_name,
             default_branch=self.default_branch,
+            repo_type=self.type,
         )
 
 

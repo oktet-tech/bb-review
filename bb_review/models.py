@@ -35,6 +35,7 @@ class RepoConfig:
     remote_url: str
     rb_repo_name: str  # Name as it appears in Review Board
     default_branch: str = "main"
+    repo_type: Optional[str] = None  # e.g., "te-test-suite" for OpenCode MCP setup
 
     def __post_init__(self):
         if isinstance(self.local_path, str):
