@@ -171,14 +171,14 @@ def run_opencode_review(
             "run",
             "--agent", "plan",
             "-f", str(patch_path),
-            "--title", f"Review #{review_id}",
+            "--title", f"Review-{review_id}",
         ]
 
         if model:
             cmd.extend(["--model", model])
 
         # Add the prompt as the message
-        cmd.append(prompt)
+        cmd.append("'" + prompt + "'")
 
         logger.info(f"Running opencode in {repo_path}")
         logger.debug(f"Command: {' '.join(cmd[:6])}...")

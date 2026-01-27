@@ -1,4 +1,7 @@
 {
+  "model": {
+    "default": "x-ai/grok-code-fast-1"
+  },
   "mcp": {
     "ol-te-dev": {
       "type": "local",
