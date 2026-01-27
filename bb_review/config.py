@@ -15,7 +15,12 @@ class ReviewBoardConfig(BaseModel):
     """Review Board connection configuration."""
 
     url: str
-    api_token: str
+    api_token: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    password_file: Optional[str] = None  # Path to encrypted password file
+    encryption_token: Optional[str] = None  # Token to decrypt password (defaults to api_token)
+    use_kerberos: bool = False  # Use Kerberos/Negotiate authentication
     bot_username: str = "ai-reviewer"
 
     @field_validator("url")
@@ -25,10 +30,32 @@ class ReviewBoardConfig(BaseModel):
             raise ValueError("URL must start with http:// or https://")
         return v.rstrip("/")
 
-    @field_validator("api_token")
+    @field_validator("api_token", "password", "encryption_token")
     @classmethod
-    def resolve_env_var(cls, v: str) -> str:
+    def resolve_env_var(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
         return _resolve_env_var(v)
+
+    def get_password(self) -> Optional[str]:
+        """Get the password, decrypting from file if needed."""
+        # Direct password takes precedence
+        if self.password:
+            return self.password
+        
+        # Try password file
+        if self.password_file:
+            from pathlib import Path
+            from .crypto import decrypt_password_from_file
+            
+            file_path = Path(self.password_file).expanduser()
+            token = self.encryption_token or self.api_token
+            if not token:
+                raise ValueError("encryption_token or api_token required to decrypt password_file")
+            
+            return decrypt_password_from_file(file_path, token)
+        
+        return None
 
 
 class LLMConfig(BaseModel):
