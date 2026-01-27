@@ -425,28 +425,21 @@ def opencode_cmd(
             if repo_config.repo_type == "te-test-suite":
                 click.echo("  Running API review via api-reviewer agent...")
                 
-                # Create temp patch file for the agent
-                import tempfile
-                with tempfile.NamedTemporaryFile(
-                    mode="w",
-                    suffix=".patch",
-                    delete=False,
-                    prefix="bb_review_api_",
-                ) as patch_file:
-                    patch_file.write(raw_diff)
-                    patch_path = Path(patch_file.name)
+                # Write patch file inside repo to avoid permission prompts
+                patch_path = repo_path / ".bb_review_patch.tmp"
+                patch_path.write_text(raw_diff)
                 
                 try:
                     click.echo(f"  Patch file: {patch_path}")
-                    # No prompt - agent definition has all instructions
+                    # Use @filename syntax to attach the patch
                     api_analysis = run_opencode_agent(
                         repo_path=repo_path,
                         agent="api-reviewer",
+                        prompt=f"Review the patch @.bb_review_patch.tmp",
                         review_id=review_id,
                         model=model,
                         timeout=timeout,
                         binary_path=binary_path,
-                        patch_file=patch_path,
                     )
                     click.echo("  API review completed")
                 except OpenCodeTimeoutError:

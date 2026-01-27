@@ -226,6 +226,7 @@ def run_opencode_review(
 def run_opencode_agent(
     repo_path: Path,
     agent: str,
+    prompt: str,
     review_id: int,
     model: str | None = None,
     timeout: int = 300,
@@ -237,11 +238,12 @@ def run_opencode_agent(
     Args:
         repo_path: Path to the repository to run opencode in.
         agent: The agent to use (e.g., "api-reviewer").
+        prompt: The prompt/message for the agent. Use @filename to attach files.
         review_id: Review Board request ID (used for session title).
         model: Optional model override.
         timeout: Timeout in seconds for the opencode process.
         binary_path: Path to the opencode binary.
-        patch_file: Optional path to a patch file to attach.
+        patch_file: Deprecated, use @filename in prompt instead.
 
     Returns:
         The output from opencode.
@@ -255,7 +257,7 @@ def run_opencode_agent(
     opencode_bin = find_opencode_binary(binary_path)
     logger.debug(f"Using opencode binary: {opencode_bin}")
 
-    # Build command - no prompt, agent definition has instructions
+    # Build command
     cmd = [
         opencode_bin,
         "run",
@@ -266,8 +268,8 @@ def run_opencode_agent(
     if model:
         cmd.extend(["--model", model])
 
-    if patch_file:
-        cmd.extend(["-f", str(patch_file)])
+    # Add the prompt (with @filename syntax for file attachment)
+    cmd.append(prompt)
 
     logger.info(f"Running opencode agent '{agent}' in {repo_path}")
     # Log full command for debugging - print to stderr so user can see it
