@@ -1,7 +1,6 @@
 {
-  "model": {
-    "default": "x-ai/grok-code-fast-1"
-  },
+  "$schema": "https://opencode.ai/config.json",
+  "model": "x-ai/grok-code-fast-1",
   "mcp": {
     "ol-te-dev": {
       "type": "local",
