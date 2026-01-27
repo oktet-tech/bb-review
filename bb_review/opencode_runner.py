@@ -7,7 +7,6 @@ import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -224,22 +223,22 @@ def run_opencode_review(
             pass
 
 
-def run_opencode_command(
+def run_opencode_agent(
     repo_path: Path,
-    command: str,
-    arguments: str,
+    agent: str,
+    prompt: str,
     review_id: int,
     model: str | None = None,
     timeout: int = 300,
     binary_path: str = "opencode",
     patch_file: Path | None = None,
 ) -> str:
-    """Run an opencode custom command (e.g., /review-api).
+    """Run an opencode custom agent (e.g., api-reviewer).
 
     Args:
         repo_path: Path to the repository to run opencode in.
-        command: The command to run (e.g., "/review-api").
-        arguments: Arguments to pass to the command.
+        agent: The agent to use (e.g., "api-reviewer").
+        prompt: The prompt/instructions for the agent.
         review_id: Review Board request ID (used for session title).
         model: Optional model override.
         timeout: Timeout in seconds for the opencode process.
@@ -258,13 +257,11 @@ def run_opencode_command(
     opencode_bin = find_opencode_binary(binary_path)
     logger.debug(f"Using opencode binary: {opencode_bin}")
 
-    # Build the full prompt with command
-    full_prompt = f"{command} {arguments}"
-
     # Build command
     cmd = [
         opencode_bin,
         "run",
+        "--agent", agent,
         "--title", f"API Review #{review_id}",
     ]
 
@@ -274,10 +271,10 @@ def run_opencode_command(
     if patch_file:
         cmd.extend(["-f", str(patch_file)])
 
-    # Add the command prompt
-    cmd.append(full_prompt)
+    # Add the prompt
+    cmd.append(prompt)
 
-    logger.info(f"Running opencode command '{command}' in {repo_path}")
+    logger.info(f"Running opencode agent '{agent}' in {repo_path}")
     logger.debug(f"Command: {' '.join(cmd[:6])}...")
 
     try:
@@ -305,7 +302,7 @@ def run_opencode_command(
         if not output:
             raise OpenCodeError("OpenCode returned empty output")
 
-        logger.info(f"OpenCode command complete ({len(output)} chars)")
+        logger.info(f"OpenCode agent complete ({len(output)} chars)")
         return output
 
     except subprocess.TimeoutExpired as e:
