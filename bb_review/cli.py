@@ -437,6 +437,7 @@ def opencode_cmd(
                     patch_path = Path(patch_file.name)
                 
                 try:
+                    click.echo(f"  Patch file: {patch_path}")
                     api_analysis = run_opencode_agent(
                         repo_path=repo_path,
                         agent="api-reviewer",
@@ -447,6 +448,7 @@ def opencode_cmd(
                         binary_path=binary_path,
                         patch_file=patch_path,
                     )
+                    click.echo("  API review completed")
                 except OpenCodeTimeoutError:
                     click.echo(f"  Warning: API review timed out after {timeout}s", err=True)
                 except OpenCodeError as e:

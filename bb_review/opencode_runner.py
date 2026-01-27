@@ -275,7 +275,9 @@ def run_opencode_agent(
     cmd.append(prompt)
 
     logger.info(f"Running opencode agent '{agent}' in {repo_path}")
-    logger.debug(f"Command: {' '.join(cmd[:6])}...")
+    # Log full command for debugging - print to stderr so user can see it
+    import sys
+    print(f"  Command: {' '.join(cmd)}", file=sys.stderr)
 
     try:
         # Run opencode
