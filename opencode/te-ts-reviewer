@@ -1,7 +1,6 @@
 ---
-description: "Review code against API of OL Test Environment
+description: "Review code against API of OL Test Environment"
 mode: primary
-model: x-ai/grok-code-fast-1
 permission:
   edit: deny
   bash: deny

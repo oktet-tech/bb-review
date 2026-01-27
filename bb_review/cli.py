@@ -438,10 +438,32 @@ def opencode_cmd(
                 
                 try:
                     click.echo(f"  Patch file: {patch_path}")
+                    api_prompt = """Review ONLY the changes in the attached patch file for correct API usage.
+
+IMPORTANT: Focus exclusively on the diff/patch content. Do not review other files in the repository.
+
+For each file modified in the patch:
+1. Look up the APIs being used via the ol-te-dev MCP
+2. Verify the usage matches the API contract
+3. Report any issues with:
+   - Wrong function parameters
+   - Missing error handling
+   - Type mismatches
+   - Deprecated API usage
+
+Output format for each issue:
+### Issue: <title>
+- **File:** `path/to/file`
+- **Line:** <line number from the patch>
+- **Severity:** low/medium/high/critical
+- **Comment:** <description>
+- **Suggestion:** <fix if applicable>
+
+If no API issues found, state that the API usage looks correct."""
                     api_analysis = run_opencode_agent(
                         repo_path=repo_path,
                         agent="api-reviewer",
-                        prompt="Review the attached patch for correct API usage against OL Test Environment.",
+                        prompt=api_prompt,
                         review_id=review_id,
                         model=model,
                         timeout=timeout,
