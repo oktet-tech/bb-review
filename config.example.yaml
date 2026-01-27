@@ -4,8 +4,16 @@
 # Review Board connection settings
 reviewboard:
   url: "https://rb.example.com"
-  # API token - get from Review Board > My Account > API Tokens
-  api_token: "${RB_API_TOKEN}"  # Can use env var or literal value
+  
+  # Authentication - choose ONE method:
+  
+  # Option 1: API token (get from Review Board > My Account > API Tokens)
+  api_token: "${RB_API_TOKEN}"
+  
+  # Option 2: Username/password (for servers with Basic auth proxy)
+  # username: "your-username"
+  # password: "${RB_PASSWORD}"
+  
   # Username of the bot account that triggers reviews
   bot_username: "ai-reviewer"
 

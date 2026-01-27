@@ -1,0 +1,38 @@
+# AI Review Guidelines for net-drv-ts
+# Place this file as .ai-review.yaml in the repository root
+
+focus:
+  - bugs          # Logic errors, null checks, edge cases
+  - security      # Memory safety, buffer handling
+  - performance   # Test efficiency, resource leaks
+
+context: |
+  This is a network driver test suite (net-drv-ts) for Linux network drivers.
+  The codebase uses the TE (Test Environment) framework.
+  
+  Key areas to focus on:
+  - Proper cleanup in test teardown (avoid resource leaks)
+  - Correct use of TE APIs (CHECK_RC, TEST_FAIL, etc.)
+  - Memory allocation/deallocation patterns
+  - Socket and file descriptor handling
+  - Race conditions in async operations
+  - Proper error handling and logging
+  
+  Common patterns:
+  - Tests use CHECK_RC() for return code validation
+  - TEST_FAIL() for explicit test failures
+  - Cleanup should happen in test_end() or via cleanup handlers
+
+ignore_paths:
+  - doc/
+  - "*.md"
+  - "*.txt"
+  - meson_options.txt
+
+severity_threshold: medium
+
+custom_rules:
+  - "All dynamically allocated memory must be freed in cleanup"
+  - "File descriptors and sockets must be closed on all code paths"
+  - "CHECK_RC should be used for all function return values that indicate errors"
+  - "Test names should be descriptive and follow naming conventions"
