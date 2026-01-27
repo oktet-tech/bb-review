@@ -1,0 +1,67 @@
+# BB Review Configuration
+# Copy this to config.yaml and fill in your values
+
+# Review Board connection settings
+reviewboard:
+  url: "https://rb.example.com"
+  # API token - get from Review Board > My Account > API Tokens
+  api_token: "${RB_API_TOKEN}"  # Can use env var or literal value
+  # Username of the bot account that triggers reviews
+  bot_username: "ai-reviewer"
+
+# LLM settings for code analysis
+# Supported providers: anthropic, openrouter, openai
+llm:
+  # Option 1: Anthropic (direct)
+  provider: "anthropic"
+  model: "claude-sonnet-4-20250514"
+  api_key: "${ANTHROPIC_API_KEY}"
+  
+  # Option 2: OpenRouter (uncomment to use)
+  # provider: "openrouter"
+  # model: "anthropic/claude-sonnet-4-20250514"  # or any model on openrouter.ai/models
+  # api_key: "${OPENROUTER_API_KEY}"
+  # base_url: "https://openrouter.ai/api/v1"  # optional, this is the default
+  # site_url: "https://your-site.com"  # optional, for OpenRouter analytics
+  # site_name: "BB Review"  # optional, for OpenRouter analytics
+  
+  # Option 3: OpenAI (uncomment to use)
+  # provider: "openai"
+  # model: "gpt-4o"
+  # api_key: "${OPENAI_API_KEY}"
+  
+  # Common settings
+  max_tokens: 4096
+  temperature: 0.2  # Lower = more deterministic
+
+# Repository configurations
+# Map Review Board repository names to local paths
+repositories:
+  # Example:
+  # - name: "myproject"
+  #   rb_repo_name: "My Project"  # Name as shown in Review Board
+  #   local_path: "/path/to/local/clone"
+  #   remote_url: "git@github.com:org/myproject.git"
+  #   default_branch: "main"
+
+# Polling settings (for automated mode)
+polling:
+  interval_seconds: 300  # 5 minutes
+  max_reviews_per_cycle: 10
+
+# State database for tracking processed reviews
+database:
+  path: "~/.bb_review/state.db"
+
+# Logging settings
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "~/.bb_review/bb_review.log"
+
+# Default review settings (can be overridden per-repo in .ai-review.yaml)
+defaults:
+  focus:
+    - bugs
+    - security
+  severity_threshold: "medium"
+  auto_ship_it: false  # Whether to auto "Ship It" when no issues found
