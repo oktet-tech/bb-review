@@ -291,6 +291,9 @@ class Analyzer:
         try:
             result_text = self.llm.complete(SYSTEM_PROMPT, prompt)
             logger.debug(f"Raw response: {result_text[:500]}...")
+            
+            # Store raw response for debugging
+            self._last_raw_response = result_text
 
             return self._parse_response(result_text, review_request_id, diff_revision)
 
@@ -300,6 +303,10 @@ class Analyzer:
         except Exception as e:
             logger.error(f"Error during analysis: {e}")
             raise
+    
+    def get_last_raw_response(self) -> Optional[str]:
+        """Get the raw response from the last analysis."""
+        return getattr(self, "_last_raw_response", None)
 
     def _build_prompt(
         self,
@@ -381,6 +388,7 @@ class Analyzer:
         json_match = re.search(r"\{[\s\S]*\}", response_text)
         if not json_match:
             logger.warning("Could not find JSON in response")
+            logger.debug(f"Raw LLM response:\n{response_text[:2000]}")
             return ReviewResult(
                 review_request_id=review_request_id,
                 diff_revision=diff_revision,
