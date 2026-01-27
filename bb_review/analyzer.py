@@ -488,7 +488,7 @@ class Analyzer:
         """
         if not result.comments:
             return (
-                "✅ **AI Review Complete**\n\n"
+                "**AI Review Complete**\n\n"
                 f"{result.summary}\n\n"
                 "No issues found."
             )
@@ -498,7 +498,7 @@ class Analyzer:
         for c in result.comments:
             severity_counts[c.severity] = severity_counts.get(c.severity, 0) + 1
 
-        parts = ["🤖 **AI Review Complete**", "", result.summary, "", "**Issue Summary:**"]
+        parts = ["**AI Review Complete**", "", result.summary, "", "**Issue Summary:**"]
 
         for severity in [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW]:
             count = severity_counts.get(severity, 0)

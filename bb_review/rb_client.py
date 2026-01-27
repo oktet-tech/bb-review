@@ -122,14 +122,16 @@ class ReviewBoardClient:
             for k, v in headers.items():
                 cmd.extend(["-H", f"{k}: {v}"])
         
-        # Data
+        # Data - use --data-urlencode to properly encode special characters
         if data:
             for k, v in data.items():
-                cmd.extend(["-d", f"{k}={v}"])
+                cmd.extend(["--data-urlencode", f"{k}={v}"])
         
         cmd.append(url)
         
         logger.debug(f"curl {method} {url}")
+        if data:
+            logger.debug(f"curl data: {data}")
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         if result.returncode != 0:

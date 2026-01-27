@@ -53,7 +53,7 @@ class Commenter:
         ship_it = False
         if self.auto_ship_it and not result.comments and not result.has_critical_issues:
             ship_it = True
-            body_top += "\n\n🚀 Auto-approved (no issues found)"
+            body_top += "\n\nAuto-approved (no issues found)"
 
         # Format comments for posting
         comments = []
