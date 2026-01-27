@@ -73,3 +73,11 @@ defaults:
     - security
   severity_threshold: "medium"
   auto_ship_it: false  # Whether to auto "Ship It" when no issues found
+
+# OpenCode agent settings (alternative review mode)
+# Use with: bb-review opencode <review_id>
+opencode:
+  enabled: false  # Set to true to enable opencode integration
+  # model: "anthropic/claude-sonnet-4-20250514"  # Override model (optional)
+  timeout: 300  # Timeout in seconds
+  binary_path: "opencode"  # Path to opencode binary (or just "opencode" if in PATH)

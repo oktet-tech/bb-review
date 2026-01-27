@@ -480,6 +480,7 @@ class ReviewBoardClient:
                     "first_line": str(line_number),
                     "num_lines": "1",
                     "text": text,
+                    "text_type": "markdown",
                     "issue_opened": "1",
                 },
             )

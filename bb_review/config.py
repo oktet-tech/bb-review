@@ -175,6 +175,15 @@ class DefaultsConfig(BaseModel):
         return Severity(self.severity_threshold)
 
 
+class OpenCodeConfig(BaseModel):
+    """OpenCode agent configuration for alternative review mode."""
+
+    enabled: bool = False
+    model: Optional[str] = None  # Override model for opencode (e.g., "anthropic/claude-sonnet-4-20250514")
+    timeout: int = 300  # Timeout in seconds for opencode execution
+    binary_path: str = "opencode"  # Path to the opencode binary
+
+
 class Config(BaseModel):
     """Main configuration model."""
 
@@ -185,6 +194,7 @@ class Config(BaseModel):
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     defaults: DefaultsConfig = Field(default_factory=DefaultsConfig)
+    opencode: OpenCodeConfig = Field(default_factory=OpenCodeConfig)
 
     def get_repo_by_name(self, name: str) -> Optional[RepoConfig]:
         """Get repository config by name."""
