@@ -530,7 +530,11 @@ def repos_sync(ctx: click.Context, repo_name: Optional[str]) -> None:
 @click.option("--force", is_flag=True, help="Overwrite existing file")
 @click.pass_context
 def repos_init_guidelines(ctx: click.Context, repo_name: str, force: bool) -> None:
-    """Create example .ai-review.yaml in a repository."""
+    """Copy guidelines from guides/ folder to repository cache.
+    
+    Looks for guides/{repo_name}.ai-review.yaml and copies it to the
+    repository's local path. Creates a generic template if no guide exists.
+    """
     try:
         config = get_config(ctx)
     except FileNotFoundError:
@@ -541,17 +545,36 @@ def repos_init_guidelines(ctx: click.Context, repo_name: str, force: bool) -> No
     
     try:
         repo_path = repo_manager.get_local_path(repo_name)
-        path = create_example_guidelines(repo_path, overwrite=force)
-        click.echo(f"Created: {path}")
-    except FileExistsError:
-        click.echo(
-            "Guidelines file already exists. Use --force to overwrite.",
-            err=True,
-        )
-        sys.exit(1)
     except RepoManagerError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
+    
+    target_path = repo_path / ".ai-review.yaml"
+    
+    # Check if target already exists
+    if target_path.exists() and not force:
+        click.echo(
+            f"Guidelines file already exists: {target_path}\n"
+            "Use --force to overwrite.",
+            err=True,
+        )
+        sys.exit(1)
+    
+    # Look for repo-specific guide in guides/ folder
+    guides_dir = Path(__file__).parent.parent / "guides"
+    guide_file = guides_dir / f"{repo_name}.ai-review.yaml"
+    
+    if guide_file.exists():
+        # Copy from guides/
+        import shutil
+        shutil.copy(guide_file, target_path)
+        click.echo(f"Copied guide from: {guide_file}")
+        click.echo(f"Created: {target_path}")
+    else:
+        # Create generic template
+        path = create_example_guidelines(repo_path, overwrite=force)
+        click.echo(f"No guide found for '{repo_name}' in {guides_dir}")
+        click.echo(f"Created generic template: {path}")
 
 
 @main.command()
