@@ -2,6 +2,8 @@
 
 import json
 import logging
+import os
+import shutil
 import signal
 import sys
 from pathlib import Path
@@ -1342,8 +1344,8 @@ def cocoindex_logs(ctx: click.Context, repo_name: str) -> None:
 @cocoindex.command("setup")
 @click.argument("repo_name")
 @click.option("--force", is_flag=True, help="Overwrite existing opencode.json")
-@click.option("--template", type=click.Choice(["openrouter", "jina", "filesystem"]), 
-              default="openrouter", help="MCP template to use")
+@click.option("--template", type=click.Choice(["jina", "lmstudio", "filesystem"]), 
+              default="jina", help="MCP template to use")
 @click.pass_context
 def cocoindex_setup(ctx: click.Context, repo_name: str, force: bool, template: str) -> None:
     """Setup OpenCode MCP config in a repository.
@@ -1352,13 +1354,13 @@ def cocoindex_setup(ctx: click.Context, repo_name: str, force: bool, template: s
     This enables OpenCode to use semantic code search when running in that repo.
     
     Templates:
-        openrouter  - Use OpenRouter for embeddings (uses llm.api_key from config)
-        jina        - Use Jina AI for embeddings (requires JINA_API_KEY env var)
+        jina        - Use Jina AI for embeddings (recommended, uses config API key)
+        lmstudio    - Use LM Studio locally for embeddings (http://localhost:1234)
         filesystem  - Basic filesystem MCP (no indexing)
     
     Example:
         bb-review cocoindex setup te-dev
-        bb-review cocoindex setup te-dev --template jina
+        bb-review cocoindex setup te-dev --template lmstudio
     """
 
     try:
@@ -1385,10 +1387,22 @@ def cocoindex_setup(ctx: click.Context, repo_name: str, force: bool, template: s
         click.echo(f"Error: {target_file} already exists. Use --force to overwrite.", err=True)
         sys.exit(1)
 
+    # Find cocode binary path
+    cocode_bin = shutil.which("cocode")
+    if not cocode_bin:
+        venv_cocode = Path(__file__).parent.parent / ".venv" / "bin" / "cocode"
+        if venv_cocode.exists():
+            cocode_bin = str(venv_cocode)
+        else:
+            cocode_bin = "cocode"  # Hope it's in PATH
+
     # Generate config based on template
-    if template == "openrouter":
+    if template == "jina":
         # Get API key from config
-        api_key = config.cocoindex.embedding_api_key or config.llm.api_key
+        api_key = config.cocoindex.embedding_api_key
+        if not api_key:
+            click.echo("Warning: No embedding_api_key in config. Set JINA_API_KEY env var.", err=True)
+            api_key = "${JINA_API_KEY}"
         opencode_config = {
             "$schema": "https://opencode.ai/config.json",
             "model": "openrouter/google/gemini-3-pro-preview",
@@ -1396,31 +1410,10 @@ def cocoindex_setup(ctx: click.Context, repo_name: str, force: bool, template: s
             "mcp": {
                 repo_name: {
                     "type": "local",
-                    "command": ["cocode"],
+                    "command": [cocode_bin],
                     "environment": {
                         "COCOINDEX_DATABASE_URL": config.cocoindex.database_url,
-                        "OPENAI_API_KEY": api_key,
-                        "OPENAI_BASE_URL": "https://openrouter.ai/api/v1",
-                        "EMBEDDING_PROVIDER": "openai",
-                        "EMBEDDING_MODEL": config.cocoindex.embedding_model,
-                    },
-                    "enabled": True,
-                }
-            },
-        }
-        click.echo(f"Using OpenRouter API key from config.yaml")
-    elif template == "jina":
-        opencode_config = {
-            "$schema": "https://opencode.ai/config.json",
-            "model": "openrouter/google/gemini-3-pro-preview",
-            "permission": {"edit": "deny", "bash": "deny"},
-            "mcp": {
-                repo_name: {
-                    "type": "local",
-                    "command": ["cocode"],
-                    "environment": {
-                        "COCOINDEX_DATABASE_URL": config.cocoindex.database_url,
-                        "JINA_API_KEY": "${JINA_API_KEY}",
+                        "JINA_API_KEY": api_key,
                         "EMBEDDING_PROVIDER": "jina",
                         "USE_LATE_CHUNKING": "true",
                     },
@@ -1428,7 +1421,29 @@ def cocoindex_setup(ctx: click.Context, repo_name: str, force: bool, template: s
                 }
             },
         }
-        click.echo(f"Note: Set JINA_API_KEY environment variable before running OpenCode")
+        click.echo("Using Jina for embeddings")
+    elif template == "lmstudio":
+        opencode_config = {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "openrouter/google/gemini-3-pro-preview",
+            "permission": {"edit": "deny", "bash": "deny"},
+            "mcp": {
+                repo_name: {
+                    "type": "local",
+                    "command": [cocode_bin],
+                    "environment": {
+                        "COCOINDEX_DATABASE_URL": config.cocoindex.database_url,
+                        "OPENAI_API_KEY": "lm-studio",
+                        "OPENAI_BASE_URL": "http://localhost:1234/v1",
+                        "EMBEDDING_PROVIDER": "openai",
+                        "EMBEDDING_MODEL": "qwen3-embedding-0.6b-dwq",
+                    },
+                    "enabled": True,
+                }
+            },
+        }
+        click.echo("Using LM Studio for local embeddings (http://localhost:1234)")
+        click.echo("Make sure LM Studio is running with an embedding model loaded")
     else:  # filesystem
         opencode_config = {
             "$schema": "https://opencode.ai/config.json",
@@ -1479,6 +1494,166 @@ def cocoindex_db(ctx: click.Context, action: str) -> None:
         sys.exit(result.returncode)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cocoindex.command("index")
+@click.argument("repo_name")
+@click.option("--timeout", default=3600, help="Timeout in seconds (default: 3600)")
+@click.option("--clear", is_flag=True, help="Clear existing index before re-indexing")
+@click.pass_context
+def cocoindex_index(ctx: click.Context, repo_name: str, timeout: int, clear: bool) -> None:
+    """Index a repository for semantic code search.
+    
+    Uses local sentence-transformers for embeddings (no API calls, no rate limits).
+    First run downloads the model, subsequent runs are fast.
+    
+    Requires:
+        - PostgreSQL with pgvector running (bb-review cocoindex db start)
+    
+    Example:
+        bb-review cocoindex index te-dev
+        bb-review cocoindex index te-dev --clear  # Re-index from scratch
+    """
+    import time
+    from .cocoindex_indexer import CodebaseIndexer, IndexConfig
+    
+    try:
+        config = get_config(ctx)
+    except FileNotFoundError:
+        click.echo("Error: Config file required", err=True)
+        sys.exit(1)
+
+    # Get repo config
+    repo_config = config.get_repo_config_by_name(repo_name)
+    if repo_config is None:
+        click.echo(f"Error: Repository '{repo_name}' not found in config", err=True)
+        click.echo("Available repositories:")
+        for repo in config.repositories:
+            click.echo(f"  - {repo.name}")
+        sys.exit(1)
+
+    repo_path = Path(repo_config.local_path).expanduser()
+    if not repo_path.exists():
+        click.echo(f"Error: Repository not cloned at {repo_path}", err=True)
+        click.echo(f"Run: bb-review repos sync {repo_name}")
+        sys.exit(1)
+
+    # Get embedding model from config
+    embedding_model = config.cocoindex.embedding_model
+    
+    click.echo(f"Indexing repository: {repo_name}")
+    click.echo(f"Path: {repo_path}")
+    click.echo(f"Database: {config.cocoindex.database_url}")
+    click.echo(f"Embedding model: {embedding_model}")
+    click.echo()
+    
+    click.echo("Using local sentence-transformers (no API calls, no rate limits)")
+    click.echo("First run may download the model (~90MB for MiniLM)")
+    click.echo()
+
+    click.echo("Starting indexing (this may take several minutes for large repos)...")
+    click.echo()
+    
+    start_time = time.time()
+    
+    try:
+        # Create indexer
+        indexer = CodebaseIndexer(config.cocoindex.database_url)
+        
+        # Create index config
+        index_config = IndexConfig(
+            repo_name=repo_name,
+            repo_path=str(repo_path),
+            embedding_model=embedding_model,
+            chunk_size=config.cocoindex.chunk_size,
+            chunk_overlap=config.cocoindex.chunk_overlap,
+            included_patterns=config.cocoindex.included_patterns,
+            excluded_patterns=config.cocoindex.excluded_patterns,
+        )
+        
+        # Run indexing
+        result = indexer.index_repo(index_config, clear=clear)
+        
+        elapsed = time.time() - start_time
+        
+        click.echo()
+        click.echo(f"Indexing completed in {elapsed:.1f} seconds")
+        click.echo(f"  Status: {result.status}")
+        click.echo(f"  Files indexed: {result.file_count}")
+        click.echo(f"  Chunks created: {result.chunk_count}")
+        if result.message:
+            click.echo(f"  Message: {result.message}")
+        click.echo()
+        click.echo("Check full status with: bb-review cocoindex status-db")
+        
+        indexer.close()
+        
+    except ImportError as e:
+        click.echo(f"Error: Missing dependencies: {e}", err=True)
+        click.echo("Install with: uv pip install cocoindex sentence-transformers")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        elapsed = time.time() - start_time
+        click.echo()
+        click.echo(f"Indexing interrupted after {elapsed:.1f} seconds")
+        click.echo("Partial progress may have been saved. Resume by running again.")
+        sys.exit(130)
+    except Exception as e:
+        elapsed = time.time() - start_time
+        click.echo()
+        click.echo(f"Error during indexing after {elapsed:.1f} seconds: {e}", err=True)
+        click.echo()
+        click.echo("Common issues:")
+        click.echo("  - Database connection: Ensure PostgreSQL is running (bb-review cocoindex db start)")
+        click.echo("  - Model download: Ensure internet connection for first run")
+        sys.exit(1)
+
+
+@cocoindex.command("status-db")
+@click.pass_context
+def cocoindex_status_db(ctx: click.Context) -> None:
+    """Show indexing status from the database.
+    
+    Displays the status of all indexed repositories including
+    file count and chunk count.
+    
+    Example:
+        bb-review cocoindex status-db
+    """
+    from .cocoindex_indexer import CodebaseIndexer
+    
+    try:
+        config = get_config(ctx)
+        db_url = config.cocoindex.database_url
+    except FileNotFoundError:
+        db_url = "postgresql://cocoindex:cocoindex@localhost:5432/cocoindex"
+
+    try:
+        indexer = CodebaseIndexer(db_url)
+        status = indexer.get_status()
+        
+        if not status:
+            click.echo("No indexed repositories found.")
+            click.echo()
+            click.echo("To index a repository, run:")
+            click.echo("  bb-review cocoindex index <repo-name>")
+        else:
+            click.echo("CocoIndex Repository Status:")
+            click.echo()
+            click.echo(f"{'Repository':<20} {'Files':>10} {'Chunks':>10}")
+            click.echo("-" * 42)
+            for item in status:
+                click.echo(f"{item['repo']:<20} {item['file_count']:>10} {item['chunk_count']:>10}")
+            click.echo()
+        
+        indexer.close()
+        
+    except Exception as e:
+        click.echo(f"Error: Could not connect to database: {e}", err=True)
+        click.echo()
+        click.echo("Make sure PostgreSQL is running:")
+        click.echo("  bb-review cocoindex db start")
         sys.exit(1)
 
 
