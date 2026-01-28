@@ -64,6 +64,8 @@ def build_review_prompt(
     summary: str,
     guidelines_context: str,
     focus_areas: list[str],
+    at_reviewed_state: bool = False,
+    changed_files: list[str] | None = None,
 ) -> str:
     """Build the review prompt for OpenCode.
 
@@ -73,13 +75,33 @@ def build_review_prompt(
         summary: Review request summary/description.
         guidelines_context: Context from .ai-review.yaml.
         focus_areas: List of areas to focus on (bugs, security, etc.).
+        at_reviewed_state: If True, repo is at reviewed state (files match new version).
+        changed_files: List of files changed in the review.
 
     Returns:
         Formatted prompt string.
     """
     focus_str = ", ".join(focus_areas) if focus_areas else "bugs, security, performance"
 
-    prompt = f"""You are reviewing a code change. Analyze the attached patch file.
+    if at_reviewed_state and changed_files:
+        # Repo has the reviewed code - tell OpenCode to read the actual files
+        files_list = "\n".join(f"- `{f}`" for f in changed_files)
+        prompt = f"""You are reviewing a code change. The repository is checked out at the reviewed state (HEAD contains the code being reviewed).
+
+Repository: {repo_name}
+Review Request: #{review_id}
+Description: {summary}
+
+Changed files:
+{files_list}
+
+The attached patch shows what was changed. To review effectively:
+1. Read the changed files directly from the repo to see the full context
+2. Use the patch to understand what was added/modified/removed
+3. Line numbers in your findings should match the actual file line numbers
+"""
+    else:
+        prompt = f"""You are reviewing a code change. Analyze the attached patch file.
 
 Repository: {repo_name}
 Review Request: #{review_id}
@@ -95,7 +117,7 @@ Guidelines:
     prompt += f"""
 Focus areas: {focus_str}
 
-Please analyze this diff for:
+Please analyze this code change for:
 - Bugs and logic errors
 - Security vulnerabilities
 - Performance issues
@@ -105,19 +127,17 @@ For each issue found, use this format:
 
 ### Issue: <brief title>
 - **File:** `path/to/file.c`
-- **Line:** <the actual line number in the NEW/modified file, as shown in the @@ diff headers, e.g. if diff shows @@ -100,5 +102,10 @@ and the issue is 5 lines into the added block, the line number is 107>
+- **Line:** <actual line number in the file>
 - **Severity:** low/medium/high/critical
 - **Type:** bug/security/performance/style/architecture
 - **Comment:** <description of the issue>
 - **Suggestion:** <optional suggested fix>
 
-IMPORTANT: Line numbers must be actual file line numbers (as they will appear in the modified file), NOT line numbers within the patch/diff itself. Look at the @@ markers in the patch to determine actual line numbers.
-
 For general observations that don't apply to a specific line, omit the Line field.
 
 After listing all issues, provide a brief summary of the overall code quality.
 
-Be concise but thorough. Do not suggest changes outside the scope of the diff."""
+Be concise but thorough. Do not suggest changes outside the scope of the review."""
 
     return prompt
 

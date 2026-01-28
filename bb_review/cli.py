@@ -406,6 +406,10 @@ def opencode_cmd(
                     guidelines_context += "\n\nCustom rules:\n"
                 guidelines_context += "\n".join(f"- {rule}" for rule in guidelines.custom_rules)
 
+            # Extract changed files for the prompt
+            changed_file_infos = extract_changed_files(raw_diff)
+            changed_files = [f["path"] for f in changed_file_infos]
+
             # Build prompt
             focus_areas = [f.value for f in guidelines.focus]
             prompt = build_review_prompt(
@@ -414,6 +418,8 @@ def opencode_cmd(
                 summary=pending.summary,
                 guidelines_context=guidelines_context,
                 focus_areas=focus_areas,
+                at_reviewed_state=used_target,
+                changed_files=changed_files,
             )
 
             click.echo(f"  Running OpenCode analysis ({len(raw_diff)} chars diff)...")
