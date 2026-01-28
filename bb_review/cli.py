@@ -214,15 +214,21 @@ def process_review(
             f"Add it to config.yaml under 'repositories'."
         )
 
-    # Checkout the base commit
+    # Checkout the commit
     click.echo(f"  Repository: {repo_config.name}")
+    if diff_info.target_commit_id:
+        click.echo(f"  Target commit: {diff_info.target_commit_id[:12]} (reviewing actual commit)")
     click.echo(f"  Base commit: {pending.base_commit or 'default branch'}")
     
     with repo_manager.checkout_context(
         repo_config.name,
         base_commit=pending.base_commit,
         branch=pending.branch,
-    ) as repo_path:
+        target_commit=diff_info.target_commit_id,
+    ) as (repo_path, used_target):
+        if used_target:
+            click.echo(f"  Checked out target commit (files at reviewed state)")
+        
         # Load guidelines
         guidelines = load_guidelines(repo_path)
         
@@ -358,6 +364,8 @@ def opencode_cmd(
             )
 
         click.echo(f"  Repository: {repo_config.name}")
+        if diff_info.target_commit_id:
+            click.echo(f"  Target commit: {diff_info.target_commit_id[:12]} (reviewing actual commit)")
         click.echo(f"  Base commit: {pending.base_commit or 'default branch'}")
 
         # Process in checkout context
@@ -365,7 +373,11 @@ def opencode_cmd(
             repo_config.name,
             base_commit=pending.base_commit,
             branch=pending.branch,
-        ) as repo_path:
+            target_commit=diff_info.target_commit_id,
+        ) as (repo_path, used_target):
+            if used_target:
+                click.echo(f"  Checked out target commit (files at reviewed state)")
+
             # Load guidelines
             guidelines = load_guidelines(repo_path)
 

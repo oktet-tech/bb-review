@@ -56,3 +56,4 @@ config.yaml
 .DS_Store
 Thumbs.db
 rbtools/
+review.json

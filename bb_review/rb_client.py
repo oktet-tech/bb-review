@@ -20,6 +20,7 @@ class DiffInfo:
 
     diff_revision: int
     base_commit_id: Optional[str]
+    target_commit_id: Optional[str]  # The actual commit being reviewed (if available)
     raw_diff: str
     files: list[dict[str, Any]]
 
@@ -365,6 +366,27 @@ class ReviewBoardClient:
         except Exception:
             return None
 
+    def _get_target_commit(
+        self, review_request_id: int, diff_revision: int
+    ) -> Optional[str]:
+        """Get the target commit ID from the commits endpoint (RB 4.0+).
+
+        For post-commit reviews, this returns the actual commit being reviewed.
+        For pre-commit reviews or older RB versions, returns None.
+        """
+        try:
+            result = self._api_get(
+                f"/api/review-requests/{review_request_id}/diffs/{diff_revision}/commits/"
+            )
+            commits = result.get("commits", [])
+            if commits:
+                # Return the last commit (tip of the review)
+                return commits[-1].get("commit_id")
+            return None
+        except Exception as e:
+            logger.debug(f"Could not get target commit: {e}")
+            return None
+
     def get_diff(self, review_request_id: int, diff_revision: Optional[int] = None) -> DiffInfo:
         """Get the diff for a review request."""
         result = self._api_get(f"/api/review-requests/{review_request_id}/diffs/")
@@ -378,14 +400,16 @@ class ReviewBoardClient:
         if target_diff is None:
             raise ValueError(f"Diff revision {diff_revision} not found")
 
+        revision = target_diff["revision"]
+
         # Get raw diff
-        raw_diff = self._fetch_raw_diff(review_request_id, target_diff["revision"])
+        raw_diff = self._fetch_raw_diff(review_request_id, revision)
 
         # Get file info
         files = []
         try:
             files_result = self._api_get(
-                f"/api/review-requests/{review_request_id}/diffs/{target_diff['revision']}/files/"
+                f"/api/review-requests/{review_request_id}/diffs/{revision}/files/"
             )
             for f in files_result.get("files", []):
                 files.append({
@@ -398,9 +422,15 @@ class ReviewBoardClient:
         except Exception as e:
             logger.warning(f"Could not fetch file list: {e}")
 
+        # Try to get target commit (post-commit reviews)
+        target_commit_id = None
+        if target_diff.get("commit_count", 0) > 0:
+            target_commit_id = self._get_target_commit(review_request_id, revision)
+
         return DiffInfo(
-            diff_revision=target_diff["revision"],
+            diff_revision=revision,
             base_commit_id=target_diff.get("base_commit_id"),
+            target_commit_id=target_commit_id,
             raw_diff=raw_diff,
             files=files,
         )

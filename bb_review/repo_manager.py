@@ -297,6 +297,26 @@ class RepoManager:
         finally:
             Path(patch_file).unlink()
 
+    def commit_exists(self, repo_name: str, commit_sha: str) -> bool:
+        """Check if a commit exists in the repository.
+
+        Args:
+            repo_name: Repository name.
+            commit_sha: Commit SHA to check.
+
+        Returns:
+            True if the commit exists in the repo.
+        """
+        try:
+            repo = self.ensure_clone(repo_name)
+            repo.git.cat_file("-t", commit_sha)
+            return True
+        except GitCommandError:
+            return False
+        except Exception as e:
+            logger.warning(f"Error checking commit {commit_sha}: {e}")
+            return False
+
     def get_file_content(self, repo_name: str, file_path: str) -> Optional[str]:
         """Get the content of a file from the repository.
 
@@ -365,23 +385,39 @@ class RepoManager:
         repo_name: str,
         base_commit: Optional[str] = None,
         branch: Optional[str] = None,
-    ) -> Generator[Path, None, None]:
+        target_commit: Optional[str] = None,
+    ) -> Generator[tuple[Path, bool], None, None]:
         """Context manager that checks out a ref and restores original state.
+
+        If target_commit is provided and exists in the repo, it will be checked
+        out instead of the base_commit. This is useful for post-commit reviews
+        where the actual commit is available.
 
         Args:
             repo_name: Repository name.
-            base_commit: Base commit SHA.
+            base_commit: Base commit SHA (fallback if target_commit unavailable).
             branch: Branch name.
+            target_commit: Target commit SHA (the reviewed commit, if available).
 
         Yields:
-            Path to the repository.
+            Tuple of (path to repository, bool indicating if target_commit was used).
         """
         repo = self.ensure_clone(repo_name)
         original_ref = repo.head.commit.hexsha
+        used_target = False
 
         try:
-            self.smart_checkout(repo_name, base_commit, branch)
-            yield self.get_local_path(repo_name)
+            # Try to use target_commit if available and exists in repo
+            if target_commit and self.commit_exists(repo_name, target_commit):
+                logger.info(f"Using target commit {target_commit[:12]} (actual reviewed commit)")
+                repo.git.checkout(target_commit)
+                used_target = True
+            else:
+                if target_commit:
+                    logger.debug(f"Target commit {target_commit[:12]} not in repo, using base")
+                self.smart_checkout(repo_name, base_commit, branch)
+
+            yield self.get_local_path(repo_name), used_target
         finally:
             # Restore original state
             try:
