@@ -6,17 +6,21 @@
     "bash": "deny"
   },
   "mcp": {
-    "ol-te-dev": {
+    "repo-semantic": {
       "type": "local",
       "command": ["cocode"],
       "environment": {
         "COCOINDEX_DATABASE_URL": "postgresql://cocoindex:cocoindex@localhost:5432/cocoindex",
-        "OPENAI_API_KEY": "${OPENROUTER_API_KEY}",
-        "OPENAI_BASE_URL": "https://openrouter.ai/api/v1",
-        "EMBEDDING_PROVIDER": "openai",
-        "EMBEDDING_MODEL": "mistralai/codestral-embed-2505"
+        "JINA_API_KEY": "${JINA_API_KEY}",
+        "EMBEDDING_PROVIDER": "jina",
+        "USE_LATE_CHUNKING": "true"
       },
       "enabled": true
+    },
+    "repo-filesystem": {
+      "type": "local",
+      "command": ["npx", "-y", "@anthropic-ai/mcp-filesystem", "/path/to/repo"],
+      "enabled": false
     }
   }
 }

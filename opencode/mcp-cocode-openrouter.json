@@ -6,7 +6,7 @@
     "bash": "deny"
   },
   "mcp": {
-    "ol-te-dev": {
+    "repo-name": {
       "type": "local",
       "command": ["cocode"],
       "environment": {
