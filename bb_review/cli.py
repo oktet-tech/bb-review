@@ -1344,23 +1344,26 @@ def cocoindex_logs(ctx: click.Context, repo_name: str) -> None:
 @cocoindex.command("setup")
 @click.argument("repo_name")
 @click.option("--force", is_flag=True, help="Overwrite existing opencode.json")
-@click.option("--template", type=click.Choice(["jina", "lmstudio", "filesystem"]), 
-              default="jina", help="MCP template to use")
+@click.option("--template", type=click.Choice(["local", "filesystem"]), 
+              default="local", help="MCP template to use")
 @click.pass_context
 def cocoindex_setup(ctx: click.Context, repo_name: str, force: bool, template: str) -> None:
     """Setup OpenCode MCP config in a repository.
     
-    Generates opencode.json with API keys from your config.yaml.
-    This enables OpenCode to use semantic code search when running in that repo.
+    Generates opencode.json for semantic code search.
+    The 'local' template uses our CocoIndex-based MCP server with local embeddings.
     
     Templates:
-        jina        - Use Jina AI for embeddings (recommended, uses config API key)
-        lmstudio    - Use LM Studio locally for embeddings (http://localhost:1234)
-        filesystem  - Basic filesystem MCP (no indexing)
+        local       - Use bb-review MCP server with local embeddings (default)
+        filesystem  - Basic filesystem MCP (no semantic search)
+    
+    Prerequisites for 'local' template:
+        1. Index the repo first: bb-review cocoindex index <repo-name>
+        2. PostgreSQL running: bb-review cocoindex db start
     
     Example:
         bb-review cocoindex setup te-dev
-        bb-review cocoindex setup te-dev --template lmstudio
+        bb-review cocoindex setup te-dev --template filesystem
     """
 
     try:
@@ -1387,22 +1390,17 @@ def cocoindex_setup(ctx: click.Context, repo_name: str, force: bool, template: s
         click.echo(f"Error: {target_file} already exists. Use --force to overwrite.", err=True)
         sys.exit(1)
 
-    # Find cocode binary path
-    cocode_bin = shutil.which("cocode")
-    if not cocode_bin:
-        venv_cocode = Path(__file__).parent.parent / ".venv" / "bin" / "cocode"
-        if venv_cocode.exists():
-            cocode_bin = str(venv_cocode)
+    # Find bb-review binary path
+    bb_review_bin = shutil.which("bb-review")
+    if not bb_review_bin:
+        venv_bb = Path(__file__).parent.parent / ".venv" / "bin" / "bb-review"
+        if venv_bb.exists():
+            bb_review_bin = str(venv_bb)
         else:
-            cocode_bin = "cocode"  # Hope it's in PATH
+            bb_review_bin = "bb-review"  # Hope it's in PATH
 
     # Generate config based on template
-    if template == "jina":
-        # Get API key from config
-        api_key = config.cocoindex.embedding_api_key
-        if not api_key:
-            click.echo("Warning: No embedding_api_key in config. Set JINA_API_KEY env var.", err=True)
-            api_key = "${JINA_API_KEY}"
+    if template == "local":
         opencode_config = {
             "$schema": "https://opencode.ai/config.json",
             "model": "openrouter/google/gemini-3-pro-preview",
@@ -1410,40 +1408,16 @@ def cocoindex_setup(ctx: click.Context, repo_name: str, force: bool, template: s
             "mcp": {
                 repo_name: {
                     "type": "local",
-                    "command": [cocode_bin],
+                    "command": [bb_review_bin, "cocoindex", "serve", repo_name],
                     "environment": {
                         "COCOINDEX_DATABASE_URL": config.cocoindex.database_url,
-                        "JINA_API_KEY": api_key,
-                        "EMBEDDING_PROVIDER": "jina",
-                        "USE_LATE_CHUNKING": "true",
                     },
                     "enabled": True,
                 }
             },
         }
-        click.echo("Using Jina for embeddings")
-    elif template == "lmstudio":
-        opencode_config = {
-            "$schema": "https://opencode.ai/config.json",
-            "model": "openrouter/google/gemini-3-pro-preview",
-            "permission": {"edit": "deny", "bash": "deny"},
-            "mcp": {
-                repo_name: {
-                    "type": "local",
-                    "command": [cocode_bin],
-                    "environment": {
-                        "COCOINDEX_DATABASE_URL": config.cocoindex.database_url,
-                        "OPENAI_API_KEY": "lm-studio",
-                        "OPENAI_BASE_URL": "http://localhost:1234/v1",
-                        "EMBEDDING_PROVIDER": "openai",
-                        "EMBEDDING_MODEL": "qwen3-embedding-0.6b-dwq",
-                    },
-                    "enabled": True,
-                }
-            },
-        }
-        click.echo("Using LM Studio for local embeddings (http://localhost:1234)")
-        click.echo("Make sure LM Studio is running with an embedding model loaded")
+        click.echo("Using local CocoIndex MCP server")
+        click.echo("Make sure you've indexed the repo: bb-review cocoindex index " + repo_name)
     else:  # filesystem
         opencode_config = {
             "$schema": "https://opencode.ai/config.json",
@@ -1457,6 +1431,7 @@ def cocoindex_setup(ctx: click.Context, repo_name: str, force: bool, template: s
                 }
             },
         }
+        click.echo("Using filesystem MCP (no semantic search)")
 
     # Write config
     target_file.write_text(json.dumps(opencode_config, indent=2) + "\n")
@@ -1655,6 +1630,56 @@ def cocoindex_status_db(ctx: click.Context) -> None:
         click.echo("Make sure PostgreSQL is running:")
         click.echo("  bb-review cocoindex db start")
         sys.exit(1)
+
+
+@cocoindex.command("serve")
+@click.argument("repo_name")
+@click.pass_context
+def cocoindex_serve(ctx: click.Context, repo_name: str) -> None:
+    """Start an MCP server for semantic code search.
+    
+    This starts an MCP server that OpenCode can connect to for
+    semantic code search using the indexed repository.
+    
+    The server uses stdio transport (standard for MCP).
+    
+    Example:
+        bb-review cocoindex serve te-dev
+        
+    To use with OpenCode, add to opencode.json:
+        {
+          "mcp": {
+            "te-dev": {
+              "type": "local",
+              "command": ["bb-review", "cocoindex", "serve", "te-dev"]
+            }
+          }
+        }
+    """
+    try:
+        config = get_config(ctx)
+    except FileNotFoundError:
+        click.echo("Error: Config file required", err=True)
+        sys.exit(1)
+
+    # Verify repo exists and is indexed
+    repo_config = config.get_repo_config_by_name(repo_name)
+    if repo_config is None:
+        click.echo(f"Error: Repository '{repo_name}' not found in config", err=True)
+        click.echo("Available repositories:")
+        for repo in config.repositories:
+            click.echo(f"  - {repo.name}")
+        sys.exit(1)
+
+    # Set database URL in environment for the MCP server
+    os.environ["COCOINDEX_DATABASE_URL"] = config.cocoindex.database_url
+    
+    # Run the MCP server
+    from .mcp_server import run_server
+    run_server(
+        repo_name=repo_name,
+        embedding_model=config.cocoindex.embedding_model
+    )
 
 
 @main.command()
