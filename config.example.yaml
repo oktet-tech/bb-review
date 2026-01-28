@@ -51,6 +51,9 @@ repositories:
   #   local_path: "/path/to/local/clone"
   #   remote_url: "git@github.com:org/myproject.git"
   #   default_branch: "main"
+  #   # Optional: Per-repo CocoIndex settings
+  #   cocoindex:
+  #     enabled: true  # Enable semantic indexing for this repo
 
 # Polling settings (for automated mode)
 polling:
@@ -81,3 +84,18 @@ opencode:
   # model: "anthropic/claude-sonnet-4-20250514"  # Override model (optional)
   timeout: 300  # Timeout in seconds
   binary_path: "opencode"  # Path to opencode binary (or just "opencode" if in PATH)
+
+# CocoIndex semantic code indexing settings
+# Provides enhanced code search via MCP for OpenCode agents
+# Setup: ./scripts/setup-cocoindex-db.sh start
+# Install: uv pip install cocode-mcp
+cocoindex:
+  enabled: false  # Set to true to enable CocoIndex integration
+  database_url: "postgresql://cocoindex:cocoindex@localhost:5432/cocoindex"
+  log_dir: "~/.bb_review/cocoindex"  # Directory for CocoIndex logs
+  # Embedding provider: openrouter (uses llm.api_key), jina, openai, or mistral
+  embedding_provider: "openrouter"
+  embedding_model: "mistralai/codestral-embed-2505"
+  # embedding_api_key: "..."  # Optional, defaults to llm.api_key for openrouter
+  chunk_size: 2000  # Characters per code chunk
+  chunk_overlap: 400  # Overlap between chunks

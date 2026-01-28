@@ -94,6 +94,7 @@ class RepositoryConfig(BaseModel):
     remote_url: str
     default_branch: str = "main"
     type: Optional[str] = None  # e.g., "te-test-suite" for OpenCode MCP setup
+    cocoindex: Optional["CocoIndexRepoConfig"] = None  # Per-repo CocoIndex settings
 
     def to_repo_config(self) -> RepoConfig:
         """Convert to RepoConfig dataclass."""
@@ -105,6 +106,12 @@ class RepositoryConfig(BaseModel):
             default_branch=self.default_branch,
             repo_type=self.type,
         )
+
+    def is_cocoindex_enabled(self, global_enabled: bool = False) -> bool:
+        """Check if CocoIndex is enabled for this repo."""
+        if self.cocoindex:
+            return self.cocoindex.enabled
+        return global_enabled
 
 
 class PollingConfig(BaseModel):
@@ -186,6 +193,51 @@ class OpenCodeConfig(BaseModel):
     binary_path: str = "opencode"  # Path to the opencode binary
 
 
+class CocoIndexRepoConfig(BaseModel):
+    """Per-repository CocoIndex configuration."""
+
+    enabled: bool = False
+
+
+class CocoIndexConfig(BaseModel):
+    """Global CocoIndex configuration for semantic code indexing.
+    
+    Uses cocode-mcp which is stdio-based (spawned by MCP client).
+    Requires PostgreSQL with pgvector and an embedding API key.
+    """
+
+    enabled: bool = False
+    database_url: str = "postgresql://cocoindex:cocoindex@localhost:5432/cocoindex"
+    log_dir: str = "~/.bb_review/cocoindex"  # Directory for CocoIndex logs
+    # Embedding provider: openrouter (default), jina, openai, or mistral
+    embedding_provider: str = "openrouter"
+    # API key for embeddings (defaults to llm.api_key if using openrouter)
+    embedding_api_key: Optional[str] = None
+    # Embedding model (for openrouter: mistralai/codestral-embed-2505)
+    embedding_model: str = "mistralai/codestral-embed-2505"
+    chunk_size: int = 2000  # Characters per chunk
+    chunk_overlap: int = 400  # Overlap between chunks
+
+    @field_validator("database_url", "embedding_api_key")
+    @classmethod
+    def resolve_env_var(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        return _resolve_env_var(v)
+
+    @field_validator("embedding_provider")
+    @classmethod
+    def validate_embedding_provider(cls, v: str) -> str:
+        valid = ["openrouter", "jina", "openai", "mistral"]
+        if v not in valid:
+            raise ValueError(f"embedding_provider must be one of: {valid}")
+        return v
+
+    @property
+    def resolved_log_dir(self) -> Path:
+        return Path(self.log_dir).expanduser()
+
+
 class Config(BaseModel):
     """Main configuration model."""
 
@@ -197,6 +249,7 @@ class Config(BaseModel):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     defaults: DefaultsConfig = Field(default_factory=DefaultsConfig)
     opencode: OpenCodeConfig = Field(default_factory=OpenCodeConfig)
+    cocoindex: CocoIndexConfig = Field(default_factory=CocoIndexConfig)
 
     def get_repo_by_name(self, name: str) -> Optional[RepoConfig]:
         """Get repository config by name."""
@@ -215,6 +268,20 @@ class Config(BaseModel):
     def get_all_repos(self) -> list[RepoConfig]:
         """Get all repository configs."""
         return [repo.to_repo_config() for repo in self.repositories]
+
+    def get_repo_config_by_name(self, name: str) -> Optional[RepositoryConfig]:
+        """Get repository config (Pydantic model) by name."""
+        for repo in self.repositories:
+            if repo.name == name:
+                return repo
+        return None
+
+    def get_cocoindex_enabled_repos(self) -> list[RepositoryConfig]:
+        """Get all repositories with CocoIndex enabled."""
+        return [
+            repo for repo in self.repositories
+            if repo.is_cocoindex_enabled(self.cocoindex.enabled)
+        ]
 
 
 def _resolve_env_var(value: str) -> str:
