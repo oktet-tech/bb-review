@@ -425,14 +425,16 @@ def opencode_cmd(
             if repo_config.repo_type == "te-test-suite":
                 click.echo("  Running API review via api-reviewer agent...")
                 
-                # Write patch file inside repo to avoid permission prompts
+                # Write patch and context files inside repo to avoid permission prompts
                 patch_path = repo_path / ".bb_review_patch.tmp"
+                context_path = repo_path / ".bb_review_context.tmp"
                 patch_path.write_text(raw_diff)
+                context_path.write_text(f"Review #{review_id}\n\nSummary:\n{pending.summary}")
                 
                 try:
                     click.echo(f"  Patch file: {patch_path}")
-                    # Use @filename syntax to attach the patch, include summary for context
-                    api_prompt = f"Review #{review_id}: {pending.summary}\n\nReview the patch @.bb_review_patch.tmp"
+                    # Use @filename syntax to attach files
+                    api_prompt = "Review the patch @.bb_review_patch.tmp with context @.bb_review_context.tmp"
                     api_analysis = run_opencode_agent(
                         repo_path=repo_path,
                         agent="api-reviewer",
@@ -448,10 +450,11 @@ def opencode_cmd(
                 except OpenCodeError as e:
                     click.echo(f"  Warning: API review failed: {e}", err=True)
                 finally:
-                    try:
-                        patch_path.unlink()
-                    except Exception:
-                        pass
+                    for tmp_file in [patch_path, context_path]:
+                        try:
+                            tmp_file.unlink()
+                        except Exception:
+                            pass
 
         # Dump raw response if requested
         if dump_response:
