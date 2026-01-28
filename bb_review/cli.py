@@ -436,6 +436,7 @@ def opencode_cmd(
                     model=model,
                     timeout=timeout,
                     binary_path=binary_path,
+                    at_reviewed_state=used_target,
                 )
             except OpenCodeTimeoutError:
                 click.echo(f"Error: OpenCode timed out after {timeout}s", err=True)

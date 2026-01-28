@@ -84,9 +84,9 @@ def build_review_prompt(
     focus_str = ", ".join(focus_areas) if focus_areas else "bugs, security, performance"
 
     if at_reviewed_state and changed_files:
-        # Repo has the reviewed code - tell OpenCode to read the actual files
+        # Repo has the reviewed code staged - tell OpenCode to use git diff --cached
         files_list = "\n".join(f"- `{f}`" for f in changed_files)
-        prompt = f"""You are reviewing a code change. The repository is checked out at the reviewed state (HEAD contains the code being reviewed).
+        prompt = f"""You are reviewing a code change. The changes are staged in this repository.
 
 Repository: {repo_name}
 Review Request: #{review_id}
@@ -95,10 +95,12 @@ Description: {summary}
 Changed files:
 {files_list}
 
-The attached patch shows what was changed. To review effectively:
-1. Read the changed files directly from the repo to see the full context
-2. Use the patch to understand what was added/modified/removed
-3. Line numbers in your findings should match the actual file line numbers
+To review effectively:
+1. Run `git diff --cached` to see exactly what was changed (this shows the staged diff)
+2. Read the changed files directly to see full context with correct line numbers
+3. Line numbers in your findings must match the actual file line numbers
+
+Do NOT use any attached patch file - use `git diff --cached` instead.
 """
     else:
         prompt = f"""You are reviewing a code change. Analyze the attached patch file.
@@ -150,6 +152,7 @@ def run_opencode_review(
     model: str | None = None,
     timeout: int = 300,
     binary_path: str = "opencode",
+    at_reviewed_state: bool = False,
 ) -> str:
     """Run opencode in plan mode and return the analysis.
 
@@ -161,6 +164,7 @@ def run_opencode_review(
         model: Optional model override (e.g., "anthropic/claude-sonnet-4-20250514").
         timeout: Timeout in seconds for the opencode process.
         binary_path: Path to the opencode binary.
+        at_reviewed_state: If True, changes are staged - don't pass patch file.
 
     Returns:
         The analysis output from opencode.
@@ -174,15 +178,17 @@ def run_opencode_review(
     opencode_bin = find_opencode_binary(binary_path)
     logger.debug(f"Using opencode binary: {opencode_bin}")
 
-    # Create temp file for the patch
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        suffix=".patch",
-        delete=False,
-        prefix="bb_review_",
-    ) as patch_file:
-        patch_file.write(patch_content)
-        patch_path = Path(patch_file.name)
+    patch_path = None
+    if not at_reviewed_state:
+        # Create temp file for the patch only if not at reviewed state
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".patch",
+            delete=False,
+            prefix="bb_review_",
+        ) as patch_file:
+            patch_file.write(patch_content)
+            patch_path = Path(patch_file.name)
 
     try:
         # Build command
@@ -190,9 +196,12 @@ def run_opencode_review(
             opencode_bin,
             "run",
             "--agent", "plan",
-            "-f", str(patch_path),
             "--title", f"Review-{review_id}",
         ]
+
+        # Only attach patch file if not at reviewed state
+        if patch_path:
+            cmd.extend(["-f", str(patch_path)])
 
         if model:
             cmd.extend(["--model", model])
@@ -236,11 +245,12 @@ def run_opencode_review(
         ) from e
 
     finally:
-        # Clean up temp file
-        try:
-            patch_path.unlink()
-        except Exception:
-            pass
+        # Clean up temp file if we created one
+        if patch_path:
+            try:
+                patch_path.unlink()
+            except Exception:
+                pass
 
 
 def run_opencode_agent(

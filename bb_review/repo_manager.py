@@ -276,7 +276,7 @@ class RepoManager:
             patch_file = f.name
 
         try:
-            args = ["git", "apply"]
+            args = ["git", "apply", "--index"]  # Stage the changes
             if check_only:
                 args.append("--check")
             args.append(patch_file)
@@ -289,7 +289,7 @@ class RepoManager:
             )
 
             if result.returncode == 0:
-                logger.debug(f"Patch {'would apply' if check_only else 'applied'} cleanly")
+                logger.debug(f"Patch {'would apply' if check_only else 'applied'} and staged cleanly")
                 return True
             else:
                 logger.warning(f"Patch failed: {result.stderr}")
@@ -437,10 +437,10 @@ class RepoManager:
         finally:
             # Restore original state
             try:
-                # Reset modified files
-                repo.git.checkout("--force", original_ref)
+                # git reset --hard clears index and working tree
+                repo.git.reset("--hard", original_ref)
                 
-                # Clean up only new files created by the patch
+                # Clean up only new files created by the patch (untracked files)
                 if patch_applied:
                     untracked_after = set(repo.untracked_files)
                     new_files = untracked_after - untracked_before
