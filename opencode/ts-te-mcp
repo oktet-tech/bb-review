@@ -1,6 +1,10 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "x-ai/grok-code-fast-1",
+  "model": "openrouter/google/gemini-3-pro-preview",
+  "permission": {
+    "edit": "deny",
+    "bash": "deny"
+  },
   "mcp": {
     "ol-te-dev": {
       "type": "local",
