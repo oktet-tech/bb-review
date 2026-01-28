@@ -56,6 +56,51 @@ uv run bb-review analyze 18080
 uv run bb-review analyze 18080 --dry-run  # Preview without posting
 ```
 
+### OpenCode Analysis
+
+Use OpenCode agent for deeper analysis with full codebase context:
+
+```bash
+uv run bb-review opencode 42738
+uv run bb-review opencode 42738 --dry-run  # Save to review_42738.json
+uv run bb-review opencode 42738 --dry-run -o review.json  # Custom output file
+```
+
+### Review, Edit, and Submit Workflow
+
+For more control, you can review and edit AI feedback before posting:
+
+```bash
+# 1. Run analysis in dry-run mode (saves JSON file)
+uv run bb-review opencode 42738 --dry-run -o review.json
+
+# 2. Review and edit the JSON file
+#    - Edit comments, body_top, or remove unwanted issues
+#    - The unparsed_text field contains any LLM output that couldn't be parsed
+
+# 3. Preview what would be submitted
+uv run bb-review submit review.json --dry-run
+
+# 4. Submit to ReviewBoard
+uv run bb-review submit review.json
+```
+
+The JSON file structure:
+
+```json
+{
+  "review_request_id": 42738,
+  "body_top": "AI Review summary...",
+  "comments": [
+    {"file_path": "src/foo.c", "line_number": 42, "text": "Issue description..."}
+  ],
+  "ship_it": false,
+  "unparsed_text": "Any text that couldn't be parsed into structured issues",
+  "parsed_issues": [...],
+  "metadata": {"created_at": "...", "model": "...", "dry_run": true}
+}
+```
+
 ### Automated Polling
 
 Run a single poll cycle:

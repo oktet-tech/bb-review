@@ -279,3 +279,50 @@ class ReviewFormatter:
                 for c in result.comments
             ],
         }
+
+    @staticmethod
+    def format_for_submission(
+        review_request_id: int,
+        body_top: str,
+        comments: list[dict],
+        ship_it: bool = False,
+        unparsed_text: str = "",
+        parsed_issues: list[dict] | None = None,
+        metadata: dict | None = None,
+    ) -> dict:
+        """Format review data for submission JSON file.
+
+        This creates a JSON structure that can be saved to a file,
+        edited by the user, and then submitted via the 'submit' command.
+
+        Args:
+            review_request_id: Review Board request ID.
+            body_top: Formatted review body/summary.
+            comments: List of inline comments in RB API format.
+            ship_it: Whether to mark as "Ship It".
+            unparsed_text: Any unparsed text from LLM output (for user review).
+            parsed_issues: Optional list of parsed issues for reference.
+            metadata: Optional metadata dict (model, analyzed_at, etc.).
+
+        Returns:
+            Dictionary ready for JSON serialization and submission.
+        """
+        from datetime import datetime
+
+        result = {
+            "review_request_id": review_request_id,
+            "body_top": body_top,
+            "comments": comments,
+            "ship_it": ship_it,
+            "unparsed_text": unparsed_text,
+        }
+
+        if parsed_issues is not None:
+            result["parsed_issues"] = parsed_issues
+
+        result["metadata"] = metadata or {
+            "created_at": datetime.now().isoformat(),
+            "dry_run": True,
+        }
+
+        return result
