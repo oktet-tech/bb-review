@@ -4,6 +4,7 @@ import logging
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -210,7 +211,11 @@ def run_opencode_review(
         cmd.append("'" + prompt + "'")
 
         logger.info(f"Running opencode in {repo_path}")
-        logger.debug(f"Command: {' '.join(cmd[:6])}...")
+
+        # Log full command for debugging (to stderr so user can see it)
+        cmd_display = cmd[:6] + ["..."] if len(cmd) > 6 else cmd
+        print(f"  Command: {' '.join(cmd_display)}", file=sys.stderr)
+        logger.debug(f"Full command: {cmd}")
 
         # Run opencode
         result = subprocess.run(
@@ -224,6 +229,7 @@ def run_opencode_review(
         # Log stderr if present (for debugging)
         if result.stderr:
             logger.debug(f"OpenCode stderr: {result.stderr}")
+            print(f"  OpenCode stderr: {result.stderr[:500]}", file=sys.stderr)
 
         # Check for errors
         if result.returncode != 0:
@@ -234,6 +240,12 @@ def run_opencode_review(
 
         output = result.stdout.strip()
         if not output:
+            # Log more details for debugging
+            stdout_len = len(result.stdout) if result.stdout else 0
+            stderr_preview = result.stderr[:500] if result.stderr else "(empty)"
+            print(f"  OpenCode exit code: {result.returncode}", file=sys.stderr)
+            print(f"  OpenCode stdout length: {stdout_len}", file=sys.stderr)
+            print(f"  OpenCode stderr: {stderr_preview}", file=sys.stderr)
             raise OpenCodeError("OpenCode returned empty output")
 
         logger.info(f"OpenCode analysis complete ({len(output)} chars)")
@@ -303,7 +315,6 @@ def run_opencode_agent(
 
     logger.info(f"Running opencode agent '{agent}' in {repo_path}")
     # Log full command for debugging - print to stderr so user can see it
-    import sys
     print(f"  Command: {' '.join(cmd)}", file=sys.stderr)
 
     try:
