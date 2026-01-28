@@ -202,35 +202,59 @@ class CocoIndexRepoConfig(BaseModel):
 class CocoIndexConfig(BaseModel):
     """Global CocoIndex configuration for semantic code indexing.
     
-    Uses cocode-mcp which is stdio-based (spawned by MCP client).
-    Requires PostgreSQL with pgvector and an embedding API key.
+    Uses CocoIndex with local sentence-transformers embeddings.
+    Requires PostgreSQL with pgvector extension.
+    No API keys needed - embeddings run locally.
     """
 
     enabled: bool = False
     database_url: str = "postgresql://cocoindex:cocoindex@localhost:5432/cocoindex"
     log_dir: str = "~/.bb_review/cocoindex"  # Directory for CocoIndex logs
-    # Embedding provider: openrouter (default), jina, openai, or mistral
-    embedding_provider: str = "openrouter"
-    # API key for embeddings (defaults to llm.api_key if using openrouter)
-    embedding_api_key: Optional[str] = None
-    # Embedding model (for openrouter: mistralai/codestral-embed-2505)
-    embedding_model: str = "mistralai/codestral-embed-2505"
-    chunk_size: int = 2000  # Characters per chunk
-    chunk_overlap: int = 400  # Overlap between chunks
+    # Local embedding model from HuggingFace sentence-transformers
+    # Popular options:
+    #   - sentence-transformers/all-MiniLM-L6-v2 (fast, good quality)
+    #   - sentence-transformers/all-mpnet-base-v2 (better quality, slower)
+    #   - BAAI/bge-small-en-v1.5 (good for code)
+    #   - nomic-ai/nomic-embed-text-v1.5 (good general purpose)
+    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    chunk_size: int = 1000  # Characters per chunk
+    chunk_overlap: int = 300  # Overlap between chunks
+    # File patterns to include (defaults to common code extensions)
+    included_patterns: Optional[list[str]] = None
+    # File patterns to exclude (defaults to common excludes like .git, node_modules)
+    excluded_patterns: Optional[list[str]] = None
 
-    @field_validator("database_url", "embedding_api_key")
+    @field_validator("database_url")
     @classmethod
     def resolve_env_var(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return None
         return _resolve_env_var(v)
 
-    @field_validator("embedding_provider")
+    @field_validator("embedding_model")
     @classmethod
-    def validate_embedding_provider(cls, v: str) -> str:
-        valid = ["openrouter", "jina", "openai", "mistral"]
-        if v not in valid:
-            raise ValueError(f"embedding_provider must be one of: {valid}")
+    def validate_embedding_model(cls, v: str) -> str:
+        # Basic validation - model name should look reasonable
+        if not v or "/" not in v:
+            raise ValueError(
+                "embedding_model should be a HuggingFace model like "
+                "'sentence-transformers/all-MiniLM-L6-v2'"
+            )
+        return v
+
+    # Keep old validator for backwards compatibility - migrate old provider names
+    @field_validator("embedding_model", mode="before")
+    @classmethod
+    def migrate_old_provider(cls, v: str) -> str:
+        # If someone has old provider-based config, migrate to default local model
+        old_providers = ["jina", "lmstudio", "openai", "mistral", "openrouter"]
+        if v in old_providers:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"Old embedding_provider '{v}' detected. "
+                "Migrating to local sentence-transformers model."
+            )
+            return "sentence-transformers/all-MiniLM-L6-v2"
         return v
 
     @property
