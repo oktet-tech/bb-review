@@ -1163,6 +1163,317 @@ def repos_mcp_setup(ctx: click.Context, repo_name: str, force: bool) -> None:
     click.echo("OpenCode can now use the ol-te-dev MCP server for API review.")
 
 
+@main.group()
+def cocoindex():
+    """CocoIndex semantic code indexing commands."""
+    pass
+
+
+@cocoindex.command("start")
+@click.argument("repo_name")
+@click.option("--rescan", is_flag=True, help="Force re-index from scratch")
+@click.pass_context
+def cocoindex_start(ctx: click.Context, repo_name: str, rescan: bool) -> None:
+    """Run cocode-mcp interactively for testing/debugging.
+    
+    NOTE: cocode-mcp is stdio-based - normally the MCP client (OpenCode)
+    spawns it directly. This command runs it interactively for testing.
+    
+    Requires JINA_API_KEY or OPENAI_API_KEY for embeddings.
+    
+    Example:
+        bb-review cocoindex start te-dev
+    """
+    import subprocess
+    
+    try:
+        config = get_config(ctx)
+    except FileNotFoundError:
+        click.echo("Error: Config file required", err=True)
+        sys.exit(1)
+
+    # Verify repo exists in config
+    repo_config = config.get_repo_config_by_name(repo_name)
+    if repo_config is None:
+        click.echo(f"Error: Repository '{repo_name}' not found in config", err=True)
+        click.echo("Available repositories:")
+        for repo in config.repositories:
+            click.echo(f"  - {repo.name}")
+        sys.exit(1)
+
+    # Check if CocoIndex is enabled
+    if not repo_config.is_cocoindex_enabled(config.cocoindex.enabled):
+        click.echo(f"Warning: CocoIndex is not enabled for '{repo_name}' in config")
+        click.echo("Enable it by adding 'cocoindex.enabled: true' to the repo config")
+
+    # Run the server script (for testing - cocode-mcp is normally spawned by MCP client)
+    script_path = Path(__file__).parent.parent / "scripts" / "cocoindex-server.sh"
+    if not script_path.exists():
+        click.echo(f"Error: Server script not found: {script_path}", err=True)
+        sys.exit(1)
+
+    cmd = [str(script_path), "start", repo_name]
+    if rescan:
+        cmd.append("--rescan")
+
+    # Set environment
+    import os
+    env = dict(os.environ)
+    env["COCOINDEX_DATABASE_URL"] = config.cocoindex.database_url
+    
+    # Get embedding API key from config (or use llm.api_key for openrouter)
+    embedding_key = config.cocoindex.embedding_api_key
+    if not embedding_key and config.cocoindex.embedding_provider == "openrouter":
+        # Reuse the LLM API key for OpenRouter embeddings
+        embedding_key = config.llm.api_key
+    
+    if embedding_key:
+        env["COCOINDEX_EMBEDDING_API_KEY"] = embedding_key
+        env["COCOINDEX_EMBEDDING_PROVIDER"] = config.cocoindex.embedding_provider
+        env["COCOINDEX_EMBEDDING_MODEL"] = config.cocoindex.embedding_model
+        if config.cocoindex.embedding_provider == "openrouter":
+            env["COCOINDEX_EMBEDDING_BASE_URL"] = "https://openrouter.ai/api/v1"
+
+    try:
+        result = subprocess.run(cmd, env=env)
+        sys.exit(result.returncode)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cocoindex.command("stop")
+@click.argument("repo_name")
+@click.pass_context
+def cocoindex_stop(ctx: click.Context, repo_name: str) -> None:
+    """Stop CocoIndex MCP server for a repository.
+    
+    Example:
+        bb-review cocoindex stop te-dev
+    """
+    import subprocess
+    
+    script_path = Path(__file__).parent.parent / "scripts" / "cocoindex-server.sh"
+    if not script_path.exists():
+        click.echo(f"Error: Server script not found: {script_path}", err=True)
+        sys.exit(1)
+
+    try:
+        result = subprocess.run([str(script_path), "stop", repo_name])
+        sys.exit(result.returncode)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cocoindex.command("status")
+@click.argument("repo_name", required=False)
+@click.pass_context
+def cocoindex_status(ctx: click.Context, repo_name: Optional[str]) -> None:
+    """Show CocoIndex server status.
+    
+    Shows status for a specific repository, or all repositories if none specified.
+    
+    Example:
+        bb-review cocoindex status         # Show all
+        bb-review cocoindex status te-dev  # Show specific repo
+    """
+    import subprocess
+    
+    try:
+        config = get_config(ctx)
+    except FileNotFoundError:
+        # Can still show status without config
+        pass
+
+    script_path = Path(__file__).parent.parent / "scripts" / "cocoindex-server.sh"
+    if not script_path.exists():
+        click.echo(f"Error: Server script not found: {script_path}", err=True)
+        sys.exit(1)
+
+    cmd = [str(script_path), "status"]
+    if repo_name:
+        cmd.append(repo_name)
+
+    try:
+        result = subprocess.run(cmd)
+        sys.exit(result.returncode)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cocoindex.command("logs")
+@click.argument("repo_name")
+@click.pass_context
+def cocoindex_logs(ctx: click.Context, repo_name: str) -> None:
+    """Follow CocoIndex server logs for a repository.
+    
+    Press Ctrl+C to stop following.
+    
+    Example:
+        bb-review cocoindex logs te-dev
+    """
+    import subprocess
+    
+    script_path = Path(__file__).parent.parent / "scripts" / "cocoindex-server.sh"
+    if not script_path.exists():
+        click.echo(f"Error: Server script not found: {script_path}", err=True)
+        sys.exit(1)
+
+    try:
+        result = subprocess.run([str(script_path), "logs", repo_name])
+        sys.exit(result.returncode)
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cocoindex.command("setup")
+@click.argument("repo_name")
+@click.option("--force", is_flag=True, help="Overwrite existing opencode.json")
+@click.option("--template", type=click.Choice(["openrouter", "jina", "filesystem"]), 
+              default="openrouter", help="MCP template to use")
+@click.pass_context
+def cocoindex_setup(ctx: click.Context, repo_name: str, force: bool, template: str) -> None:
+    """Setup OpenCode MCP config in a repository.
+    
+    Generates opencode.json with API keys from your config.yaml.
+    This enables OpenCode to use semantic code search when running in that repo.
+    
+    Templates:
+        openrouter  - Use OpenRouter for embeddings (uses llm.api_key from config)
+        jina        - Use Jina AI for embeddings (requires JINA_API_KEY env var)
+        filesystem  - Basic filesystem MCP (no indexing)
+    
+    Example:
+        bb-review cocoindex setup te-dev
+        bb-review cocoindex setup te-dev --template jina
+    """
+
+    try:
+        config = get_config(ctx)
+    except FileNotFoundError:
+        click.echo("Error: Config file required", err=True)
+        sys.exit(1)
+
+    repo_manager = RepoManager(config.get_all_repos())
+
+    try:
+        repo_path = repo_manager.get_local_path(repo_name)
+    except RepoManagerError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    if not repo_path.exists():
+        click.echo(f"Error: Repository not cloned. Run 'bb-review repos sync {repo_name}' first.", err=True)
+        sys.exit(1)
+
+    target_file = repo_path / "opencode.json"
+
+    if target_file.exists() and not force:
+        click.echo(f"Error: {target_file} already exists. Use --force to overwrite.", err=True)
+        sys.exit(1)
+
+    # Generate config based on template
+    if template == "openrouter":
+        # Get API key from config
+        api_key = config.cocoindex.embedding_api_key or config.llm.api_key
+        opencode_config = {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "openrouter/google/gemini-3-pro-preview",
+            "permission": {"edit": "deny", "bash": "deny"},
+            "mcp": {
+                repo_name: {
+                    "type": "local",
+                    "command": ["cocode"],
+                    "environment": {
+                        "COCOINDEX_DATABASE_URL": config.cocoindex.database_url,
+                        "OPENAI_API_KEY": api_key,
+                        "OPENAI_BASE_URL": "https://openrouter.ai/api/v1",
+                        "EMBEDDING_PROVIDER": "openai",
+                        "EMBEDDING_MODEL": config.cocoindex.embedding_model,
+                    },
+                    "enabled": True,
+                }
+            },
+        }
+        click.echo(f"Using OpenRouter API key from config.yaml")
+    elif template == "jina":
+        opencode_config = {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "openrouter/google/gemini-3-pro-preview",
+            "permission": {"edit": "deny", "bash": "deny"},
+            "mcp": {
+                repo_name: {
+                    "type": "local",
+                    "command": ["cocode"],
+                    "environment": {
+                        "COCOINDEX_DATABASE_URL": config.cocoindex.database_url,
+                        "JINA_API_KEY": "${JINA_API_KEY}",
+                        "EMBEDDING_PROVIDER": "jina",
+                        "USE_LATE_CHUNKING": "true",
+                    },
+                    "enabled": True,
+                }
+            },
+        }
+        click.echo(f"Note: Set JINA_API_KEY environment variable before running OpenCode")
+    else:  # filesystem
+        opencode_config = {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "openrouter/google/gemini-3-pro-preview",
+            "permission": {"edit": "deny", "bash": "deny"},
+            "mcp": {
+                repo_name: {
+                    "type": "local",
+                    "command": ["npx", "-y", "@anthropic-ai/mcp-filesystem", str(repo_path)],
+                    "enabled": True,
+                }
+            },
+        }
+
+    # Write config
+    target_file.write_text(json.dumps(opencode_config, indent=2) + "\n")
+    click.echo(f"Created: {target_file}")
+    click.echo(f"Template: {template}")
+    
+    click.echo(f"\nNow run OpenCode in the repo:")
+    click.echo(f"  cd {repo_path} && opencode")
+
+
+@cocoindex.command("db")
+@click.argument("action", type=click.Choice(["start", "stop", "status"]))
+@click.pass_context
+def cocoindex_db(ctx: click.Context, action: str) -> None:
+    """Manage CocoIndex PostgreSQL database container.
+    
+    Commands:
+        start  - Start the PostgreSQL+pgvector container
+        stop   - Stop the container
+        status - Show container status
+    
+    Example:
+        bb-review cocoindex db start
+        bb-review cocoindex db status
+    """
+    import subprocess
+    
+    script_path = Path(__file__).parent.parent / "scripts" / "setup-cocoindex-db.sh"
+    if not script_path.exists():
+        click.echo(f"Error: Database script not found: {script_path}", err=True)
+        sys.exit(1)
+
+    try:
+        result = subprocess.run([str(script_path), action])
+        sys.exit(result.returncode)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
 @main.command()
 @click.pass_context
 def init(ctx: click.Context) -> None:
