@@ -214,20 +214,24 @@ def process_review(
             f"Add it to config.yaml under 'repositories'."
         )
 
-    # Checkout the commit
+    # Checkout the commit (with patch applied if target commit unavailable)
     click.echo(f"  Repository: {repo_config.name}")
     if diff_info.target_commit_id:
         click.echo(f"  Target commit: {diff_info.target_commit_id[:12]} (reviewing actual commit)")
     click.echo(f"  Base commit: {pending.base_commit or 'default branch'}")
+    
+    # Get raw diff for potential patch application
+    raw_diff = diff_info.raw_diff
     
     with repo_manager.checkout_context(
         repo_config.name,
         base_commit=pending.base_commit,
         branch=pending.branch,
         target_commit=diff_info.target_commit_id,
+        patch=raw_diff,
     ) as (repo_path, used_target):
         if used_target:
-            click.echo(f"  Checked out target commit (files at reviewed state)")
+            click.echo(f"  Checked out to reviewed state")
         
         # Load guidelines
         guidelines = load_guidelines(repo_path)
@@ -237,9 +241,8 @@ def process_review(
         for warning in warnings:
             click.echo(f"  Warning: {warning}", err=True)
 
-        # Get the diff
-        diff_info = rb_client.get_diff(review_id)
-        diff = diff_info.raw_diff
+        # Use the diff we already have
+        diff = raw_diff
 
         # Filter ignored paths
         if guidelines.ignore_paths:
@@ -368,15 +371,19 @@ def opencode_cmd(
             click.echo(f"  Target commit: {diff_info.target_commit_id[:12]} (reviewing actual commit)")
         click.echo(f"  Base commit: {pending.base_commit or 'default branch'}")
 
-        # Process in checkout context
+        # Get raw diff for potential patch application
+        raw_diff = diff_info.raw_diff
+
+        # Process in checkout context (with patch applied if target commit unavailable)
         with repo_manager.checkout_context(
             repo_config.name,
             base_commit=pending.base_commit,
             branch=pending.branch,
             target_commit=diff_info.target_commit_id,
+            patch=raw_diff,
         ) as (repo_path, used_target):
             if used_target:
-                click.echo(f"  Checked out target commit (files at reviewed state)")
+                click.echo(f"  Checked out to reviewed state")
 
             # Load guidelines
             guidelines = load_guidelines(repo_path)
@@ -385,9 +392,6 @@ def opencode_cmd(
             warnings = validate_guidelines(guidelines)
             for warning in warnings:
                 click.echo(f"  Warning: {warning}", err=True)
-
-            # Get the diff
-            raw_diff = diff_info.raw_diff
 
             # Filter ignored paths
             if guidelines.ignore_paths:

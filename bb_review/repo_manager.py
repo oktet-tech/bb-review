@@ -386,18 +386,21 @@ class RepoManager:
         base_commit: Optional[str] = None,
         branch: Optional[str] = None,
         target_commit: Optional[str] = None,
+        patch: Optional[str] = None,
     ) -> Generator[tuple[Path, bool], None, None]:
         """Context manager that checks out a ref and restores original state.
 
         If target_commit is provided and exists in the repo, it will be checked
-        out instead of the base_commit. This is useful for post-commit reviews
-        where the actual commit is available.
+        out instead of the base_commit. If target_commit is not available but
+        a patch is provided, the patch will be applied to base_commit to get
+        the same file state.
 
         Args:
             repo_name: Repository name.
             base_commit: Base commit SHA (fallback if target_commit unavailable).
             branch: Branch name.
             target_commit: Target commit SHA (the reviewed commit, if available).
+            patch: Raw diff content to apply if target_commit unavailable.
 
         Yields:
             Tuple of (path to repository, bool indicating if target_commit was used).
@@ -405,6 +408,8 @@ class RepoManager:
         repo = self.ensure_clone(repo_name)
         original_ref = repo.head.commit.hexsha
         used_target = False
+        patch_applied = False
+        untracked_before: set[str] = set()
 
         try:
             # Try to use target_commit if available and exists in repo
@@ -414,16 +419,41 @@ class RepoManager:
                 used_target = True
             else:
                 if target_commit:
-                    logger.debug(f"Target commit {target_commit[:12]} not in repo, using base")
+                    logger.debug(f"Target commit {target_commit[:12]} not in repo, using base + patch")
                 self.smart_checkout(repo_name, base_commit, branch)
+                
+                # Apply patch to get to reviewed state
+                if patch:
+                    # Track untracked files before patch to clean up only new ones
+                    untracked_before = set(repo.untracked_files)
+                    logger.info("Applying patch to reach reviewed state")
+                    if self.apply_patch(repo_name, patch):
+                        patch_applied = True
+                        logger.info("Patch applied successfully")
+                    else:
+                        logger.warning("Failed to apply patch cleanly, working with base state")
 
-            yield self.get_local_path(repo_name), used_target
+            yield self.get_local_path(repo_name), used_target or patch_applied
         finally:
             # Restore original state
             try:
-                repo.git.checkout(original_ref)
-            except GitCommandError:
-                logger.warning(f"Could not restore {repo_name} to {original_ref}")
+                # Reset modified files
+                repo.git.checkout("--force", original_ref)
+                
+                # Clean up only new files created by the patch
+                if patch_applied:
+                    untracked_after = set(repo.untracked_files)
+                    new_files = untracked_after - untracked_before
+                    if new_files:
+                        local_path = self.get_local_path(repo_name)
+                        for f in new_files:
+                            try:
+                                (local_path / f).unlink()
+                                logger.debug(f"Removed patch artifact: {f}")
+                            except OSError:
+                                pass
+            except GitCommandError as e:
+                logger.warning(f"Could not fully restore {repo_name} to {original_ref}: {e}")
 
     def list_repos(self) -> list[dict[str, str]]:
         """List all configured repositories with status.
