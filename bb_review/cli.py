@@ -431,11 +431,12 @@ def opencode_cmd(
                 
                 try:
                     click.echo(f"  Patch file: {patch_path}")
-                    # Use @filename syntax to attach the patch
+                    # Use @filename syntax to attach the patch, include summary for context
+                    api_prompt = f"Review #{review_id}: {pending.summary}\n\nReview the patch @.bb_review_patch.tmp"
                     api_analysis = run_opencode_agent(
                         repo_path=repo_path,
                         agent="api-reviewer",
-                        prompt=f"Review the patch @.bb_review_patch.tmp",
+                        prompt=api_prompt,
                         review_id=review_id,
                         model=model,
                         timeout=timeout,
