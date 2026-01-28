@@ -16,11 +16,11 @@ Semantic code search using `cocode-mcp` with Jina embeddings.
 - **Cons**: Requires PostgreSQL + Jina API key setup
 - **Use for**: Deep code understanding and review
 
-### `mcp-cocode-openrouter.json`
-Semantic code search using OpenRouter's embeddings API (Codestral Embed).
-- **Pros**: Use your existing OpenRouter API key for embeddings
-- **Cons**: Requires PostgreSQL setup
-- **Use for**: If you already have OpenRouter and don't want another API key
+### `mcp-cocode-lmstudio.json`
+Semantic code search using LM Studio for local embeddings.
+- **Pros**: Fully local, no API keys needed, privacy-friendly
+- **Cons**: Requires LM Studio running with an embedding model
+- **Use for**: Local-only setups, offline use, privacy-sensitive codebases
 
 ### `mcp-combined.json`
 Both semantic and filesystem MCP servers.
@@ -80,12 +80,11 @@ cp opencode/mcp-filesystem.json ~/repos/my-repo/opencode.json
 
 | Variable | Description | Required for |
 |----------|-------------|--------------|
-| `OPENROUTER_API_KEY` | OpenRouter API key | cocode with OpenRouter embeddings |
 | `JINA_API_KEY` | Jina AI API key (free tier at jina.ai) | cocode with Jina embeddings |
 | `COCOINDEX_DATABASE_URL` | PostgreSQL connection | cocode |
 
-**Tip**: If you have an OpenRouter key, use `mcp-cocode-openrouter.json` to get
-embeddings via `mistralai/codestral-embed-2505` without needing another API key.
+**Tip**: Use `mcp-cocode-lmstudio.json` for fully local embeddings without any API keys.
+Just make sure LM Studio is running with an embedding model like `nomic-embed-text-v1.5`.
 
 ## Usage with OpenCode
 

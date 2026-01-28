@@ -8,13 +8,12 @@
   "mcp": {
     "ol-te-dev": {
       "type": "local",
-      "command": ["cocode"],
+      "command": ["/Users/kostik/prj/tools/bb_review/.venv/bin/cocode"],
       "environment": {
         "COCOINDEX_DATABASE_URL": "postgresql://cocoindex:cocoindex@localhost:5432/cocoindex",
-        "OPENAI_API_KEY": "${OPENROUTER_API_KEY}",
-        "OPENAI_BASE_URL": "https://openrouter.ai/api/v1",
-        "EMBEDDING_PROVIDER": "openai",
-        "EMBEDDING_MODEL": "mistralai/codestral-embed-2505"
+        "JINA_API_KEY": "jina_a3e976f22e53419ea787b937ff6d1c14fyyuxR2yVgg9RdlNs9YqK0VHOlnz",
+        "EMBEDDING_PROVIDER": "jina",
+        "USE_LATE_CHUNKING": "true"
       },
       "enabled": true
     }

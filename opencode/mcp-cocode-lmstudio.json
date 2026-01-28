@@ -6,15 +6,15 @@
     "bash": "deny"
   },
   "mcp": {
-    "repo-name": {
+    "ol-te-dev": {
       "type": "local",
-      "command": ["cocode"],
+      "command": ["/Users/kostik/prj/tools/bb_review/.venv/bin/cocode"],
       "environment": {
         "COCOINDEX_DATABASE_URL": "postgresql://cocoindex:cocoindex@localhost:5432/cocoindex",
-        "OPENAI_API_KEY": "${OPENROUTER_API_KEY}",
-        "OPENAI_BASE_URL": "https://openrouter.ai/api/v1",
+        "OPENAI_API_KEY": "lm-studio",
+        "OPENAI_BASE_URL": "http://localhost:1234/v1",
         "EMBEDDING_PROVIDER": "openai",
-        "EMBEDDING_MODEL": "mistralai/codestral-embed-2505"
+        "EMBEDDING_MODEL": "qwen3-embedding-0.6b-dwq"
       },
       "enabled": true
     }
