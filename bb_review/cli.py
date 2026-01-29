@@ -1634,14 +1634,18 @@ def cocoindex_status_db(ctx: click.Context) -> None:
 
 @cocoindex.command("serve")
 @click.argument("repo_name")
+@click.option("--model", "-m", default=None, help="Embedding model (default: from config or all-MiniLM-L6-v2)")
 @click.pass_context
-def cocoindex_serve(ctx: click.Context, repo_name: str) -> None:
+def cocoindex_serve(ctx: click.Context, repo_name: str, model: str) -> None:
     """Start an MCP server for semantic code search.
     
     This starts an MCP server that OpenCode can connect to for
     semantic code search using the indexed repository.
     
     The server uses stdio transport (standard for MCP).
+    
+    Environment variables:
+        COCOINDEX_DATABASE_URL - PostgreSQL connection URL (required if no config)
     
     Example:
         bb-review cocoindex serve te-dev
@@ -1651,34 +1655,38 @@ def cocoindex_serve(ctx: click.Context, repo_name: str) -> None:
           "mcp": {
             "te-dev": {
               "type": "local",
-              "command": ["bb-review", "cocoindex", "serve", "te-dev"]
+              "command": ["bb-review", "cocoindex", "serve", "te-dev"],
+              "environment": {
+                "COCOINDEX_DATABASE_URL": "postgresql://..."
+              }
             }
           }
         }
     """
+    # Try to get config, but don't require it
+    embedding_model = model or "sentence-transformers/all-MiniLM-L6-v2"
+    db_url = os.environ.get("COCOINDEX_DATABASE_URL")
+    
     try:
         config = get_config(ctx)
+        if not db_url:
+            db_url = config.cocoindex.database_url
+        if not model:
+            embedding_model = config.cocoindex.embedding_model
     except FileNotFoundError:
-        click.echo("Error: Config file required", err=True)
-        sys.exit(1)
-
-    # Verify repo exists and is indexed
-    repo_config = config.get_repo_config_by_name(repo_name)
-    if repo_config is None:
-        click.echo(f"Error: Repository '{repo_name}' not found in config", err=True)
-        click.echo("Available repositories:")
-        for repo in config.repositories:
-            click.echo(f"  - {repo.name}")
-        sys.exit(1)
-
+        # Config not found - use env vars and defaults
+        if not db_url:
+            # Try default
+            db_url = "postgresql://cocoindex:cocoindex@localhost:5432/cocoindex"
+    
     # Set database URL in environment for the MCP server
-    os.environ["COCOINDEX_DATABASE_URL"] = config.cocoindex.database_url
+    os.environ["COCOINDEX_DATABASE_URL"] = db_url
     
     # Run the MCP server
     from .mcp_server import run_server
     run_server(
         repo_name=repo_name,
-        embedding_model=config.cocoindex.embedding_model
+        embedding_model=embedding_model
     )
 
 
