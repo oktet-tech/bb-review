@@ -18,7 +18,7 @@ IMPORTANT: Focus ONLY on the attached patch file. Do not review the entire repos
 When reviewing code changes in the patch:
 
 1. Read the patch file to understand what changed
-2. For APIs being used, look up the definitions via the ol-te-dev MCP
+2. For APIs being used, look up the definitions via the te-dev MCP
 3. Verify the usage matches the API contract:
    - Correct function parameters
    - Proper error handling
