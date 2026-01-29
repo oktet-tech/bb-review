@@ -155,7 +155,7 @@ def run_opencode_review(
     binary_path: str = "opencode",
     at_reviewed_state: bool = False,
 ) -> str:
-    """Run opencode in plan mode and return the analysis.
+    """Run opencode and return the analysis.
 
     Args:
         repo_path: Path to the repository to run opencode in.
@@ -193,10 +193,10 @@ def run_opencode_review(
 
     try:
         # Build command
+        # Note: Don't use --agent plan as it doesn't produce stdout output
         cmd = [
             opencode_bin,
             "run",
-            "--agent", "plan",
             "--title", f"Review-{review_id}",
         ]
 
@@ -208,7 +208,7 @@ def run_opencode_review(
             cmd.extend(["--model", model])
 
         # Add the prompt as the message
-        cmd.append("'" + prompt + "'")
+        cmd.append(prompt)
 
         logger.info(f"Running opencode in {repo_path}")
 
