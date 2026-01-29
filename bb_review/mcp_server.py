@@ -155,7 +155,8 @@ def run_server(repo_name: str, embedding_model: str = None, log_file: str = None
     Args:
         repo_name: Name of the repository to search
         embedding_model: HuggingFace model for query embeddings
-        log_file: Optional file path to write logs (in addition to stderr)
+        log_file: File path to write logs. Defaults to ~/.bb_review/mcp-{repo_name}.log
+                  Set to empty string "" to disable file logging.
     """
     global _repo_name, _embedding_model
     _repo_name = repo_name
@@ -169,7 +170,11 @@ def run_server(repo_name: str, embedding_model: str = None, log_file: str = None
     logging.getLogger("docket").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     
-    # Add file handler if log_file specified
+    # Default log file is ~/.bb_review/mcp-{repo_name}.log
+    if log_file is None:
+        log_file = f"~/.bb_review/mcp-{repo_name}.log"
+    
+    # Add file handler (unless explicitly disabled with empty string)
     if log_file:
         log_path = Path(log_file).expanduser()
         log_path.parent.mkdir(parents=True, exist_ok=True)

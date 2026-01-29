@@ -1635,7 +1635,7 @@ def cocoindex_status_db(ctx: click.Context) -> None:
 @cocoindex.command("serve")
 @click.argument("repo_name")
 @click.option("--model", "-m", default=None, help="Embedding model (default: from config or all-MiniLM-L6-v2)")
-@click.option("--log-file", "-l", default=None, help="Log file path (e.g., ~/.bb_review/mcp.log)")
+@click.option("--log-file", "-l", default=None, help="Log file path (default: ~/.bb_review/mcp-{repo}.log, use '' to disable)")
 @click.pass_context
 def cocoindex_serve(ctx: click.Context, repo_name: str, model: str, log_file: str) -> None:
     """Start an MCP server for semantic code search.
@@ -1644,21 +1644,23 @@ def cocoindex_serve(ctx: click.Context, repo_name: str, model: str, log_file: st
     semantic code search using the indexed repository.
     
     The server uses stdio transport (standard for MCP).
-    Logs go to stderr (and optionally to a file with --log-file).
+    Logs go to stderr and to ~/.bb_review/mcp-{repo_name}.log by default.
     
     Environment variables:
         COCOINDEX_DATABASE_URL - PostgreSQL connection URL (required if no config)
     
     Example:
         bb-review cocoindex serve te-dev
-        bb-review cocoindex serve te-dev --log-file ~/.bb_review/mcp.log
+        
+        # Watch logs in another terminal:
+        tail -f ~/.bb_review/mcp-te-dev.log
         
     To use with OpenCode, add to opencode.json:
         {
           "mcp": {
             "te-dev": {
               "type": "local",
-              "command": ["bb-review", "cocoindex", "serve", "te-dev", "-l", "~/.bb_review/mcp.log"],
+              "command": ["bb-review", "cocoindex", "serve", "te-dev"],
               "environment": {
                 "COCOINDEX_DATABASE_URL": "postgresql://..."
               }
