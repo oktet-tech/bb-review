@@ -72,6 +72,8 @@ def codebase_search(query: str, top_k: int = 10) -> dict:
     """
     global _repo_name, _embedding_model
     
+    logger.info(f"[MCP REQUEST] codebase_search(query={query!r}, top_k={top_k})")
+    
     if not _repo_name:
         return {
             "error": "No repository configured. Start server with a repo name.",
@@ -90,7 +92,7 @@ def codebase_search(query: str, top_k: int = 10) -> dict:
             embedding_model=_embedding_model or "sentence-transformers/all-MiniLM-L6-v2"
         )
         
-        return {
+        response = {
             "query": query,
             "repo": _repo_name,
             "count": len(results),
@@ -103,8 +105,12 @@ def codebase_search(query: str, top_k: int = 10) -> dict:
                 for r in results
             ]
         }
+        logger.info(f"[MCP RESPONSE] codebase_search: {len(results)} results")
+        for r in results[:3]:  # Log top 3 results
+            logger.info(f"  - {r['filename']} (score: {r['score']:.4f})")
+        return response
     except Exception as e:
-        logger.error(f"Search failed: {e}")
+        logger.error(f"[MCP ERROR] Search failed: {e}")
         return {
             "error": str(e),
             "query": query,
@@ -119,11 +125,13 @@ def codebase_status() -> dict:
     Returns information about what repositories are indexed and their
     file/chunk counts.
     """
+    logger.info("[MCP REQUEST] codebase_status()")
+    
     try:
         indexer = get_indexer()
         status = indexer.get_status()
         
-        return {
+        response = {
             "repositories": [
                 {
                     "name": s["repo"],
@@ -134,17 +142,20 @@ def codebase_status() -> dict:
             ],
             "current_repo": _repo_name
         }
+        logger.info(f"[MCP RESPONSE] codebase_status: {len(status)} repos indexed")
+        return response
     except Exception as e:
-        logger.error(f"Status check failed: {e}")
+        logger.error(f"[MCP ERROR] Status check failed: {e}")
         return {"error": str(e), "repositories": []}
 
 
-def run_server(repo_name: str, embedding_model: str = None):
+def run_server(repo_name: str, embedding_model: str = None, log_file: str = None):
     """Run the MCP server for a specific repository.
     
     Args:
         repo_name: Name of the repository to search
         embedding_model: HuggingFace model for query embeddings
+        log_file: Optional file path to write logs (in addition to stderr)
     """
     global _repo_name, _embedding_model
     _repo_name = repo_name
@@ -157,6 +168,17 @@ def run_server(repo_name: str, embedding_model: str = None):
     logging.getLogger("mcp").setLevel(logging.WARNING)
     logging.getLogger("docket").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    
+    # Add file handler if log_file specified
+    if log_file:
+        log_path = Path(log_file).expanduser()
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(log_path)
+        file_handler.setFormatter(logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+        ))
+        logger.addHandler(file_handler)
+        logger.info(f"Logging to file: {log_path}")
     
     # Log to stderr only
     logger.info(f"Starting MCP server for repository: {repo_name}")
@@ -183,6 +205,11 @@ def main():
         default=None,
         help="PostgreSQL database URL (default: from COCOINDEX_DATABASE_URL or localhost)"
     )
+    parser.add_argument(
+        "--log-file", "-l",
+        default=None,
+        help="Log file path (logs also go to stderr)"
+    )
     
     args = parser.parse_args()
     
@@ -195,7 +222,7 @@ def main():
         stream=sys.stderr  # Log to stderr, keep stdout for MCP protocol
     )
     
-    run_server(args.repo_name, args.model)
+    run_server(args.repo_name, args.model, args.log_file)
 
 
 if __name__ == "__main__":

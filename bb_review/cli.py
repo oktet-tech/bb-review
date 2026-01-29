@@ -1635,27 +1635,30 @@ def cocoindex_status_db(ctx: click.Context) -> None:
 @cocoindex.command("serve")
 @click.argument("repo_name")
 @click.option("--model", "-m", default=None, help="Embedding model (default: from config or all-MiniLM-L6-v2)")
+@click.option("--log-file", "-l", default=None, help="Log file path (e.g., ~/.bb_review/mcp.log)")
 @click.pass_context
-def cocoindex_serve(ctx: click.Context, repo_name: str, model: str) -> None:
+def cocoindex_serve(ctx: click.Context, repo_name: str, model: str, log_file: str) -> None:
     """Start an MCP server for semantic code search.
     
     This starts an MCP server that OpenCode can connect to for
     semantic code search using the indexed repository.
     
     The server uses stdio transport (standard for MCP).
+    Logs go to stderr (and optionally to a file with --log-file).
     
     Environment variables:
         COCOINDEX_DATABASE_URL - PostgreSQL connection URL (required if no config)
     
     Example:
         bb-review cocoindex serve te-dev
+        bb-review cocoindex serve te-dev --log-file ~/.bb_review/mcp.log
         
     To use with OpenCode, add to opencode.json:
         {
           "mcp": {
             "te-dev": {
               "type": "local",
-              "command": ["bb-review", "cocoindex", "serve", "te-dev"],
+              "command": ["bb-review", "cocoindex", "serve", "te-dev", "-l", "~/.bb_review/mcp.log"],
               "environment": {
                 "COCOINDEX_DATABASE_URL": "postgresql://..."
               }
@@ -1686,7 +1689,8 @@ def cocoindex_serve(ctx: click.Context, repo_name: str, model: str) -> None:
     from .mcp_server import run_server
     run_server(
         repo_name=repo_name,
-        embedding_model=embedding_model
+        embedding_model=embedding_model,
+        log_file=log_file
     )
 
 
