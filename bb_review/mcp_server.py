@@ -150,11 +150,21 @@ def run_server(repo_name: str, embedding_model: str = None):
     _repo_name = repo_name
     _embedding_model = embedding_model
     
+    # Suppress all logging that might go to stdout
+    # FastMCP and other libraries may log to stdout which breaks MCP protocol
+    import sys
+    logging.getLogger("fastmcp").setLevel(logging.WARNING)
+    logging.getLogger("mcp").setLevel(logging.WARNING)
+    logging.getLogger("docket").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    
+    # Log to stderr only
     logger.info(f"Starting MCP server for repository: {repo_name}")
     logger.info(f"Embedding model: {embedding_model or 'sentence-transformers/all-MiniLM-L6-v2'}")
     
     # Run the server (stdio transport for MCP)
-    mcp.run()
+    # show_banner=False is critical - the banner breaks JSON-RPC protocol
+    mcp.run(show_banner=False)
 
 
 def main():
