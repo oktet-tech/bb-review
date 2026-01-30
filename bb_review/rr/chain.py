@@ -203,13 +203,11 @@ def resolve_chain(
         # Determine if this RR needs review
         needs_review = rr_info.status == "pending"
 
-        # For submitted RRs, find the commit
+        # For submitted RRs, we need to find where to start applying patches.
+        # The submitted RR is already in the repo, so we need its commit SHA.
         if rr_info.status == "submitted":
-            if rr_info.base_commit_id:
-                # Use base_commit_id of next RR if available
-                pass
-            elif find_commit_func:
-                # Try to find commit by summary
+            # Try to find the commit by summary using the provided function
+            if find_commit_func:
                 commit = find_commit_func(target_repo, rr_info.summary)
                 if commit:
                     # This submitted RR's commit becomes the base for the rest
@@ -217,6 +215,7 @@ def resolve_chain(
                 else:
                     raise SubmittedCommitNotFoundError(rr_id, rr_info.summary)
             else:
+                # No way to find the commit - require manual specification
                 raise SubmittedCommitNotFoundError(rr_id, rr_info.summary)
 
         # For the first pending RR, use its base_commit_id as chain base
