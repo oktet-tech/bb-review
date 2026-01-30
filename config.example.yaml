@@ -85,6 +85,12 @@ opencode:
   timeout: 300  # Timeout in seconds
   binary_path: "opencode"  # Path to opencode binary (or just "opencode" if in PATH)
 
+# Reviews database - stores analysis history for tracking and export
+# Enables: bb-review db list/show/export/stats commands
+review_db:
+  enabled: false  # Set to true to enable reviews database
+  path: "~/.bb_review/reviews.db"
+
 # CocoIndex semantic code indexing settings
 # Provides enhanced code search via MCP for OpenCode agents
 # Setup: ./scripts/setup-cocoindex-db.sh start
