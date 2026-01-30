@@ -1,5 +1,6 @@
 """Utility commands for BB Review CLI."""
 
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -7,6 +8,60 @@ from typing import Optional
 import click
 
 from . import main, get_config
+
+
+def parse_review_id(value: str) -> int:
+    """Parse a review ID from either a number or a Review Board URL.
+    
+    Accepts:
+        - Plain number: "42738"
+        - RB URL: "https://rb.example.com/r/42738/"
+        - RB URL without trailing slash: "https://rb.example.com/r/42738"
+        - RB URL with diff: "https://rb.example.com/r/42738/diff/"
+    
+    Returns:
+        The extracted review ID as an integer.
+    
+    Raises:
+        click.BadParameter: If the value cannot be parsed.
+    """
+    # Try plain integer first
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    
+    # Try URL pattern: .../r/{id}/... or .../r/{id}
+    match = re.search(r'/r/(\d+)(?:/|$)', value)
+    if match:
+        return int(match.group(1))
+    
+    raise click.BadParameter(
+        f"Cannot parse review ID from '{value}'. "
+        "Expected a number or a Review Board URL like 'https://rb.example.com/r/42738/'"
+    )
+
+
+class ReviewIdParamType(click.ParamType):
+    """Click parameter type that accepts either a review ID or RB URL."""
+    
+    name = "review_id"
+    
+    def convert(self, value, param, ctx):
+        if value is None:
+            return None
+        
+        # If already an int, return it
+        if isinstance(value, int):
+            return value
+        
+        try:
+            return parse_review_id(value)
+        except click.BadParameter as e:
+            self.fail(str(e), param, ctx)
+
+
+REVIEW_ID = ReviewIdParamType()
 
 
 @main.command()

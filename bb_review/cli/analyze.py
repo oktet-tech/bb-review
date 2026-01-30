@@ -15,18 +15,23 @@ from ..reviewers import Analyzer, extract_changed_files, filter_diff_by_paths
 from ..rr import Commenter, ReviewBoardClient, ReviewFormatter
 from ..git import RepoManager
 from . import main, get_config
+from .utils import REVIEW_ID
 
 logger = logging.getLogger(__name__)
 
 
 @main.command()
-@click.argument("review_id", type=int)
+@click.argument("review_id", type=REVIEW_ID)
 @click.option("--dry-run", is_flag=True, help="Don't post, just show what would be posted")
 @click.option("--format", "output_format", type=click.Choice(["text", "json", "markdown"]), default="text")
 @click.option("--dump-response", type=click.Path(path_type=Path), help="Dump raw LLM response to file")
 @click.pass_context
 def analyze(ctx: click.Context, review_id: int, dry_run: bool, output_format: str, dump_response: Optional[Path]) -> None:
-    """Analyze a specific review request."""
+    """Analyze a specific review request.
+    
+    REVIEW_ID can be either a number (e.g., 42738) or a full Review Board URL
+    (e.g., https://rb.example.com/r/42738/).
+    """
     try:
         config = get_config(ctx)
     except FileNotFoundError:

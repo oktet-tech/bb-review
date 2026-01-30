@@ -25,12 +25,13 @@ from ..reviewers import (
 from ..rr import ReviewBoardClient, ReviewFormatter
 from ..git import RepoManager
 from . import main, get_config
+from .utils import REVIEW_ID
 
 logger = logging.getLogger(__name__)
 
 
 @main.command("opencode")
-@click.argument("review_id", type=int)
+@click.argument("review_id", type=REVIEW_ID)
 @click.option("--dry-run", is_flag=True, help="Don't post, just show what would be posted")
 @click.option("--model", "-m", help="Override opencode model (e.g., anthropic/claude-sonnet-4-20250514)")
 @click.option("--timeout", default=300, type=int, help="Timeout in seconds for opencode")
@@ -48,6 +49,9 @@ def opencode_cmd(
 ) -> None:
     """Analyze a review using OpenCode agent.
 
+    REVIEW_ID can be either a number (e.g., 42738) or a full Review Board URL
+    (e.g., https://rb.example.com/r/42738/).
+
     This runs OpenCode in Plan mode within the repository directory,
     giving it full codebase context for more thorough analysis.
 
@@ -56,6 +60,7 @@ def opencode_cmd(
 
     Example:
         bb-review opencode 42738 --dry-run
+        bb-review opencode https://rb.example.com/r/42738/ --dry-run
     """
     try:
         config = get_config(ctx)
