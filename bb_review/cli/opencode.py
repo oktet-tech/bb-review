@@ -10,6 +10,7 @@ import click
 
 from ..git import PatchApplyError, RepoManager
 from ..guidelines import load_guidelines, validate_guidelines
+from ..models import ReviewComment, ReviewFocus, ReviewResult, Severity
 from ..reviewers import (
     OpenCodeError,
     OpenCodeTimeoutError,
@@ -361,6 +362,19 @@ def opencode_cmd(
                     output_files.append(output_path)
                     click.echo(f"  Saved: {output_path}")
 
+                # Save to reviews database if enabled
+                if config.review_db.enabled:
+                    _save_opencode_to_review_db(
+                        config=config,
+                        review_id=rr_id,
+                        diff_revision=diff_info.diff_revision,
+                        repository=review_chain.repository,
+                        parsed=parsed,
+                        model=model or config.opencode.model or "default",
+                        chain_id=branch_name if len(pending) > 1 else None,
+                        chain_position=i + 1 if len(pending) > 1 else None,
+                    )
+
                 # Dump raw response if requested (last review)
                 if dump_response and i == len(pending) - 1:
                     dump_response.write_text(analysis)
@@ -702,6 +716,28 @@ def run_single_opencode_review(
     click.echo(f"\nReview saved to: {output_file}")
     click.echo(f"To submit: bb-review submit {output_file}")
 
+    # Save to reviews database if enabled
+    if config.review_db.enabled:
+        # Merge API issues if present
+        merged_parsed = parsed
+        if api_parsed:
+            # Create a simple merged parsed result
+            from types import SimpleNamespace
+
+            merged_parsed = SimpleNamespace(
+                issues=all_issues,
+                summary=parsed.summary or (api_parsed.summary if api_parsed else ""),
+                unparsed_text=parsed.unparsed_text,
+            )
+        _save_opencode_to_review_db(
+            config=config,
+            review_id=review_id,
+            diff_revision=diff_info.diff_revision,
+            repository=repo_config.name,
+            parsed=merged_parsed,
+            model=model or config.opencode.model or "default",
+        )
+
 
 def run_api_review(
     review_id: int,
@@ -749,3 +785,82 @@ def run_api_review(
                 tmp_file.unlink()
             except Exception:
                 pass
+
+
+def _save_opencode_to_review_db(
+    config,
+    review_id: int,
+    diff_revision: int,
+    repository: str,
+    parsed,
+    model: str,
+    chain_id: str | None = None,
+    chain_position: int | None = None,
+) -> None:
+    """Save an OpenCode review result to the reviews database."""
+    from ..db import ReviewDatabase
+
+    # Convert parsed issues to ReviewComment objects
+    comments = []
+    has_critical = False
+
+    for issue in parsed.issues:
+        # Map severity string to enum
+        severity = Severity.MEDIUM
+        if issue.severity:
+            sev_lower = issue.severity.lower()
+            if "critical" in sev_lower:
+                severity = Severity.CRITICAL
+                has_critical = True
+            elif "high" in sev_lower:
+                severity = Severity.HIGH
+            elif "low" in sev_lower:
+                severity = Severity.LOW
+
+        # Map issue_type to ReviewFocus
+        issue_type = ReviewFocus.BUGS
+        if issue.issue_type:
+            type_lower = issue.issue_type.lower()
+            if "security" in type_lower:
+                issue_type = ReviewFocus.SECURITY
+            elif "performance" in type_lower or "perf" in type_lower:
+                issue_type = ReviewFocus.PERFORMANCE
+            elif "style" in type_lower:
+                issue_type = ReviewFocus.STYLE
+            elif "architecture" in type_lower or "design" in type_lower:
+                issue_type = ReviewFocus.ARCHITECTURE
+
+        if issue.file_path and issue.line_number:
+            comments.append(
+                ReviewComment(
+                    file_path=issue.file_path,
+                    line_number=issue.line_number,
+                    message=issue.comment or issue.title or "",
+                    severity=severity,
+                    issue_type=issue_type,
+                    suggestion=issue.suggestion,
+                )
+            )
+
+    # Create ReviewResult
+    result = ReviewResult(
+        review_request_id=review_id,
+        diff_revision=diff_revision,
+        comments=comments,
+        summary=parsed.summary or "OpenCode analysis complete",
+        has_critical_issues=has_critical,
+    )
+
+    try:
+        review_db = ReviewDatabase(config.review_db.resolved_path)
+        analysis_id = review_db.save_analysis(
+            result=result,
+            repository=repository,
+            analysis_method="opencode",
+            model=model,
+            chain_id=chain_id,
+            chain_position=chain_position,
+        )
+        logger.debug(f"Saved opencode analysis {analysis_id} to reviews database")
+    except Exception as e:
+        logger.warning(f"Failed to save to reviews database: {e}")
