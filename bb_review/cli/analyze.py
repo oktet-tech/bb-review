@@ -299,12 +299,11 @@ def analyze(
                 diff_info = rb_client.get_diff(rr_id, review.diff_revision)
 
                 # Commit previous reviewed patch first (if not first)
+                # The previous patch is already staged from the last iteration
                 if i > 0:
                     prev_review = pending[i - 1]
-                    prev_diff = rb_client.get_diff(prev_review.review_request_id, prev_review.diff_revision)
-                    if not repo_manager.apply_and_commit(
+                    if not repo_manager.commit_staged(
                         repo_config.name,
-                        prev_diff.raw_diff,
                         f"r/{prev_review.review_request_id}: {prev_review.summary[:50]}",
                     ):
                         rr = prev_review.review_request_id
@@ -347,10 +346,8 @@ def analyze(
                     save_review_to_file(result, output)
                     click.echo(f"  Saved: {output}")
 
-                # Reset staged changes for next iteration (if not last)
-                if i < len(pending) - 1:
-                    repo = repo_manager.ensure_clone(repo_config.name)
-                    repo.git.reset("HEAD")
+                # Note: staged changes are kept and will be committed at the start
+                # of the next iteration (or left staged if this is the last patch)
 
         # Final output
         if keep_branch:

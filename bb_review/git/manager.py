@@ -571,6 +571,26 @@ class RepoManager:
             logger.warning(f"Failed to commit: {e}")
             return False
 
+    def commit_staged(self, repo_name: str, commit_message: str) -> bool:
+        """Commit currently staged changes.
+
+        Args:
+            repo_name: Repository name.
+            commit_message: Commit message to use.
+
+        Returns:
+            True if commit was successful.
+        """
+        repo = self.ensure_clone(repo_name)
+
+        try:
+            repo.git.commit("-m", commit_message)
+            logger.info(f"Committed staged changes: {commit_message[:50]}...")
+            return True
+        except GitCommandError as e:
+            logger.warning(f"Failed to commit: {e}")
+            return False
+
     def delete_branch(self, repo_name: str, branch_name: str, force: bool = True) -> None:
         """Delete a branch from the repository.
 
