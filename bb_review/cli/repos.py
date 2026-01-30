@@ -1,14 +1,19 @@
 """Repository management commands for BB Review CLI."""
 
+import logging
 from pathlib import Path
 import shutil
 import sys
 
 import click
+from git import Repo
 
 from ..git import RepoManager, RepoManagerError
 from ..guidelines import create_example_guidelines
 from . import get_config, main
+
+
+logger = logging.getLogger(__name__)
 
 
 @main.group()
@@ -221,3 +226,145 @@ def repos_mcp_setup(ctx: click.Context, repo_name: str, force: bool) -> None:
 
     click.echo(f"\nMCP setup complete for '{repo_name}'")
     click.echo("OpenCode can now use the ol-te-dev MCP server for API review.")
+
+
+@repos.command("clean")
+@click.argument("repo_name", required=False)
+@click.option("--dry-run", is_flag=True, help="Show what would be done without doing it")
+@click.option("--force", "-f", is_flag=True, help="Don't ask for confirmation")
+@click.pass_context
+def repos_clean(ctx: click.Context, repo_name: str | None, dry_run: bool, force: bool) -> None:
+    """Clean up temporary branches and local changes in repositories.
+
+    Removes all bb_review_* branches and resets any uncommitted changes.
+    If REPO_NAME is specified, only cleans that repository.
+    Otherwise cleans all configured repositories.
+
+    Examples:
+        bb-review repos clean              # Clean all repos
+        bb-review repos clean te-dev       # Clean specific repo
+        bb-review repos clean --dry-run    # Show what would be done
+    """
+    try:
+        config = get_config(ctx)
+    except FileNotFoundError:
+        click.echo("Error: Config file required", err=True)
+        sys.exit(1)
+
+    repo_manager = RepoManager(config.get_all_repos())
+
+    # Determine which repos to clean
+    if repo_name:
+        try:
+            repo_config = repo_manager.get_repo(repo_name)
+            repos_to_clean = [(repo_name, repo_config.local_path)]
+        except RepoManagerError as e:
+            click.echo(f"Error: {e}", err=True)
+            sys.exit(1)
+    else:
+        repos_to_clean = [(name, cfg.local_path) for name, cfg in repo_manager.repos.items()]
+
+    # Collect what needs to be cleaned
+    total_branches = 0
+    total_dirty = 0
+    cleanup_info = []
+
+    for name, local_path in repos_to_clean:
+        if not local_path.exists():
+            continue
+
+        try:
+            repo = Repo(local_path)
+        except Exception as e:
+            logger.warning(f"Could not open repo {name}: {e}")
+            continue
+
+        # Find bb_review_* branches
+        bb_branches = [b.name for b in repo.heads if b.name.startswith("bb_review_")]
+
+        # Check for dirty state
+        is_dirty = repo.is_dirty(untracked_files=True)
+
+        if bb_branches or is_dirty:
+            cleanup_info.append(
+                {
+                    "name": name,
+                    "path": local_path,
+                    "branches": bb_branches,
+                    "dirty": is_dirty,
+                    "repo": repo,
+                }
+            )
+            total_branches += len(bb_branches)
+            if is_dirty:
+                total_dirty += 1
+
+    if not cleanup_info:
+        click.echo("Nothing to clean - all repositories are clean.")
+        return
+
+    # Show what will be cleaned
+    click.echo("The following will be cleaned:")
+    click.echo("=" * 60)
+
+    for info in cleanup_info:
+        click.echo(f"\n{info['name']}:")
+        if info["branches"]:
+            click.echo(f"  Branches to delete: {len(info['branches'])}")
+            for branch in info["branches"]:
+                click.echo(f"    - {branch}")
+        if info["dirty"]:
+            click.echo("  Reset uncommitted changes: Yes")
+
+    click.echo(f"\nTotal: {total_branches} branch(es), {total_dirty} repo(s) with changes")
+
+    if dry_run:
+        click.echo("\n[DRY RUN] No changes made.")
+        return
+
+    # Confirm unless --force
+    if not force:
+        if not click.confirm("\nProceed with cleanup?"):
+            click.echo("Aborted.")
+            return
+
+    # Perform cleanup
+    click.echo("\nCleaning...")
+
+    for info in cleanup_info:
+        name = info["name"]
+        repo = info["repo"]
+        repo_config = repo_manager.get_repo(name)
+
+        click.echo(f"\n{name}:")
+
+        # First, checkout default branch to avoid being on a branch we're deleting
+        try:
+            default_ref = f"origin/{repo_config.default_branch}"
+            repo.git.checkout(default_ref)
+            click.echo(f"  Checked out: {default_ref}")
+        except Exception as e:
+            logger.warning(f"Could not checkout default branch: {e}")
+            try:
+                repo.git.checkout("--detach")
+            except Exception:
+                pass
+
+        # Delete bb_review_* branches
+        for branch in info["branches"]:
+            try:
+                repo.git.branch("-D", branch)
+                click.echo(f"  Deleted branch: {branch}")
+            except Exception as e:
+                click.echo(f"  Failed to delete {branch}: {e}", err=True)
+
+        # Reset changes
+        if info["dirty"]:
+            try:
+                repo.git.reset("--hard")
+                repo.git.clean("-fd")
+                click.echo("  Reset uncommitted changes")
+            except Exception as e:
+                click.echo(f"  Failed to reset: {e}", err=True)
+
+    click.echo("\nCleanup complete.")
