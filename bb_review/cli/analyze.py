@@ -15,6 +15,7 @@ from ..models import ChainReviewResult, PendingReview, ReviewComment, ReviewFocu
 from ..reviewers import Analyzer, extract_changed_files, filter_diff_by_paths
 from ..rr import (
     ChainError,
+    DiffInfo,
     ReviewBoardClient,
     ReviewChain,
     ReviewFormatter,
@@ -346,6 +347,18 @@ def analyze(
                     save_review_to_file(result, output)
                     click.echo(f"  Saved: {output}")
 
+                # Save to reviews database if enabled
+                if config.review_db.enabled:
+                    _save_to_review_db(
+                        config=config,
+                        result=result,
+                        repository=review_chain.repository,
+                        diff_info=diff_info,
+                        chain_id=chain_result.chain_id if len(pending) > 1 else None,
+                        chain_position=i + 1 if len(pending) > 1 else None,
+                        model=config.llm.model,
+                    )
+
                 # Note: staged changes are kept and will be committed at the start
                 # of the next iteration (or left staged if this is the last patch)
 
@@ -353,6 +366,10 @@ def analyze(
         if keep_branch:
             chain_result.branch_name = branch_name
             click.echo(f"\nKept branch: {branch_name}")
+
+        # Save chain info to database if enabled and multiple reviews
+        if config.review_db.enabled and len(chain_result.reviews) > 1:
+            _save_chain_to_review_db(config, chain_result)
 
         # Dump raw response if requested (for last review)
         if dump_response and analyzer:
@@ -461,6 +478,63 @@ def save_review_to_file(result: ReviewResult, path: Path) -> None:
     """Save a review result to a JSON file."""
     data = ReviewFormatter.format_as_json(result)
     path.write_text(json.dumps(data, indent=2))
+
+
+def _save_to_review_db(
+    config: Config,
+    result: ReviewResult,
+    repository: str,
+    diff_info: DiffInfo,
+    chain_id: str | None = None,
+    chain_position: int | None = None,
+    model: str = "",
+) -> None:
+    """Save a review result to the reviews database."""
+    from ..db import ReviewDatabase
+
+    try:
+        review_db = ReviewDatabase(config.review_db.resolved_path)
+        analysis_id = review_db.save_analysis(
+            result=result,
+            repository=repository,
+            analysis_method="llm",
+            model=model,
+            diff_info=diff_info,
+            chain_id=chain_id,
+            chain_position=chain_position,
+        )
+        logger.debug(f"Saved analysis {analysis_id} to reviews database")
+    except Exception as e:
+        logger.warning(f"Failed to save to reviews database: {e}")
+
+
+def _save_chain_to_review_db(config: Config, chain_result: ChainReviewResult) -> None:
+    """Save chain info to the reviews database."""
+    from ..db import ReviewDatabase
+
+    try:
+        review_db = ReviewDatabase(config.review_db.resolved_path)
+        # Insert chain record (analyses were already saved individually)
+        with review_db._connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO chains (
+                    chain_id, created_at, repository, partial,
+                    failed_at_rr_id, branch_name
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    chain_result.chain_id,
+                    datetime.now().isoformat(),
+                    chain_result.repository,
+                    1 if chain_result.partial else 0,
+                    chain_result.failed_at_rr_id,
+                    chain_result.branch_name,
+                ),
+            )
+        logger.debug(f"Saved chain {chain_result.chain_id} to reviews database")
+    except Exception as e:
+        logger.warning(f"Failed to save chain to reviews database: {e}")
 
 
 # Keep old process_review for backward compatibility with other modules
