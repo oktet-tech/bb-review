@@ -76,6 +76,11 @@ def create_mock_review(review_id: int, diff_revision: int) -> ReviewResult:
 )
 @click.option("--base-commit", help="Base commit SHA for chain (used with --chain-file)")
 @click.option("--keep-branch", is_flag=True, help="Don't delete the review branch after completion")
+@click.option(
+    "--review-from",
+    type=REVIEW_ID,
+    help="Start reviewing from this RR (earlier patches applied as context only)",
+)
 @click.pass_context
 def analyze(
     ctx: click.Context,
@@ -90,6 +95,7 @@ def analyze(
     chain_file: Path | None,
     base_commit: str | None,
     keep_branch: bool,
+    review_from: int | None,
 ) -> None:
     """Analyze a review request using LLM.
 
@@ -99,8 +105,21 @@ def analyze(
     By default, reviews the entire dependency chain. Use --no-chain to review
     only the specified review request.
 
+    Use --review-from to start reviewing from a specific patch in the chain,
+    applying earlier patches as context only (not reviewed).
+
     Results are output to stdout by default. Use -O to auto-generate output
     files (review_{rr_id}.json for each review).
+
+    Examples:
+        # Review entire chain
+        bb-review analyze 42763
+
+        # Review only 42763 (apply 42761, 42762 as context)
+        bb-review analyze 42763 --review-from 42763
+
+        # Review 42762 and 42763 (apply 42761 as context)
+        bb-review analyze 42763 --review-from 42762
     """
     if output and auto_output:
         raise click.UsageError("Cannot use both -o and -O options")
@@ -175,6 +194,25 @@ def analyze(
                 )
             )
 
+        # Apply --review-from filter if specified
+        if review_from is not None:
+            # Validate that review_from is in the chain
+            chain_ids = [r.review_request_id for r in review_chain.reviews]
+            if review_from not in chain_ids:
+                raise click.ClickException(
+                    f"Review r/{review_from} is not in the chain: {chain_ids}. "
+                    f"Use one of the reviews in the chain."
+                )
+
+            # Mark reviews before review_from as not needing review
+            found_start = False
+            for review in review_chain.reviews:
+                if review.review_request_id == review_from:
+                    found_start = True
+                if not found_start:
+                    review.needs_review = False
+                    click.echo(f"  Skipping review of r/{review.review_request_id} (context only)")
+
         # Display chain info
         pending = review_chain.pending_reviews
         if len(pending) == 0:
@@ -183,7 +221,7 @@ def analyze(
 
         chain_str = " -> ".join(f"r/{r.review_request_id}" for r in review_chain.reviews)
         click.echo(f"  Chain: {chain_str}")
-        click.echo(f"  Pending: {len(pending)} review(s)")
+        click.echo(f"  To review: {len(pending)} patch(es)")
         click.echo(f"  Base commit: {review_chain.base_commit or 'default branch'}")
 
         # Get repository config
@@ -234,6 +272,24 @@ def analyze(
         ) as repo_path:
             click.echo(f"\nCreated branch: {branch_name}")
 
+            # First, apply all context-only patches (needs_review=False)
+            context_patches = [r for r in review_chain.reviews if not r.needs_review]
+            for review in context_patches:
+                rr_id = review.review_request_id
+                click.echo(f"\nApplying context patch r/{rr_id}...")
+                diff_info = rb_client.get_diff(rr_id, review.diff_revision)
+                if not repo_manager.apply_and_commit(
+                    repo_config.name,
+                    diff_info.raw_diff,
+                    f"r/{rr_id}: {review.summary[:50]}",
+                ):
+                    click.echo(f"  ERROR: Failed to apply context patch r/{rr_id}", err=True)
+                    chain_result.partial = True
+                    chain_result.failed_at_rr_id = rr_id
+                    break
+                click.echo("  Applied and committed")
+
+            # Now review the pending patches
             for i, review in enumerate(pending):
                 rr_id = review.review_request_id
                 click.echo(f"\nReviewing r/{rr_id} ({i + 1}/{len(pending)})...")
@@ -242,9 +298,8 @@ def analyze(
                 # Fetch diff
                 diff_info = rb_client.get_diff(rr_id, review.diff_revision)
 
-                # Apply patch (if not first or if previous patches committed)
+                # Commit previous reviewed patch first (if not first)
                 if i > 0:
-                    # Commit previous patch first
                     prev_review = pending[i - 1]
                     prev_diff = rb_client.get_diff(prev_review.review_request_id, prev_review.diff_revision)
                     if not repo_manager.apply_and_commit(

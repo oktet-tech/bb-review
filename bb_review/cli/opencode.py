@@ -80,6 +80,11 @@ def generate_branch_name(target_rr_id: int) -> str:
     is_flag=True,
     help="Don't delete the review branch after completion",
 )
+@click.option(
+    "--review-from",
+    type=REVIEW_ID,
+    help="Start reviewing from this RR (earlier patches applied as context only)",
+)
 @click.pass_context
 def opencode_cmd(
     ctx: click.Context,
@@ -96,6 +101,7 @@ def opencode_cmd(
     chain_file: Path | None,
     base_commit: str | None,
     keep_branch: bool,
+    review_from: int | None,
 ) -> None:
     """Analyze a review using OpenCode agent.
 
@@ -183,6 +189,25 @@ def opencode_cmd(
                 )
             )
 
+        # Apply --review-from filter if specified
+        if review_from is not None:
+            # Validate that review_from is in the chain
+            chain_ids = [r.review_request_id for r in review_chain.reviews]
+            if review_from not in chain_ids:
+                raise click.ClickException(
+                    f"Review r/{review_from} is not in the chain: {chain_ids}. "
+                    f"Use one of the reviews in the chain."
+                )
+
+            # Mark reviews before review_from as not needing review
+            found_start = False
+            for review in review_chain.reviews:
+                if review.review_request_id == review_from:
+                    found_start = True
+                if not found_start:
+                    review.needs_review = False
+                    click.echo(f"  Skipping review of r/{review.review_request_id} (context only)")
+
         # Display chain info
         pending = review_chain.pending_reviews
         if len(pending) == 0:
@@ -191,7 +216,7 @@ def opencode_cmd(
 
         chain_str = " -> ".join(f"r/{r.review_request_id}" for r in review_chain.reviews)
         click.echo(f"  Chain: {chain_str}")
-        click.echo(f"  Pending: {len(pending)} review(s)")
+        click.echo(f"  To review: {len(pending)} patch(es)")
         click.echo(f"  Base commit: {review_chain.base_commit or 'default branch'}")
 
         # Get repository config
@@ -259,6 +284,22 @@ def opencode_cmd(
         ) as repo_path:
             click.echo(f"\nCreated branch: {branch_name}")
 
+            # First, apply all context-only patches (needs_review=False)
+            context_patches = [r for r in review_chain.reviews if not r.needs_review]
+            for review in context_patches:
+                rr_id = review.review_request_id
+                click.echo(f"\nApplying context patch r/{rr_id}...")
+                diff_info = rb_client.get_diff(rr_id, review.diff_revision)
+                if not repo_manager.apply_and_commit(
+                    repo_config.name,
+                    diff_info.raw_diff,
+                    f"r/{rr_id}: {review.summary[:50]}",
+                ):
+                    click.echo(f"  ERROR: Failed to apply context patch r/{rr_id}", err=True)
+                    break
+                click.echo("  Applied and committed")
+
+            # Now review the pending patches
             for i, review in enumerate(pending):
                 rr_id = review.review_request_id
                 click.echo(f"\nReviewing r/{rr_id} ({i + 1}/{len(pending)})...")
@@ -267,7 +308,7 @@ def opencode_cmd(
                 # Fetch diff
                 diff_info = rb_client.get_diff(rr_id, review.diff_revision)
 
-                # Apply previous patches as commits first
+                # Commit previous reviewed patch first (if not first)
                 if i > 0:
                     prev_review = pending[i - 1]
                     prev_diff = rb_client.get_diff(prev_review.review_request_id, prev_review.diff_revision)
