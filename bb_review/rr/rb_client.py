@@ -591,12 +591,21 @@ class ReviewBoardClient:
         rr = self.get_review_request(review_request_id)
 
         # Extract depends_on IDs
+        # depends_on contains objects like: {'href': '.../api/review-requests/42762/', ...}
         depends_on_ids: list[int] = []
         depends_on = rr.get("depends_on", [])
         for dep in depends_on:
-            # depends_on contains review request objects with 'id' field
-            if isinstance(dep, dict) and "id" in dep:
-                depends_on_ids.append(dep["id"])
+            if isinstance(dep, dict):
+                # Try 'id' field first
+                if "id" in dep:
+                    depends_on_ids.append(dep["id"])
+                # Otherwise extract from href URL
+                elif "href" in dep:
+                    import re
+
+                    match = re.search(r"/review-requests/(\d+)/", dep["href"])
+                    if match:
+                        depends_on_ids.append(int(match.group(1)))
             elif isinstance(dep, int):
                 depends_on_ids.append(dep)
 
