@@ -189,7 +189,10 @@ bb-review cocoindex status-db
 # Dry run with direct LLM
 bb-review analyze {review_id} --dry-run
 
-# Dry run with OpenCode
+# Dry run with OpenCode (auto-named output: review_{id}.json)
+bb-review opencode {review_id} --dry-run -O
+
+# Dry run with custom output filename
 bb-review opencode {review_id} --dry-run -o review.json
 
 # Edit review.json, then submit

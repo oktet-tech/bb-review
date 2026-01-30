@@ -40,7 +40,13 @@ logger = logging.getLogger(__name__)
     "--output",
     "-o",
     type=click.Path(path_type=Path),
-    help="Output JSON file for dry-run (defaults to review_{id}.json)",
+    help="Output JSON file for dry-run",
+)
+@click.option(
+    "--auto-output",
+    "-O",
+    is_flag=True,
+    help="Auto-generate output file: review_{id}.json",
 )
 @click.pass_context
 def opencode_cmd(
@@ -51,6 +57,7 @@ def opencode_cmd(
     timeout: int,
     dump_response: Path | None,
     output: Path | None,
+    auto_output: bool,
 ) -> None:
     """Analyze a review using OpenCode agent.
 
@@ -67,6 +74,14 @@ def opencode_cmd(
         bb-review opencode 42738 --dry-run
         bb-review opencode https://rb.example.com/r/42738/ --dry-run
     """
+    # Validate output options
+    if output and auto_output:
+        raise click.UsageError("Cannot use both -o/--output and -O/--auto-output")
+
+    # Resolve output file path
+    if auto_output:
+        output = Path(f"review_{review_id}.json")
+
     try:
         config = get_config(ctx)
     except FileNotFoundError:
@@ -362,18 +377,8 @@ def opencode_cmd(
 
         body_top = "\n".join(body_parts)
 
-        # Post to Review Board
-        if not dry_run:
-            review_posted = rb_client.post_review(
-                review_request_id=review_id,
-                body_top=body_top,
-                comments=rb_comments,
-                ship_it=False,
-            )
-            click.echo(f"\nPosted review (ID: {review_posted})")
-            click.echo(f"  - {len(rb_comments)} inline comments")
-        else:
-            # Build combined unparsed_text
+        # Helper to build submission data for saving
+        def build_submission_data():
             unparsed_parts = []
             if parsed.unparsed_text:
                 unparsed_parts.append(parsed.unparsed_text)
@@ -381,7 +386,6 @@ def opencode_cmd(
                 unparsed_parts.append(f"--- API Review ---\n{api_parsed.unparsed_text}")
             combined_unparsed = "\n\n".join(unparsed_parts)
 
-            # Build parsed issues list for reference
             parsed_issues = [
                 {
                     "title": issue.title,
@@ -395,8 +399,7 @@ def opencode_cmd(
                 for issue in all_issues
             ]
 
-            # Create submission JSON
-            submission_data = ReviewFormatter.format_for_submission(
+            return ReviewFormatter.format_for_submission(
                 review_request_id=review_id,
                 body_top=body_top,
                 comments=rb_comments,
@@ -406,11 +409,30 @@ def opencode_cmd(
                 metadata={
                     "created_at": datetime.now().isoformat(),
                     "model": model or "default",
-                    "dry_run": True,
+                    "dry_run": dry_run,
                 },
-            )
+            ), combined_unparsed
 
-            # Determine output file path
+        # Post to Review Board
+        if not dry_run:
+            review_posted = rb_client.post_review(
+                review_request_id=review_id,
+                body_top=body_top,
+                comments=rb_comments,
+                ship_it=False,
+            )
+            click.echo(f"\nPosted review (ID: {review_posted})")
+            click.echo(f"  - {len(rb_comments)} inline comments")
+
+            # Save to file if -O was used
+            if output:
+                submission_data, _ = build_submission_data()
+                output.write_text(json.dumps(submission_data, indent=2))
+                click.echo(f"  - Saved to {output}")
+        else:
+            submission_data, combined_unparsed = build_submission_data()
+
+            # Determine output file path (default to review_{id}.json in dry-run)
             output_file = output or Path(f"review_{review_id}.json")
             output_file.write_text(json.dumps(submission_data, indent=2))
             click.echo(f"\n[Dry run - review saved to {output_file}]")

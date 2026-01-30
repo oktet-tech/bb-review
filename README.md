@@ -158,8 +158,10 @@ Use OpenCode agent for deeper analysis with full codebase context:
 
 ```bash
 uv run bb-review opencode 42738
-uv run bb-review opencode 42738 --dry-run  # Save to review_42738.json
-uv run bb-review opencode 42738 --dry-run -o review.json  # Custom output file
+uv run bb-review opencode 42738 --dry-run     # Save to review_42738.json
+uv run bb-review opencode 42738 --dry-run -O  # Same as above (explicit)
+uv run bb-review opencode 42738 --dry-run -o custom.json  # Custom output file
+uv run bb-review opencode 42738 -O            # Post AND save to review_42738.json
 ```
 
 ### Review, Edit, and Submit Workflow
@@ -168,6 +170,8 @@ For more control, you can review and edit AI feedback before posting:
 
 ```bash
 # 1. Run analysis in dry-run mode (saves JSON file)
+uv run bb-review opencode 42738 --dry-run -O  # Saves to review_42738.json
+# Or with custom filename:
 uv run bb-review opencode 42738 --dry-run -o review.json
 
 # 2. Review and edit the JSON file
