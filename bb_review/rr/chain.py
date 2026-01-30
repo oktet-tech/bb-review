@@ -4,6 +4,7 @@ This module handles discovering and resolving chains of dependent review request
 using the Review Board API's `depends_on` field.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 import logging
 from typing import TYPE_CHECKING
@@ -116,7 +117,7 @@ class ReviewChain:
 def resolve_chain(
     rb_client: "ReviewBoardClient",
     target_rr_id: int,
-    find_commit_func: callable | None = None,
+    find_commit_func: Callable[[str, str], str | None] | None = None,
 ) -> ReviewChain:
     """Resolve the dependency chain for a review request.
 
