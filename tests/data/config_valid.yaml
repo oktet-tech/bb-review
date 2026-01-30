@@ -1,0 +1,37 @@
+# Valid test configuration
+reviewboard:
+  url: "https://rb.example.com"
+  api_token: "test-token-12345"
+  bot_username: "test-bot"
+
+llm:
+  provider: "anthropic"
+  model: "claude-sonnet-4-20250514"
+  api_key: "test-api-key"
+  max_tokens: 4096
+  temperature: 0.2
+
+repositories:
+  - name: "test-repo"
+    rb_repo_name: "Test Repository"
+    local_path: "/tmp/test-repo"
+    remote_url: "git@example.com:org/test-repo.git"
+    default_branch: "main"
+
+polling:
+  interval_seconds: 300
+  max_reviews_per_cycle: 10
+
+database:
+  path: "/tmp/test-state.db"
+
+defaults:
+  focus:
+    - bugs
+    - security
+  severity_threshold: "medium"
+  auto_ship_it: false
+
+logging:
+  level: "INFO"
+  file: "/tmp/test.log"

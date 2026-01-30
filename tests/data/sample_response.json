@@ -1,0 +1,22 @@
+{
+  "summary": "Found 2 issues in the code change",
+  "has_critical_issues": false,
+  "comments": [
+    {
+      "file_path": "src/main.c",
+      "line_number": 12,
+      "severity": "low",
+      "issue_type": "style",
+      "message": "Variable 'x' is declared but only used once",
+      "suggestion": "Consider inlining the value or removing if unnecessary"
+    },
+    {
+      "file_path": "src/utils.c",
+      "line_number": 4,
+      "severity": "medium",
+      "issue_type": "bugs",
+      "message": "Variable 'value' is unused after assignment",
+      "suggestion": "Either use the variable or remove it"
+    }
+  ]
+}

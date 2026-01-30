@@ -1,0 +1,26 @@
+diff --git a/src/main.c b/src/main.c
+index abc123..def456 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -10,6 +10,8 @@ int main() {
+     printf("Hello World\n");
++    int x = 42;
++    printf("x = %d\n", x);
+     return 0;
+ }
+diff --git a/src/utils.c b/src/utils.c
+new file mode 100644
+index 0000000..1234567
+--- /dev/null
++++ b/src/utils.c
+@@ -0,0 +1,10 @@
++#include <stdio.h>
++
++void helper_function() {
++    int value = 100;
++    printf("Helper: %d\n", value);
++}
++
++int add(int a, int b) {
++    return a + b;
++}

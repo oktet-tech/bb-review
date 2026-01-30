@@ -1,0 +1,10 @@
+# Invalid test configuration - missing required fields
+reviewboard:
+  url: "not-a-valid-url"  # Missing http(s)://
+  # api_token missing
+
+llm:
+  provider: "unknown-provider"  # Invalid provider
+  # api_key missing
+
+repositories: []
