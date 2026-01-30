@@ -324,9 +324,16 @@ def opencode_cmd(
                         break
 
                 # Apply current patch (staged for review)
-                if not repo_manager.apply_patch(repo_config.name, diff_info.raw_diff):
-                    click.echo(f"  ERROR: Failed to apply patch for r/{rr_id}", err=True)
-                    break
+                patch_applied = repo_manager.apply_patch(repo_config.name, diff_info.raw_diff)
+                if not patch_applied:
+                    if fallback:
+                        click.echo(
+                            "  WARNING: Patch failed to apply, using fallback mode",
+                            err=True,
+                        )
+                    else:
+                        click.echo(f"  ERROR: Failed to apply patch for r/{rr_id}", err=True)
+                        break
 
                 # Run OpenCode review
                 if fake_review:
@@ -342,6 +349,7 @@ def opencode_cmd(
                         model,
                         timeout,
                         binary_path,
+                        at_reviewed_state=patch_applied,
                     )
 
                 # Parse and save
@@ -434,8 +442,14 @@ def run_opencode_for_review(
     model: str | None,
     timeout: int,
     binary_path: str | None,
+    at_reviewed_state: bool = True,
 ) -> str:
-    """Run OpenCode analysis for a single review."""
+    """Run OpenCode analysis for a single review.
+
+    Args:
+        at_reviewed_state: If True, changes are staged in git. If False,
+            only the patch file is available (fallback mode).
+    """
     # Load guidelines
     guidelines = load_guidelines(repo_path)
 
@@ -469,7 +483,7 @@ def run_opencode_for_review(
         summary=summary,
         guidelines_context=guidelines_context,
         focus_areas=focus_areas,
-        at_reviewed_state=True,  # Changes are staged
+        at_reviewed_state=at_reviewed_state,
         changed_files=changed_files,
     )
 
@@ -484,7 +498,7 @@ def run_opencode_for_review(
             model=model,
             timeout=timeout,
             binary_path=binary_path,
-            at_reviewed_state=True,
+            at_reviewed_state=at_reviewed_state,
         )
     except OpenCodeTimeoutError as e:
         raise click.ClickException(f"OpenCode timed out after {timeout}s") from e

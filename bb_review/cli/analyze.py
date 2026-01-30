@@ -78,6 +78,11 @@ def create_mock_review(review_id: int, diff_revision: int) -> ReviewResult:
 @click.option("--base-commit", help="Base commit SHA for chain (used with --chain-file)")
 @click.option("--keep-branch", is_flag=True, help="Don't delete the review branch after completion")
 @click.option(
+    "--fallback",
+    is_flag=True,
+    help="If patch doesn't apply cleanly, analyze with diff only (no file context)",
+)
+@click.option(
     "--review-from",
     type=REVIEW_ID,
     help="Start reviewing from this RR (earlier patches applied as context only)",
@@ -96,6 +101,7 @@ def analyze(
     chain_file: Path | None,
     base_commit: str | None,
     keep_branch: bool,
+    fallback: bool,
     review_from: int | None,
 ) -> None:
     """Analyze a review request using LLM.
@@ -314,11 +320,18 @@ def analyze(
                         break
 
                 # Apply current patch (staged, not committed - we're reviewing it)
-                if not repo_manager.apply_patch(repo_config.name, diff_info.raw_diff):
-                    click.echo(f"  ERROR: Failed to apply patch for r/{rr_id}", err=True)
-                    chain_result.partial = True
-                    chain_result.failed_at_rr_id = rr_id
-                    break
+                patch_applied = repo_manager.apply_patch(repo_config.name, diff_info.raw_diff)
+                if not patch_applied:
+                    if fallback:
+                        click.echo(
+                            "  WARNING: Patch failed to apply, using fallback mode",
+                            err=True,
+                        )
+                    else:
+                        click.echo(f"  ERROR: Failed to apply patch for r/{rr_id}", err=True)
+                        chain_result.partial = True
+                        chain_result.failed_at_rr_id = rr_id
+                        break
 
                 # Generate review
                 if fake_review:
@@ -333,6 +346,7 @@ def analyze(
                         repo_manager,
                         analyzer,
                         config,
+                        patch_applied=patch_applied,
                     )
 
                 chain_result.add_review(result)
@@ -430,8 +444,14 @@ def run_analysis(
     repo_manager: RepoManager,
     analyzer: Analyzer,
     config: Config,
+    patch_applied: bool = True,
 ) -> ReviewResult:
-    """Run LLM analysis on a single review."""
+    """Run LLM analysis on a single review.
+
+    Args:
+        patch_applied: If True, the patch is staged in git and we can get file context.
+            If False (fallback mode), only the diff is available.
+    """
     # Load guidelines
     guidelines = load_guidelines(repo_path)
 
@@ -447,21 +467,22 @@ def run_analysis(
     if guidelines.ignore_paths:
         diff = filter_diff_by_paths(diff, guidelines.ignore_paths)
 
-    # Get file context for changed files
+    # Get file context for changed files (only if patch is applied)
     file_contexts = {}
     changed_files = extract_changed_files(diff)
-    for file_info in changed_files[:10]:  # Limit context gathering
-        file_path = file_info["path"]
-        if file_info["lines"]:
-            context = repo_manager.get_file_context(
-                repo_name,
-                file_path,
-                min(file_info["lines"]),
-                max(file_info["lines"]),
-                context_lines=30,
-            )
-            if context:
-                file_contexts[file_path] = context
+    if patch_applied:
+        for file_info in changed_files[:10]:  # Limit context gathering
+            file_path = file_info["path"]
+            if file_info["lines"]:
+                context = repo_manager.get_file_context(
+                    repo_name,
+                    file_path,
+                    min(file_info["lines"]),
+                    max(file_info["lines"]),
+                    context_lines=30,
+                )
+                if context:
+                    file_contexts[file_path] = context
 
     # Run analysis
     click.echo(f"    Analyzing diff ({len(diff)} chars)...")
