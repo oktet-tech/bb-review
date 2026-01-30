@@ -9,6 +9,7 @@ BB Review integrates with Review Board to provide automated AI code reviews. Whe
 **Key Features:**
 - Multiple analysis modes: direct LLM analysis or OpenCode agent with full codebase context
 - Semantic code search via CocoIndex (optional, uses local embeddings - no API needed)
+- Reviews database for analysis history, tracking, and export
 - Review/edit/submit workflow for human oversight
 - Encrypted password storage for secure authentication
 - Daemon mode for continuous polling
@@ -299,6 +300,45 @@ uv run bb-review cocoindex status-db     # Show indexing status
 # MCP Server (for OpenCode integration)
 uv run bb-review cocoindex serve myrepo  # Start MCP server
 uv run bb-review cocoindex setup myrepo  # Generate opencode.json for repo
+```
+
+### Reviews Database
+
+Track analysis history, export reviews, and query past analyses:
+
+```bash
+# List analyses with filters
+uv run bb-review db list                       # Recent analyses
+uv run bb-review db list --rr 42738            # By review request
+uv run bb-review db list --repo te-dev         # By repository
+uv run bb-review db list --status draft        # By status
+
+# Show analysis details
+uv run bb-review db show 1                     # Full details with comments
+uv run bb-review db show 1 --no-comments       # Summary only
+
+# Export for submission or review
+uv run bb-review db export 1                   # Export to stdout as JSON
+uv run bb-review db export 1 -o review.json    # Export to file
+uv run bb-review db export 1 --format markdown # Human-readable report
+
+# Search and manage
+uv run bb-review db search 42738               # Search by RR ID
+uv run bb-review db search "memory leak"       # Search in summaries
+uv run bb-review db stats                      # Database statistics
+uv run bb-review db mark 1 --status submitted  # Update status
+uv run bb-review db cleanup --older-than 90    # Remove old analyses
+
+# Chain tracking
+uv run bb-review db chain 42762_20260130_120000  # Show chain details
+```
+
+Enable in `config.yaml`:
+
+```yaml
+review_db:
+  enabled: true
+  path: "~/.bb_review/reviews.db"
 ```
 
 ## Per-Repository Configuration

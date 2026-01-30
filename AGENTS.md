@@ -32,7 +32,7 @@ BB Review is a CLI tool that provides AI-powered code reviews for Review Board (
 
 | File | Purpose |
 |------|---------|
-| `cli.py` | Click-based CLI commands (`analyze`, `opencode`, `poll`, `repos`, `cocoindex`, `submit`) |
+| `cli.py` | Click-based CLI commands (`analyze`, `opencode`, `poll`, `repos`, `cocoindex`, `submit`, `db`) |
 | `rb_client.py` | Review Board API client using `curl` for Kerberos auth |
 | `analyzer.py` | LLM integration (OpenRouter/Anthropic/OpenAI), prompt building, response parsing |
 | `commenter.py` | Formats and posts review comments to RB |
@@ -42,6 +42,7 @@ BB Review is a CLI tool that provides AI-powered code reviews for Review Board (
 | `models.py` | Data models (ReviewResult, ReviewComment, RepoConfig, etc.) |
 | `crypto.py` | Password encryption/decryption using Fernet |
 | `poller.py` | Polling daemon, state database (SQLite), review tracking |
+| `db/` | Reviews database module (analysis history, export, tracking) |
 | `opencode_runner.py` | OpenCode agent integration, prompt building, output parsing |
 | `mcp_server.py` | FastMCP server for semantic code search via CocoIndex |
 | `cocoindex_indexer.py` | Repository indexing with local sentence-transformers embeddings |
@@ -165,6 +166,59 @@ bb-review cocoindex serve <repo>
 bb-review cocoindex status-db
 ```
 
+## Reviews Database
+
+### Overview
+
+The reviews database stores complete analysis history:
+- All review analyses with comments, metadata, and chain info
+- Track which exact diff revision/base commit was reviewed
+- Export to JSON (for submission) or Markdown (for reports)
+- Query past analyses by RR ID, repository, status
+
+### Components
+
+1. **ReviewDatabase** (`db/review_db.py`):
+   - SQLite backend at `~/.bb_review/reviews.db`
+   - Tables: `analyses`, `comments`, `chains`
+   - Auto-saves analyses from `analyze` and `opencode` commands
+
+2. **Models** (`db/models.py`):
+   - `StoredAnalysis` - Complete analysis with metadata
+   - `StoredComment` - Individual review comment
+   - `StoredChain` - Chain of dependent reviews
+
+3. **Export** (`db/export.py`):
+   - `export_to_json()` - Submission-ready JSON format
+   - `export_to_markdown()` - Human-readable report
+
+### Commands
+
+```bash
+# List and search
+bb-review db list                    # Recent analyses
+bb-review db list --rr 42738         # By review request
+bb-review db search "memory leak"    # Search summaries
+
+# View and export
+bb-review db show 1                  # Full analysis details
+bb-review db export 1 -o review.json # Export to JSON
+bb-review db export 1 --format markdown
+
+# Manage
+bb-review db stats                   # Database statistics
+bb-review db mark 1 --status submitted
+bb-review db cleanup --older-than 90
+```
+
+### Configuration
+
+```yaml
+review_db:
+  enabled: true
+  path: "~/.bb_review/reviews.db"
+```
+
 ## Common Tasks
 
 ### Adding a New Repository
@@ -253,6 +307,11 @@ bb-review poll status
 bb-review analyze 42738 --dry-run
 bb-review opencode 42738 --dry-run
 
+# Reviews database
+bb-review db stats
+bb-review db list
+bb-review db list --rr 42738
+
 # CocoIndex
 bb-review cocoindex db status
 bb-review cocoindex status-db
@@ -267,6 +326,7 @@ bb-review encrypt-password
 - Config: `./config.yaml` or `~/.bb_review/config.yaml`
 - Password file: `~/.bb_review/password.enc`
 - State database: `~/.bb_review/state.db`
+- Reviews database: `~/.bb_review/reviews.db`
 - Logs: `~/.bb_review/bb_review.log`
 - MCP logs: `~/.bb_review/mcp-{repo}.log`
 - CocoIndex logs: `~/.bb_review/cocoindex/`
