@@ -17,23 +17,32 @@ logger = logging.getLogger(__name__)
 @main.command("submit")
 @click.argument("json_file", type=click.Path(exists=True, path_type=Path))
 @click.option("--dry-run", is_flag=True, help="Validate and show what would be posted")
+@click.option(
+    "--publish/--no-publish",
+    default=False,
+    help="Publish review (visible to others). Default: --no-publish (draft mode)",
+)
 @click.pass_context
-def submit_cmd(ctx: click.Context, json_file: Path, dry_run: bool) -> None:
-    """Submit a pre-edited review JSON file to ReviewBoard.
+def submit_cmd(ctx: click.Context, json_file: Path, dry_run: bool, publish: bool) -> None:
+    """Submit a review JSON file to ReviewBoard.
 
     This allows a workflow where you can:
 
     \b
-    1. Run analysis in dry-run mode to generate a JSON file
+    1. Run analysis to generate a JSON file (bb-review analyze 42738 -O)
     2. Review and edit the JSON file as needed
-    3. Submit the edited review to ReviewBoard
+    3. Submit as draft to ReviewBoard (bb-review submit review.json)
+    4. Verify in RB UI, then publish (bb-review submit review.json --publish)
+
+    By default, reviews are submitted as DRAFTS (only visible to you).
+    Use --publish to make the review visible to everyone.
 
     Example:
 
     \b
-        bb-review opencode 42738 --dry-run -o review.json
-        # Edit review.json as needed
-        bb-review submit review.json
+        bb-review analyze 42738 -O          # Generate review_42738.json
+        bb-review submit review_42738.json  # Submit as draft
+        bb-review submit review_42738.json --publish  # Publish to everyone
     """
     try:
         config = get_config(ctx)
@@ -71,6 +80,7 @@ def submit_cmd(ctx: click.Context, json_file: Path, dry_run: bool) -> None:
         click.echo(f"  Review request: #{review_request_id}")
         click.echo(f"  Comments: {len(comments)}")
         click.echo(f"  Ship It: {'Yes' if ship_it else 'No'}")
+        click.echo(f"  Publish: {'Yes (visible to all)' if publish else 'No (draft only)'}")
 
         if dry_run:
             click.echo("\n[Dry run - would post the following review]")
@@ -100,9 +110,19 @@ def submit_cmd(ctx: click.Context, json_file: Path, dry_run: bool) -> None:
             body_top=body_top,
             comments=comments,
             ship_it=ship_it,
+            publish=publish,
         )
-        click.echo(f"\nPosted review (ID: {review_posted})")
-        click.echo(f"  - {len(comments)} inline comments")
+
+        if publish:
+            click.echo(f"\nPublished review (ID: {review_posted['id']})")
+            click.echo(f"  - {len(comments)} inline comments")
+            click.echo("  - Review is now visible to everyone")
+        else:
+            click.echo(f"\nPosted review as draft (ID: {review_posted['id']})")
+            click.echo(f"  - {len(comments)} inline comments")
+            click.echo("  - Review is only visible to you")
+            click.echo(f"\nTo publish: bb-review submit {json_file} --publish")
+            click.echo("Or publish manually in Review Board UI")
 
     except json.JSONDecodeError as e:
         click.echo(f"Error: Invalid JSON in {json_file}: {e}", err=True)
