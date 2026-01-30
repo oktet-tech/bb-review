@@ -8,7 +8,7 @@ import sys
 
 import click
 
-from ..git import RepoManager
+from ..git import PatchApplyError, RepoManager
 from ..guidelines import load_guidelines, validate_guidelines
 from ..models import PendingReview
 from ..reviewers import (
@@ -48,6 +48,11 @@ logger = logging.getLogger(__name__)
     is_flag=True,
     help="Auto-generate output file: review_{id}.json",
 )
+@click.option(
+    "--fallback",
+    is_flag=True,
+    help="If patch doesn't apply cleanly, fallback to passing patch file to OpenCode",
+)
 @click.pass_context
 def opencode_cmd(
     ctx: click.Context,
@@ -58,21 +63,24 @@ def opencode_cmd(
     dump_response: Path | None,
     output: Path | None,
     auto_output: bool,
+    fallback: bool,
 ) -> None:
     """Analyze a review using OpenCode agent.
 
     REVIEW_ID can be either a number (e.g., 42738) or a full Review Board URL
     (e.g., https://rb.example.com/r/42738/).
 
-    This runs OpenCode in Plan mode within the repository directory,
-    giving it full codebase context for more thorough analysis.
+    This runs OpenCode within the repository directory, checking out the code
+    to the reviewed state so OpenCode has full codebase context with accurate
+    line numbers.
 
-    The patch is passed as a file attachment and OpenCode analyzes it
-    without making any changes to the repository.
+    By default, the command will fail if the patch cannot be applied cleanly
+    to the local repository. Use --fallback to allow OpenCode to analyze the
+    raw patch file instead (less accurate line numbers).
 
     Example:
         bb-review opencode 42738 --dry-run
-        bb-review opencode https://rb.example.com/r/42738/ --dry-run
+        bb-review opencode https://rb.example.com/r/42738/ --fallback
     """
     # Validate output options
     if output and auto_output:
@@ -151,121 +159,129 @@ def opencode_cmd(
         raw_diff = diff_info.raw_diff
 
         # Process in checkout context (with patch applied if target commit unavailable)
-        with repo_manager.checkout_context(
-            repo_config.name,
-            base_commit=pending.base_commit,
-            branch=pending.branch,
-            target_commit=diff_info.target_commit_id,
-            patch=raw_diff,
-        ) as (repo_path, used_target):
-            if used_target:
-                click.echo("  Checked out to reviewed state")
+        try:
+            with repo_manager.checkout_context(
+                repo_config.name,
+                base_commit=pending.base_commit,
+                branch=pending.branch,
+                target_commit=diff_info.target_commit_id,
+                patch=raw_diff,
+                require_patch=not fallback,
+            ) as (repo_path, used_target):
+                if used_target:
+                    click.echo("  Checked out to reviewed state")
+                elif fallback and not used_target:
+                    click.echo("  Using fallback: patch file will be passed to OpenCode")
 
-            # Load guidelines
-            guidelines = load_guidelines(repo_path)
+                # Load guidelines
+                guidelines = load_guidelines(repo_path)
 
-            # Validate guidelines
-            warnings = validate_guidelines(guidelines)
-            for warning in warnings:
-                click.echo(f"  Warning: {warning}", err=True)
+                # Validate guidelines
+                warnings = validate_guidelines(guidelines)
+                for warning in warnings:
+                    click.echo(f"  Warning: {warning}", err=True)
 
-            # Filter ignored paths
-            if guidelines.ignore_paths:
-                raw_diff = filter_diff_by_paths(raw_diff, guidelines.ignore_paths)
+                # Filter ignored paths
+                if guidelines.ignore_paths:
+                    raw_diff = filter_diff_by_paths(raw_diff, guidelines.ignore_paths)
 
-            # Build guidelines context for prompt
-            guidelines_context = ""
-            if guidelines.context:
-                guidelines_context = guidelines.context
-            if guidelines.custom_rules:
-                if guidelines_context:
-                    guidelines_context += "\n\nCustom rules:\n"
-                guidelines_context += "\n".join(f"- {rule}" for rule in guidelines.custom_rules)
+                # Build guidelines context for prompt
+                guidelines_context = ""
+                if guidelines.context:
+                    guidelines_context = guidelines.context
+                if guidelines.custom_rules:
+                    if guidelines_context:
+                        guidelines_context += "\n\nCustom rules:\n"
+                    guidelines_context += "\n".join(f"- {rule}" for rule in guidelines.custom_rules)
 
-            # Extract changed files for the prompt
-            changed_file_infos = extract_changed_files(raw_diff)
-            changed_files = [f["path"] for f in changed_file_infos]
+                # Extract changed files for the prompt
+                changed_file_infos = extract_changed_files(raw_diff)
+                changed_files = [f["path"] for f in changed_file_infos]
 
-            # Build prompt
-            focus_areas = [f.value for f in guidelines.focus]
-            prompt = build_review_prompt(
-                repo_name=repo_config.name,
-                review_id=review_id,
-                summary=pending.summary,
-                guidelines_context=guidelines_context,
-                focus_areas=focus_areas,
-                at_reviewed_state=used_target,
-                changed_files=changed_files,
-            )
-
-            click.echo(f"  Running OpenCode analysis ({len(raw_diff)} chars diff)...")
-            if model:
-                click.echo(f"  Model: {model}")
-
-            # Run opencode
-            try:
-                analysis = run_opencode_review(
-                    repo_path=repo_path,
-                    patch_content=raw_diff,
-                    prompt=prompt,
+                # Build prompt
+                focus_areas = [f.value for f in guidelines.focus]
+                prompt = build_review_prompt(
+                    repo_name=repo_config.name,
                     review_id=review_id,
-                    model=model,
-                    timeout=timeout,
-                    binary_path=binary_path,
+                    summary=pending.summary,
+                    guidelines_context=guidelines_context,
+                    focus_areas=focus_areas,
                     at_reviewed_state=used_target,
+                    changed_files=changed_files,
                 )
-            except OpenCodeTimeoutError:
-                click.echo(f"Error: OpenCode timed out after {timeout}s", err=True)
-                sys.exit(1)
-            except OpenCodeError as e:
-                click.echo(f"Error: {e}", err=True)
-                sys.exit(1)
 
-            # Run API review for te-test-suite repos
-            api_analysis = None
-            if repo_config.repo_type == "te-test-suite":
-                click.echo("  Running API review via api-reviewer agent...")
+                click.echo(f"  Running OpenCode analysis ({len(raw_diff)} chars diff)...")
+                if model:
+                    click.echo(f"  Model: {model}")
 
-                context_path = repo_path / ".bb_review_context.tmp"
-                context_path.write_text(f"Review #{review_id}\n\nSummary:\n{pending.summary}")
-
+                # Run opencode
                 try:
-                    if used_target:
-                        # Changes are staged - use git diff --cached
-                        api_prompt = (
-                            "Review the staged changes (use `git diff --cached` to see them) "
-                            "with context @.bb_review_context.tmp"
-                        )
-                    else:
-                        # Fall back to patch file
-                        patch_path = repo_path / ".bb_review_patch.tmp"
-                        patch_path.write_text(raw_diff)
-                        click.echo(f"  Patch file: {patch_path}")
-                        api_prompt = (
-                            "Review the patch @.bb_review_patch.tmp with context @.bb_review_context.tmp"
-                        )
-
-                    api_analysis = run_opencode_agent(
+                    analysis = run_opencode_review(
                         repo_path=repo_path,
-                        agent="api-reviewer",
-                        prompt=api_prompt,
+                        patch_content=raw_diff,
+                        prompt=prompt,
                         review_id=review_id,
                         model=model,
                         timeout=timeout,
                         binary_path=binary_path,
+                        at_reviewed_state=used_target,
                     )
-                    click.echo("  API review completed")
                 except OpenCodeTimeoutError:
-                    click.echo(f"  Warning: API review timed out after {timeout}s", err=True)
+                    click.echo(f"Error: OpenCode timed out after {timeout}s", err=True)
+                    sys.exit(1)
                 except OpenCodeError as e:
-                    click.echo(f"  Warning: API review failed: {e}", err=True)
-                finally:
-                    # Clean up temp files
-                    for tmp_file in [context_path, repo_path / ".bb_review_patch.tmp"]:
-                        try:
-                            tmp_file.unlink()
-                        except Exception:
-                            pass
+                    click.echo(f"Error: {e}", err=True)
+                    sys.exit(1)
+
+                # Run API review for te-test-suite repos
+                api_analysis = None
+                if repo_config.repo_type == "te-test-suite":
+                    click.echo("  Running API review via api-reviewer agent...")
+
+                    context_path = repo_path / ".bb_review_context.tmp"
+                    context_path.write_text(f"Review #{review_id}\n\nSummary:\n{pending.summary}")
+
+                    try:
+                        if used_target:
+                            # Changes are staged - use git diff --cached
+                            api_prompt = (
+                                "Review the staged changes (use `git diff --cached` to see them) "
+                                "with context @.bb_review_context.tmp"
+                            )
+                        else:
+                            # Fall back to patch file
+                            patch_path = repo_path / ".bb_review_patch.tmp"
+                            patch_path.write_text(raw_diff)
+                            click.echo(f"  Patch file: {patch_path}")
+                            api_prompt = (
+                                "Review the patch @.bb_review_patch.tmp with context @.bb_review_context.tmp"
+                            )
+
+                        api_analysis = run_opencode_agent(
+                            repo_path=repo_path,
+                            agent="api-reviewer",
+                            prompt=api_prompt,
+                            review_id=review_id,
+                            model=model,
+                            timeout=timeout,
+                            binary_path=binary_path,
+                        )
+                        click.echo("  API review completed")
+                    except OpenCodeTimeoutError:
+                        click.echo(f"  Warning: API review timed out after {timeout}s", err=True)
+                    except OpenCodeError as e:
+                        click.echo(f"  Warning: API review failed: {e}", err=True)
+                    finally:
+                        # Clean up temp files
+                        for tmp_file in [context_path, repo_path / ".bb_review_patch.tmp"]:
+                            try:
+                                tmp_file.unlink()
+                            except Exception:
+                                pass
+
+        except PatchApplyError as e:
+            click.echo(f"Error: {e}", err=True)
+            sys.exit(1)
 
         # Dump raw response if requested
         if dump_response:

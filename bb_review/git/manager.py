@@ -21,6 +21,12 @@ class RepoManagerError(Exception):
     pass
 
 
+class PatchApplyError(RepoManagerError):
+    """Error applying a patch to the repository."""
+
+    pass
+
+
 class RepoManager:
     """Manages local repository clones and checkouts."""
 
@@ -385,6 +391,7 @@ class RepoManager:
         branch: str | None = None,
         target_commit: str | None = None,
         patch: str | None = None,
+        require_patch: bool = True,
     ) -> Generator[tuple[Path, bool], None, None]:
         """Context manager that checks out a ref and restores original state.
 
@@ -399,9 +406,14 @@ class RepoManager:
             branch: Branch name.
             target_commit: Target commit SHA (the reviewed commit, if available).
             patch: Raw diff content to apply if target_commit unavailable.
+            require_patch: If True (default), raise PatchApplyError when patch fails.
+                          If False, continue with base state when patch fails.
 
         Yields:
-            Tuple of (path to repository, bool indicating if target_commit was used).
+            Tuple of (path to repository, bool indicating if at reviewed state).
+
+        Raises:
+            PatchApplyError: If patch fails to apply and require_patch is True.
         """
         repo = self.ensure_clone(repo_name)
         original_ref = repo.head.commit.hexsha
@@ -429,6 +441,13 @@ class RepoManager:
                         patch_applied = True
                         logger.info("Patch applied successfully")
                     else:
+                        if require_patch:
+                            raise PatchApplyError(
+                                "Failed to apply patch cleanly. The patch may be based on a different "
+                                "commit than what's available locally. Try:\n"
+                                "  1. Sync the repository: bb-review repos sync <repo>\n"
+                                "  2. Use --fallback to analyze with patch file instead"
+                            )
                         logger.warning("Failed to apply patch cleanly, working with base state")
 
             yield self.get_local_path(repo_name), used_target or patch_applied

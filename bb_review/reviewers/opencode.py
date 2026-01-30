@@ -7,7 +7,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 
 
 logger = logging.getLogger(__name__)
@@ -180,17 +179,18 @@ def run_opencode_review(
     opencode_bin = find_opencode_binary(binary_path)
     logger.debug(f"Using opencode binary: {opencode_bin}")
 
+    # Create temp files in the repo directory so @filename syntax works
+    # (opencode resolves @ paths relative to cwd)
     patch_path = None
+    prompt_path = repo_path / ".bb_review_prompt.md"
+
+    # Write prompt to file in repo directory
+    prompt_path.write_text(prompt)
+
     if not at_reviewed_state:
-        # Create temp file for the patch only if not at reviewed state
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            suffix=".patch",
-            delete=False,
-            prefix="bb_review_",
-        ) as patch_file:
-            patch_file.write(patch_content)
-            patch_path = Path(patch_file.name)
+        # Create patch file in repo directory
+        patch_path = repo_path / ".bb_review_patch.diff"
+        patch_path.write_text(patch_content)
 
     try:
         # Build command
@@ -202,21 +202,21 @@ def run_opencode_review(
             f"Review-{review_id}",
         ]
 
-        # Only attach patch file if not at reviewed state
+        # Attach the patch file if we have one
         if patch_path:
             cmd.extend(["-f", str(patch_path)])
 
         if model:
             cmd.extend(["--model", model])
 
-        # Add the prompt as the message
-        cmd.append(prompt)
+        # Use @filename to include the prompt - file must be relative to cwd (repo_path)
+        # This is the cleanest way to pass long prompts to opencode
+        cmd.append("@.bb_review_prompt.md")
 
         logger.info(f"Running opencode in {repo_path}")
 
         # Log full command for debugging (to stderr so user can see it)
-        cmd_display = cmd[:6] + ["..."] if len(cmd) > 6 else cmd
-        print(f"  Command: {' '.join(cmd_display)}", file=sys.stderr)
+        print(f"  Command: {' '.join(cmd)}", file=sys.stderr)
         logger.debug(f"Full command: {cmd}")
 
         # Run opencode
@@ -255,12 +255,13 @@ def run_opencode_review(
         raise OpenCodeTimeoutError(f"OpenCode execution timed out after {timeout} seconds") from e
 
     finally:
-        # Clean up temp file if we created one
-        if patch_path:
-            try:
-                patch_path.unlink()
-            except Exception:
-                pass
+        # Clean up temp files in repo directory
+        for tmp_path in [patch_path, prompt_path]:
+            if tmp_path and tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except Exception:
+                    pass
 
 
 def run_opencode_agent(
