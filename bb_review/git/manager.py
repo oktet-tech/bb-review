@@ -472,6 +472,193 @@ class RepoManager:
             except GitCommandError as e:
                 logger.warning(f"Could not fully restore {repo_name} to {original_ref}: {e}")
 
+    def find_commit_by_summary(self, repo_name: str, summary: str) -> str | None:
+        """Find a commit by searching for its summary in commit messages.
+
+        Used to locate commits for submitted review requests.
+
+        Args:
+            repo_name: Repository name.
+            summary: Summary text to search for in commit messages.
+
+        Returns:
+            Commit SHA if found, None otherwise.
+        """
+        self.ensure_clone(repo_name)
+        local_path = self.get_local_path(repo_name)
+
+        try:
+            # Use git log to search for the summary in commit messages
+            result = subprocess.run(
+                ["git", "log", f"--grep={summary}", "--format=%H", "-n", "1"],
+                cwd=local_path,
+                capture_output=True,
+                text=True,
+            )
+
+            if result.returncode == 0 and result.stdout.strip():
+                commit_sha = result.stdout.strip()
+                logger.info(f"Found commit {commit_sha[:12]} for summary: {summary[:50]}...")
+                return commit_sha
+
+            logger.debug(f"No commit found for summary: {summary[:50]}...")
+            return None
+        except Exception as e:
+            logger.warning(f"Error searching for commit: {e}")
+            return None
+
+    def create_review_branch(
+        self,
+        repo_name: str,
+        base_ref: str,
+        branch_name: str,
+    ) -> str:
+        """Create a new branch for chain review.
+
+        Args:
+            repo_name: Repository name.
+            base_ref: Base commit/ref to branch from.
+            branch_name: Name for the new branch.
+
+        Returns:
+            The branch name that was created.
+
+        Raises:
+            RepoManagerError: If branch creation fails.
+        """
+        repo = self.ensure_clone(repo_name)
+
+        try:
+            # First checkout the base ref
+            self.checkout(repo_name, base_ref)
+
+            # Create and checkout the new branch
+            repo.git.checkout("-b", branch_name)
+            logger.info(f"Created and checked out branch {branch_name} from {base_ref}")
+            return branch_name
+        except GitCommandError as e:
+            raise RepoManagerError(f"Failed to create branch {branch_name}: {e}") from e
+
+    def apply_and_commit(
+        self,
+        repo_name: str,
+        patch: str,
+        commit_message: str,
+    ) -> bool:
+        """Apply a patch and commit the changes.
+
+        Args:
+            repo_name: Repository name.
+            patch: Patch content to apply.
+            commit_message: Commit message to use.
+
+        Returns:
+            True if patch was applied and committed successfully.
+        """
+        repo = self.ensure_clone(repo_name)
+
+        # Apply the patch with index (staging)
+        if not self.apply_patch(repo_name, patch):
+            logger.warning("Failed to apply patch")
+            return False
+
+        try:
+            # Commit the staged changes
+            repo.git.commit("-m", commit_message)
+            logger.info(f"Committed patch: {commit_message[:50]}...")
+            return True
+        except GitCommandError as e:
+            logger.warning(f"Failed to commit: {e}")
+            return False
+
+    def delete_branch(self, repo_name: str, branch_name: str, force: bool = True) -> None:
+        """Delete a branch from the repository.
+
+        Args:
+            repo_name: Repository name.
+            branch_name: Branch name to delete.
+            force: Force delete even if not merged.
+        """
+        repo = self.ensure_clone(repo_name)
+
+        try:
+            # First checkout a different ref (default branch or HEAD~1)
+            config = self.get_repo(repo_name)
+            try:
+                self.checkout(repo_name, f"origin/{config.default_branch}")
+            except RepoManagerError:
+                # If default branch checkout fails, try to detach HEAD
+                repo.git.checkout("--detach")
+
+            # Now delete the branch
+            delete_flag = "-D" if force else "-d"
+            repo.git.branch(delete_flag, branch_name)
+            logger.info(f"Deleted branch {branch_name}")
+        except GitCommandError as e:
+            logger.warning(f"Could not delete branch {branch_name}: {e}")
+
+    @contextmanager
+    def chain_context(
+        self,
+        repo_name: str,
+        base_commit: str | None,
+        branch_name: str,
+        keep_branch: bool = False,
+    ) -> Generator[Path, None, None]:
+        """Context manager for chain review operations.
+
+        Creates a branch, yields for patch application and review,
+        then cleans up the branch unless keep_branch is True.
+
+        Args:
+            repo_name: Repository name.
+            base_commit: Base commit to start from.
+            branch_name: Name for the review branch.
+            keep_branch: If True, don't delete the branch after context exits.
+
+        Yields:
+            Path to the repository.
+
+        Raises:
+            RepoManagerError: If branch creation fails.
+        """
+        repo = self.ensure_clone(repo_name)
+        original_ref = repo.head.commit.hexsha
+
+        # Determine base ref
+        if base_commit:
+            base_ref = base_commit
+        else:
+            config = self.get_repo(repo_name)
+            base_ref = f"origin/{config.default_branch}"
+
+        try:
+            # Create the review branch
+            self.create_review_branch(repo_name, base_ref, branch_name)
+            logger.info(f"Created chain review branch: {branch_name}")
+
+            yield self.get_local_path(repo_name)
+        finally:
+            if keep_branch:
+                logger.info(f"Keeping branch {branch_name} as requested")
+            else:
+                # Clean up the branch
+                try:
+                    self.delete_branch(repo_name, branch_name)
+                except Exception as e:
+                    logger.warning(f"Could not clean up branch {branch_name}: {e}")
+
+                # Try to restore original state
+                try:
+                    repo.git.checkout(original_ref)
+                except GitCommandError:
+                    # If original ref is gone, go to default branch
+                    config = self.get_repo(repo_name)
+                    try:
+                        self.checkout(repo_name, f"origin/{config.default_branch}")
+                    except RepoManagerError:
+                        pass
+
     def list_repos(self) -> list[dict[str, str]]:
         """List all configured repositories with status.
 
