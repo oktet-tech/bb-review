@@ -91,6 +91,36 @@ class ReviewResult:
 
 
 @dataclass
+class ChainReviewResult:
+    """Result of reviewing a patch series (chain of review requests).
+
+    Contains results for each review in the chain, along with metadata
+    about the chain processing.
+    """
+
+    chain_id: str  # Identifies this chain review session (e.g., "42762_20260130_120000")
+    reviews: list[ReviewResult] = field(default_factory=list)  # One per RR reviewed
+    partial: bool = False  # True if some patches failed to apply
+    failed_at_rr_id: int | None = None  # RR ID of first failed patch, if any
+    branch_name: str | None = None  # Git branch name if --keep-branch was used
+    repository: str = ""
+
+    @property
+    def total_issues(self) -> int:
+        """Total number of issues across all reviews."""
+        return sum(r.issue_count for r in self.reviews)
+
+    @property
+    def reviewed_count(self) -> int:
+        """Number of successfully reviewed patches."""
+        return len(self.reviews)
+
+    def add_review(self, review: ReviewResult) -> None:
+        """Add a review result to the chain."""
+        self.reviews.append(review)
+
+
+@dataclass
 class PendingReview:
     """A review request pending AI analysis."""
 
