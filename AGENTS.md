@@ -6,7 +6,7 @@ BB Review is a CLI tool that provides AI-powered code reviews for Review Board (
 
 ## Architecture
 
-```
+```text
 ┌─────────────────┐     ┌──────────────┐     ┌─────────────┐
 │  Review Board   │────▶│  bb_review   │────▶│  LLM API    │
 │  (RB Server)    │◀────│  CLI Tool    │◀────│ (OpenRouter)│
@@ -84,6 +84,7 @@ The `rb_client.py` uses `subprocess.run` with `curl` because:
 - Form-based login mimics browser behavior
 
 Password can be encrypted:
+
 ```bash
 bb-review encrypt-password  # Uses api_token as encryption key
 ```
@@ -169,6 +170,7 @@ bb-review cocoindex status-db
 ### Adding a New Repository
 
 1. Add to `config.yaml` under `repositories:`
+
    ```yaml
    - name: "myrepo"
      rb_repo_name: "My Repository"
@@ -176,6 +178,7 @@ bb-review cocoindex status-db
      remote_url: "git@server:org/myrepo.git"
      default_branch: "main"
    ```
+
 2. Sync: `bb-review repos sync myrepo`
 3. (Optional) Create guide: `guides/myrepo.ai-review.yaml`
 4. (Optional) Init guidelines: `bb-review repos init-guidelines myrepo`
@@ -201,21 +204,21 @@ bb-review analyze {review_id} --dry-run --dump-response /tmp/llm.txt
 
 ### Debugging Issues
 
-1. **Auth failures**: 
+1. **Auth failures**:
    - Check Kerberos ticket: `klist`
    - Re-encrypt password: `bb-review encrypt-password`
    - Verify cookies are being created
 
-2. **500 errors when posting**: 
+2. **500 errors when posting**:
    - Usually encoding issues - avoid emojis/special chars
    - Check comment text for invalid characters
 
-3. **LLM not returning JSON**: 
+3. **LLM not returning JSON**:
    - Try different model
    - Check `--dump-response` output
    - Verify prompt format
 
-4. **Wrong diff content**: 
+4. **Wrong diff content**:
    - Verify URL format in `rb_client.py:_fetch_raw_diff`
    - Check diff revision number
 

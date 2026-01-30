@@ -41,19 +41,22 @@ OpenCode command for triggering API review.
 
 ## Setup
 
-### For cocode-mcp (semantic search):
+### For cocode-mcp (semantic search)
 
 1. **Install cocode-mcp:**
+
    ```bash
    uv pip install cocode-mcp
    ```
 
 2. **Start PostgreSQL with pgvector:**
+
    ```bash
    ./scripts/setup-cocoindex-db.sh start
    ```
 
 3. **Set API key for embeddings:**
+
    ```bash
    # Option 1: Jina (recommended, free tier available)
    export JINA_API_KEY="jina_..."
@@ -63,14 +66,16 @@ OpenCode command for triggering API review.
    ```
 
 4. **Copy and customize template:**
+
    ```bash
    cp opencode/mcp-cocode.json ~/repos/my-repo/opencode.json
    # Edit the file to set repo-specific values
    ```
 
-### For filesystem MCP:
+### For filesystem MCP
 
 Just copy and edit the path:
+
 ```bash
 cp opencode/mcp-filesystem.json ~/repos/my-repo/opencode.json
 # Edit the path in the command array
@@ -78,10 +83,10 @@ cp opencode/mcp-filesystem.json ~/repos/my-repo/opencode.json
 
 ## Environment Variables
 
-| Variable | Description | Required for |
-|----------|-------------|--------------|
-| `JINA_API_KEY` | Jina AI API key (free tier at jina.ai) | cocode with Jina embeddings |
-| `COCOINDEX_DATABASE_URL` | PostgreSQL connection | cocode |
+| Variable                 | Description                            | Required for                |
+|--------------------------|----------------------------------------|-----------------------------|
+| `JINA_API_KEY`           | Jina AI API key (free tier at jina.ai) | cocode with Jina embeddings |
+| `COCOINDEX_DATABASE_URL` | PostgreSQL connection                  | cocode                      |
 
 **Tip**: Use `mcp-cocode-lmstudio.json` for fully local embeddings without any API keys.
 Just make sure LM Studio is running with an embedding model like `nomic-embed-text-v1.5`.
@@ -89,6 +94,7 @@ Just make sure LM Studio is running with an embedding model like `nomic-embed-te
 ## Usage with OpenCode
 
 Once configured, run OpenCode in the repository:
+
 ```bash
 cd ~/repos/my-repo
 opencode

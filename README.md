@@ -59,6 +59,7 @@ Required settings in `config.yaml`:
 ### Step 4: Setup Authentication
 
 **Option A: API Token Only** (simplest)
+
 ```yaml
 reviewboard:
   url: "https://your-rb-server.com"
@@ -67,6 +68,7 @@ reviewboard:
 ```
 
 **Option B: Username/Password with Encryption** (for Kerberos environments)
+
 ```bash
 # Encrypt your password
 uv run bb-review encrypt-password
@@ -84,6 +86,7 @@ reviewboard:
 ### Step 5: Setup Repositories
 
 Add repositories to `config.yaml`:
+
 ```yaml
 repositories:
   - name: "myproject"
@@ -94,6 +97,7 @@ repositories:
 ```
 
 Clone and sync:
+
 ```bash
 uv run bb-review repos sync
 ```
@@ -126,11 +130,13 @@ uv run bb-review cocoindex status-db
 ### Step 8: Run the Service
 
 **Manual review:**
+
 ```bash
 uv run bb-review analyze <review-id>
 ```
 
 **Polling daemon:**
+
 ```bash
 uv run bb-review poll daemon
 ```
@@ -303,6 +309,7 @@ repositories:
 ```
 
 Setup MCP for te-test-suite repos:
+
 ```bash
 uv run bb-review repos mcp-setup net-drv-ts
 ```
