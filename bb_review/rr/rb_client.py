@@ -1,15 +1,16 @@
 """Review Board API client with Kerberos support via curl."""
 
-import json
-import logging
-import subprocess
-import tempfile
 from dataclasses import dataclass
 from datetime import datetime
+import json
+import logging
 from pathlib import Path
-from typing import Any, Optional
+import subprocess
+import tempfile
+from typing import Any
 
 from ..models import PendingReview
+
 
 logger = logging.getLogger(__name__)
 
@@ -19,15 +20,15 @@ class DiffInfo:
     """Information about a diff."""
 
     diff_revision: int
-    base_commit_id: Optional[str]
-    target_commit_id: Optional[str]  # The actual commit being reviewed (if available)
+    base_commit_id: str | None
+    target_commit_id: str | None  # The actual commit being reviewed (if available)
     raw_diff: str
     files: list[dict[str, Any]]
 
 
 class ReviewBoardClient:
     """Client for interacting with Review Board API.
-    
+
     Uses curl with Kerberos (--negotiate) for authentication through Apache,
     and manages Review Board session cookies.
     """
@@ -36,9 +37,9 @@ class ReviewBoardClient:
         self,
         url: str,
         bot_username: str,
-        api_token: Optional[str] = None,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
+        api_token: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
         use_kerberos: bool = False,
     ):
         """Initialize the Review Board client.
@@ -57,7 +58,7 @@ class ReviewBoardClient:
         self.password = password
         self.use_kerberos = use_kerberos
         self.bot_username = bot_username
-        self._cookie_file: Optional[Path] = None
+        self._cookie_file: Path | None = None
         self._connected = False
 
     def connect(self) -> None:
@@ -66,10 +67,10 @@ class ReviewBoardClient:
 
         # Create a temp cookie file for this session
         self._cookie_file = Path(tempfile.mktemp(suffix=".cookies", prefix="rb_"))
-        
+
         if self.use_kerberos:
             logger.info("Using Kerberos authentication for Apache layer")
-            
+
             if self.username and self.password:
                 # Login to Review Board with credentials through Kerberos
                 self._rb_login()
@@ -85,7 +86,7 @@ class ReviewBoardClient:
         if root.get("stat") == "fail":
             err_msg = root.get("err", {}).get("msg", "Unknown error")
             raise RuntimeError(f"Failed to connect to Review Board: {err_msg}")
-        
+
         self._connected = True
         logger.info(f"Connected to Review Board: {self.url}")
 
@@ -93,8 +94,8 @@ class ReviewBoardClient:
         self,
         url: str,
         method: str = "GET",
-        data: Optional[dict] = None,
-        headers: Optional[dict] = None,
+        data: dict | None = None,
+        headers: dict | None = None,
         accept: str = "application/json",
     ) -> tuple[int, str]:
         """Execute a curl request with Kerberos support.
@@ -103,42 +104,42 @@ class ReviewBoardClient:
             Tuple of (status_code, response_body)
         """
         cmd = ["curl", "-s", "-w", "\n%{http_code}"]
-        
+
         # Use cookies
         if self._cookie_file:
             cmd.extend(["-b", str(self._cookie_file)])
             cmd.extend(["-c", str(self._cookie_file)])
-        
+
         # Kerberos auth
         if self.use_kerberos:
             cmd.extend(["--negotiate", "-u", ":"])
-        
+
         # Method
         if method != "GET":
             cmd.extend(["-X", method])
-        
+
         # Headers
         cmd.extend(["-H", f"Accept: {accept}"])
         if headers:
             for k, v in headers.items():
                 cmd.extend(["-H", f"{k}: {v}"])
-        
+
         # Data - use --data-urlencode to properly encode special characters
         if data:
             for k, v in data.items():
                 cmd.extend(["--data-urlencode", f"{k}={v}"])
-        
+
         cmd.append(url)
-        
+
         logger.debug(f"curl {method} {url}")
         if data:
             logger.debug(f"curl data: {data}")
         result = subprocess.run(cmd, capture_output=True, text=True)
-        
+
         if result.returncode != 0:
             logger.error(f"curl failed: {result.stderr}")
             raise RuntimeError(f"curl failed: {result.stderr}")
-        
+
         # Parse response - last line is status code
         lines = result.stdout.rsplit("\n", 1)
         if len(lines) == 2:
@@ -151,7 +152,7 @@ class ReviewBoardClient:
         else:
             body = result.stdout
             status_code = 0
-        
+
         return status_code, body
 
     def _kerberos_init(self) -> None:
@@ -161,28 +162,29 @@ class ReviewBoardClient:
 
     def _rb_login(self) -> None:
         """Login to Review Board using form-based login (like browser).
-        
+
         This is needed when Apache handles Kerberos and strips Authorization headers,
         preventing API token or Basic auth from reaching Review Board.
         """
         logger.info(f"Logging into Review Board as {self.username}")
-        
+
         # Step 1: Get the login page to obtain CSRF token
         status, body = self._curl(
             f"{self.url}/account/login/",
             accept="text/html",
         )
-        
+
         if status != 200:
             raise RuntimeError(f"Failed to get login page: HTTP {status}")
-        
+
         # Extract CSRF token from form
         import re
+
         csrf_match = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', body)
         if not csrf_match:
             raise RuntimeError("Could not find CSRF token in login page")
         csrf_token = csrf_match.group(1)
-        
+
         # Step 2: Submit the login form
         status, body = self._curl(
             f"{self.url}/account/login/",
@@ -195,14 +197,14 @@ class ReviewBoardClient:
             headers={"Referer": f"{self.url}/account/login/"},
             accept="text/html",
         )
-        
+
         # Check if login succeeded - we should get a redirect (302) or session cookie
         # On success, RB redirects to dashboard; on failure, it shows error page
         if "Please enter a correct username and password" in body:
             raise RuntimeError("RB login failed: Invalid username or password")
         if "errorlist" in body.lower() and "error" in body.lower():
             raise RuntimeError("RB login failed: Check credentials")
-        
+
         # Verify we're now authenticated by checking the session
         status, body = self._curl(f"{self.url}/api/session/")
         try:
@@ -212,7 +214,7 @@ class ReviewBoardClient:
                 return
         except json.JSONDecodeError:
             pass
-        
+
         raise RuntimeError("RB login failed: Could not establish session")
 
     def _init_session(self) -> None:
@@ -220,37 +222,37 @@ class ReviewBoardClient:
         if self.username and self.password:
             self._rb_login()
 
-    def _api_get(self, path: str, params: Optional[dict] = None) -> dict:
+    def _api_get(self, path: str, params: dict | None = None) -> dict:
         """Make a GET request to the API."""
         url = f"{self.url}{path}"
         if params:
             query = "&".join(f"{k}={v}" for k, v in params.items())
             url = f"{url}?{query}"
-        
+
         status, body = self._curl(url)
-        
+
         try:
             return json.loads(body)
         except json.JSONDecodeError:
             logger.error(f"Invalid JSON response: {body[:200]}")
             return {"stat": "fail", "err": {"msg": f"Invalid JSON (HTTP {status})"}}
 
-    def _api_post(self, path: str, data: Optional[dict] = None) -> dict:
+    def _api_post(self, path: str, data: dict | None = None) -> dict:
         """Make a POST request to the API."""
         url = f"{self.url}{path}"
         status, body = self._curl(url, method="POST", data=data)
-        
+
         try:
             return json.loads(body)
         except json.JSONDecodeError:
             logger.error(f"Invalid JSON response: {body[:200]}")
             return {"stat": "fail", "err": {"msg": f"Invalid JSON (HTTP {status})"}}
 
-    def _api_put(self, path: str, data: Optional[dict] = None) -> dict:
+    def _api_put(self, path: str, data: dict | None = None) -> dict:
         """Make a PUT request to the API."""
         url = f"{self.url}{path}"
         status, body = self._curl(url, method="PUT", data=data)
-        
+
         try:
             return json.loads(body)
         except json.JSONDecodeError:
@@ -268,15 +270,18 @@ class ReviewBoardClient:
         """Get review requests where bot user is a reviewer but hasn't reviewed."""
         logger.debug(f"Fetching pending reviews for {self.bot_username}")
 
-        result = self._api_get("/api/review-requests/", {
-            "to-users": self.bot_username,
-            "status": "pending",
-            "max-results": str(limit),
-        })
-        
+        result = self._api_get(
+            "/api/review-requests/",
+            {
+                "to-users": self.bot_username,
+                "status": "pending",
+                "max-results": str(limit),
+            },
+        )
+
         review_requests = result.get("review_requests", [])
         pending = []
-        
+
         for rr in review_requests:
             if self._has_bot_reviewed(rr["id"]):
                 logger.debug(f"Skipping {rr['id']} - already reviewed")
@@ -312,11 +317,11 @@ class ReviewBoardClient:
         except Exception:
             return 0
 
-    def _to_pending_review(self, rr: dict) -> Optional[PendingReview]:
+    def _to_pending_review(self, rr: dict) -> PendingReview | None:
         """Convert review request dict to PendingReview."""
         try:
             review_request_id = rr["id"]
-            
+
             repo_name = "unknown"
             links = rr.get("links", {})
             if "repository" in links:
@@ -355,7 +360,7 @@ class ReviewBoardClient:
             logger.warning(f"Error processing review request {rr.get('id')}: {e}")
             return None
 
-    def _get_base_commit(self, review_request_id: int) -> Optional[str]:
+    def _get_base_commit(self, review_request_id: int) -> str | None:
         """Extract the base commit ID from a review request."""
         try:
             result = self._api_get(f"/api/review-requests/{review_request_id}/diffs/")
@@ -366,18 +371,14 @@ class ReviewBoardClient:
         except Exception:
             return None
 
-    def _get_target_commit(
-        self, review_request_id: int, diff_revision: int
-    ) -> Optional[str]:
+    def _get_target_commit(self, review_request_id: int, diff_revision: int) -> str | None:
         """Get the target commit ID from the commits endpoint (RB 4.0+).
 
         For post-commit reviews, this returns the actual commit being reviewed.
         For pre-commit reviews or older RB versions, returns None.
         """
         try:
-            result = self._api_get(
-                f"/api/review-requests/{review_request_id}/diffs/{diff_revision}/commits/"
-            )
+            result = self._api_get(f"/api/review-requests/{review_request_id}/diffs/{diff_revision}/commits/")
             commits = result.get("commits", [])
             if commits:
                 # Return the last commit (tip of the review)
@@ -387,7 +388,7 @@ class ReviewBoardClient:
             logger.debug(f"Could not get target commit: {e}")
             return None
 
-    def get_diff(self, review_request_id: int, diff_revision: Optional[int] = None) -> DiffInfo:
+    def get_diff(self, review_request_id: int, diff_revision: int | None = None) -> DiffInfo:
         """Get the diff for a review request."""
         result = self._api_get(f"/api/review-requests/{review_request_id}/diffs/")
         diffs = result.get("diffs", [])
@@ -408,17 +409,17 @@ class ReviewBoardClient:
         # Get file info
         files = []
         try:
-            files_result = self._api_get(
-                f"/api/review-requests/{review_request_id}/diffs/{revision}/files/"
-            )
+            files_result = self._api_get(f"/api/review-requests/{review_request_id}/diffs/{revision}/files/")
             for f in files_result.get("files", []):
-                files.append({
-                    "id": f.get("id"),
-                    "source_file": f.get("source_file", ""),
-                    "dest_file": f.get("dest_file", ""),
-                    "source_revision": f.get("source_revision", ""),
-                    "status": f.get("status", ""),
-                })
+                files.append(
+                    {
+                        "id": f.get("id"),
+                        "source_file": f.get("source_file", ""),
+                        "dest_file": f.get("dest_file", ""),
+                        "source_revision": f.get("source_revision", ""),
+                        "status": f.get("status", ""),
+                    }
+                )
         except Exception as e:
             logger.warning(f"Could not fetch file list: {e}")
 
@@ -440,12 +441,12 @@ class ReviewBoardClient:
         # Use the diff resource endpoint with text/x-patch Accept header
         url = f"{self.url}/api/review-requests/{review_request_id}/diffs/{revision}/"
         status, body = self._curl(url, accept="text/x-patch")
-        
+
         # Check if we got HTML instead of a diff (indicates auth or redirect issue)
         if body.strip().startswith("<!DOCTYPE") or body.strip().startswith("<html"):
             logger.error(f"Got HTML instead of diff (status {status}). First 200 chars: {body[:200]}")
             raise RuntimeError(f"Failed to fetch diff: got HTML response (status {status})")
-        
+
         logger.debug(f"Fetched raw diff: {len(body)} chars, status {status}")
         return body
 
@@ -459,7 +460,7 @@ class ReviewBoardClient:
     ) -> dict:
         """Post a review with comments."""
         logger.info(f"Creating review on request {review_request_id}")
-        
+
         result = self._api_post(
             f"/api/review-requests/{review_request_id}/reviews/",
             {
@@ -468,10 +469,10 @@ class ReviewBoardClient:
                 "public": "0",
             },
         )
-        
+
         if result.get("stat") != "ok":
             raise RuntimeError(f"Failed to create review: {result}")
-        
+
         review = result.get("review", result)
         review_id = review["id"]
 
@@ -489,9 +490,7 @@ class ReviewBoardClient:
 
         return review
 
-    def _add_diff_comment(
-        self, review_request_id: int, review_id: int, comment: dict[str, Any]
-    ) -> None:
+    def _add_diff_comment(self, review_request_id: int, review_id: int, comment: dict[str, Any]) -> None:
         """Add a diff comment to a review."""
         try:
             file_path = comment["file_path"]
@@ -518,28 +517,28 @@ class ReviewBoardClient:
         except Exception as e:
             logger.error(f"Failed to add comment: {e}")
 
-    def _find_filediff_id(self, review_request_id: int, file_path: str) -> Optional[int]:
+    def _find_filediff_id(self, review_request_id: int, file_path: str) -> int | None:
         """Find the filediff ID for a given file path."""
         try:
             result = self._api_get(f"/api/review-requests/{review_request_id}/diffs/")
             diffs = result.get("diffs", [])
             if not diffs:
                 return None
-            
+
             latest_revision = diffs[-1]["revision"]
             files_result = self._api_get(
                 f"/api/review-requests/{review_request_id}/diffs/{latest_revision}/files/"
             )
-            
+
             for f in files_result.get("files", []):
                 dest = f.get("dest_file", "")
                 source = f.get("source_file", "")
-                
+
                 if dest == file_path or source == file_path:
                     return f["id"]
                 if dest.endswith(file_path) or file_path.endswith(dest):
                     return f["id"]
-            
+
             return None
         except Exception:
             return None
@@ -547,16 +546,16 @@ class ReviewBoardClient:
     def get_repository_info(self, review_request_id: int) -> dict[str, Any]:
         """Get repository information for a review request."""
         rr = self.get_review_request(review_request_id)
-        
+
         links = rr.get("links", {})
         if "repository" not in links:
             return {"id": 0, "name": "unknown", "path": "", "tool": ""}
-        
+
         repo_href = links["repository"]["href"]
         repo_path = repo_href.replace(self.url, "")
         repo_result = self._api_get(repo_path)
         repo = repo_result.get("repository", {})
-        
+
         return {
             "id": repo.get("id", 0),
             "name": repo.get("name", "unknown"),
@@ -573,7 +572,7 @@ class ReviewBoardClient:
                 pass
 
 
-def _parse_datetime(dt_str: Optional[str]) -> Optional[datetime]:
+def _parse_datetime(dt_str: str | None) -> datetime | None:
     """Parse Review Board datetime string."""
     if not dt_str:
         return None

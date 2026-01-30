@@ -1,11 +1,11 @@
 """LLM providers for code review."""
 
-import logging
 from abc import ABC, abstractmethod
-from typing import Optional
+import logging
 
 import anthropic
 import openai
+
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class OpenRouterProvider(LLMProvider):
         max_tokens: int = 4096,
         temperature: float = 0.2,
         base_url: str = "https://openrouter.ai/api/v1",
-        site_url: Optional[str] = None,
+        site_url: str | None = None,
         site_name: str = "BB Review",
     ):
         extra_headers = {
@@ -94,7 +94,7 @@ class OpenRouterProvider(LLMProvider):
         )
         message = response.choices[0].message
         content = message.content or ""
-        
+
         # Some models (like deepseek-r1) return reasoning in a separate field
         # and put the actual response in reasoning_content
         reasoning = getattr(message, "reasoning_content", None) or getattr(message, "reasoning", None)
@@ -105,7 +105,7 @@ class OpenRouterProvider(LLMProvider):
             if not content:
                 logger.info("Using reasoning_content as response (deepseek-r1 style)")
                 content = reasoning
-        
+
         return content
 
 
@@ -118,7 +118,7 @@ class OpenAIProvider(LLMProvider):
         model: str = "gpt-4o",
         max_tokens: int = 4096,
         temperature: float = 0.2,
-        base_url: Optional[str] = None,
+        base_url: str | None = None,
     ):
         kwargs = {"api_key": api_key}
         if base_url:
@@ -148,8 +148,8 @@ def create_provider(
     model: str,
     max_tokens: int = 4096,
     temperature: float = 0.2,
-    base_url: Optional[str] = None,
-    site_url: Optional[str] = None,
+    base_url: str | None = None,
+    site_url: str | None = None,
     site_name: str = "BB Review",
 ) -> LLMProvider:
     """Factory function to create an LLM provider.

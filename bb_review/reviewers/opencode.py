@@ -1,13 +1,14 @@
 """OpenCode agent runner for code review."""
 
+from dataclasses import dataclass, field
 import logging
+from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass, field
-from pathlib import Path
+
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +198,8 @@ def run_opencode_review(
         cmd = [
             opencode_bin,
             "run",
-            "--title", f"Review-{review_id}",
+            "--title",
+            f"Review-{review_id}",
         ]
 
         # Only attach patch file if not at reviewed state
@@ -234,9 +236,7 @@ def run_opencode_review(
         # Check for errors
         if result.returncode != 0:
             error_msg = result.stderr or result.stdout or "Unknown error"
-            raise OpenCodeError(
-                f"OpenCode exited with code {result.returncode}: {error_msg}"
-            )
+            raise OpenCodeError(f"OpenCode exited with code {result.returncode}: {error_msg}")
 
         output = result.stdout.strip()
         if not output:
@@ -252,9 +252,7 @@ def run_opencode_review(
         return output
 
     except subprocess.TimeoutExpired as e:
-        raise OpenCodeTimeoutError(
-            f"OpenCode execution timed out after {timeout} seconds"
-        ) from e
+        raise OpenCodeTimeoutError(f"OpenCode execution timed out after {timeout} seconds") from e
 
     finally:
         # Clean up temp file if we created one
@@ -303,8 +301,10 @@ def run_opencode_agent(
     cmd = [
         opencode_bin,
         "run",
-        "--agent", agent,
-        "--title", f"API Review #{review_id}",
+        "--agent",
+        agent,
+        "--title",
+        f"API Review #{review_id}",
     ]
 
     if model:
@@ -334,9 +334,7 @@ def run_opencode_agent(
         # Check for errors
         if result.returncode != 0:
             error_msg = result.stderr or result.stdout or "Unknown error"
-            raise OpenCodeError(
-                f"OpenCode exited with code {result.returncode}: {error_msg}"
-            )
+            raise OpenCodeError(f"OpenCode exited with code {result.returncode}: {error_msg}")
 
         output = result.stdout.strip()
         if not output:
@@ -346,9 +344,7 @@ def run_opencode_agent(
         return output
 
     except subprocess.TimeoutExpired as e:
-        raise OpenCodeTimeoutError(
-            f"OpenCode execution timed out after {timeout} seconds"
-        ) from e
+        raise OpenCodeTimeoutError(f"OpenCode execution timed out after {timeout} seconds") from e
 
 
 def check_opencode_available(binary_path: str = "opencode") -> tuple[bool, str]:

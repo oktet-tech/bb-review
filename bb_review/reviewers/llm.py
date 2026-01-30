@@ -4,7 +4,7 @@ import fnmatch
 import json
 import logging
 import re
-from typing import Any, Optional
+from typing import Any
 
 import anthropic
 import openai
@@ -12,10 +12,12 @@ import openai
 from ..models import ReviewComment, ReviewFocus, ReviewGuidelines, ReviewResult, Severity
 from .providers import create_provider
 
+
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT = """You are an expert code reviewer. Your task is to analyze code changes (diffs) and provide actionable, specific feedback.
+SYSTEM_PROMPT = """You are an expert code reviewer.
+Your task is to analyze code changes (diffs) and provide actionable, specific feedback.
 
 Guidelines for your review:
 1. Focus on substantive issues, not style nitpicks (unless style is specifically requested)
@@ -58,8 +60,8 @@ class Analyzer:
         max_tokens: int = 4096,
         temperature: float = 0.2,
         provider: str = "anthropic",
-        base_url: Optional[str] = None,
-        site_url: Optional[str] = None,
+        base_url: str | None = None,
+        site_url: str | None = None,
         site_name: str = "BB Review",
     ):
         """Initialize the analyzer.
@@ -94,7 +96,7 @@ class Analyzer:
         self,
         diff: str,
         guidelines: ReviewGuidelines,
-        file_contexts: Optional[dict[str, str]] = None,
+        file_contexts: dict[str, str] | None = None,
         review_request_id: int = 0,
         diff_revision: int = 0,
     ) -> ReviewResult:
@@ -112,17 +114,15 @@ class Analyzer:
         """
         prompt = self._build_prompt(diff, guidelines, file_contexts)
 
-        logger.info(
-            f"Analyzing diff ({len(diff)} chars) with {self.provider_name}/{self.model}"
-        )
+        logger.info(f"Analyzing diff ({len(diff)} chars) with {self.provider_name}/{self.model}")
         logger.debug(f"Prompt length: {len(prompt)} chars")
 
         try:
             result_text = self.llm.complete(SYSTEM_PROMPT, prompt)
-            
+
             # Store raw response for debugging (even if empty)
             self._last_raw_response = result_text
-            
+
             if not result_text:
                 logger.warning("LLM returned empty response")
             else:
@@ -136,8 +136,8 @@ class Analyzer:
         except Exception as e:
             logger.error(f"Error during analysis: {e}")
             raise
-    
-    def get_last_raw_response(self) -> Optional[str]:
+
+    def get_last_raw_response(self) -> str | None:
         """Get the raw response from the last analysis."""
         return getattr(self, "_last_raw_response", None)
 
@@ -145,7 +145,7 @@ class Analyzer:
         self,
         diff: str,
         guidelines: ReviewGuidelines,
-        file_contexts: Optional[dict[str, str]] = None,
+        file_contexts: dict[str, str] | None = None,
     ) -> str:
         """Build the prompt for the LLM.
 
@@ -181,10 +181,7 @@ class Analyzer:
         # Add ignore paths note
         if guidelines.ignore_paths:
             ignore_list = ", ".join(guidelines.ignore_paths)
-            parts.append(
-                f"\n## Ignore Paths\n"
-                f"Do not comment on files matching: {ignore_list}"
-            )
+            parts.append(f"\n## Ignore Paths\nDo not comment on files matching: {ignore_list}")
 
         # Add file context if provided
         if file_contexts:
@@ -204,9 +201,7 @@ class Analyzer:
 
         return "\n".join(parts)
 
-    def _parse_response(
-        self, response_text: str, review_request_id: int, diff_revision: int
-    ) -> ReviewResult:
+    def _parse_response(self, response_text: str, review_request_id: int, diff_revision: int) -> ReviewResult:
         """Parse the LLM response into a ReviewResult.
 
         Args:
@@ -281,8 +276,11 @@ class Analyzer:
             Severity.CRITICAL: "🚨",
         }
 
+        emoji = severity_emoji.get(comment.severity, "•")
+        severity = comment.severity.value.upper()
+        issue_type = comment.issue_type.value
         parts = [
-            f"{severity_emoji.get(comment.severity, '•')} **{comment.severity.value.upper()}** ({comment.issue_type.value})",
+            f"{emoji} **{severity}** ({issue_type})",
             "",
             comment.message,
         ]
@@ -302,11 +300,7 @@ class Analyzer:
             Formatted summary text.
         """
         if not result.comments:
-            return (
-                "**AI Review Complete**\n\n"
-                f"{result.summary}\n\n"
-                "No issues found."
-            )
+            return f"**AI Review Complete**\n\n{result.summary}\n\nNo issues found."
 
         # Count issues by severity
         severity_counts = {}
@@ -321,10 +315,7 @@ class Analyzer:
                 parts.append(f"- {severity.value.capitalize()}: {count}")
 
         if result.has_critical_issues:
-            parts.extend([
-                "",
-                "⚠️ **Critical issues found. Please address before merging.**"
-            ])
+            parts.extend(["", "⚠️ **Critical issues found. Please address before merging.**"])
 
         return "\n".join(parts)
 
@@ -346,16 +337,18 @@ def extract_changed_files(diff: str) -> list[dict[str, Any]]:
         # New file marker
         if line.startswith("diff --git"):
             if current_file:
-                files.append({
-                    "path": current_file,
-                    "lines": current_lines,
-                })
+                files.append(
+                    {
+                        "path": current_file,
+                        "lines": current_lines,
+                    }
+                )
             # Extract file path - format is "diff --git a/path b/path"
             parts = line.split()
             if len(parts) >= 4:
                 current_file = parts[3][2:]  # Remove "b/" prefix
             current_lines = []
-        
+
         # Track added/modified line numbers
         elif line.startswith("@@"):
             # Parse hunk header like "@@ -10,5 +12,8 @@"
@@ -366,10 +359,12 @@ def extract_changed_files(diff: str) -> list[dict[str, Any]]:
 
     # Don't forget the last file
     if current_file:
-        files.append({
-            "path": current_file,
-            "lines": current_lines,
-        })
+        files.append(
+            {
+                "path": current_file,
+                "lines": current_lines,
+            }
+        )
 
     return files
 
@@ -393,16 +388,15 @@ def filter_diff_by_paths(diff: str, ignore_paths: list[str]) -> str:
             # Flush previous file if not skipped
             if not skip_current_file:
                 result_lines.extend(current_file_lines)
-            
+
             current_file_lines = [line]
-            
+
             # Check if this file should be ignored
             parts = line.split()
             if len(parts) >= 4:
                 file_path = parts[3][2:]  # Remove "b/" prefix
                 skip_current_file = any(
-                    fnmatch.fnmatch(file_path, pattern) or
-                    fnmatch.fnmatch(file_path, f"**/{pattern}")
+                    fnmatch.fnmatch(file_path, pattern) or fnmatch.fnmatch(file_path, f"**/{pattern}")
                     for pattern in ignore_paths
                 )
             else:

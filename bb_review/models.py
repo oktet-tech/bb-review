@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 
 class ReviewFocus(str, Enum):
@@ -35,7 +34,7 @@ class RepoConfig:
     remote_url: str
     rb_repo_name: str  # Name as it appears in Review Board
     default_branch: str = "main"
-    repo_type: Optional[str] = None  # e.g., "te-test-suite" for OpenCode MCP setup
+    repo_type: str | None = None  # e.g., "te-test-suite" for OpenCode MCP setup
 
     def __post_init__(self):
         if isinstance(self.local_path, str):
@@ -67,7 +66,7 @@ class ReviewComment:
     message: str
     severity: Severity
     issue_type: ReviewFocus
-    suggestion: Optional[str] = None  # Suggested fix if applicable
+    suggestion: str | None = None  # Suggested fix if applicable
 
 
 @dataclass
@@ -88,9 +87,7 @@ class ReviewResult:
     @property
     def should_block(self) -> bool:
         """Whether this review should block submission."""
-        return self.has_critical_issues or any(
-            c.severity == Severity.CRITICAL for c in self.comments
-        )
+        return self.has_critical_issues or any(c.severity == Severity.CRITICAL for c in self.comments)
 
 
 @dataclass
@@ -102,9 +99,9 @@ class PendingReview:
     submitter: str
     summary: str
     diff_revision: int
-    base_commit: Optional[str] = None
-    branch: Optional[str] = None
-    created_at: Optional[datetime] = None
+    base_commit: str | None = None
+    branch: str | None = None
+    created_at: datetime | None = None
 
 
 @dataclass
@@ -115,5 +112,5 @@ class ProcessedReview:
     diff_revision: int
     processed_at: datetime
     success: bool
-    error_message: Optional[str] = None
+    error_message: str | None = None
     comment_count: int = 0

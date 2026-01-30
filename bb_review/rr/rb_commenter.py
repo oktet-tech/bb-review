@@ -1,11 +1,11 @@
 """Review Board commenter for posting AI review results."""
 
 import logging
-from typing import Optional
 
-from ..reviewers import Analyzer
 from ..models import ReviewComment, ReviewResult, Severity
+from ..reviewers import Analyzer
 from .rb_client import ReviewBoardClient
+
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class Commenter:
         self,
         result: ReviewResult,
         dry_run: bool = False,
-    ) -> Optional[int]:
+    ) -> int | None:
         """Post review results to Review Board.
 
         Args:
@@ -45,10 +45,10 @@ class Commenter:
             Review ID if posted, None if dry run.
         """
         review_request_id = result.review_request_id
-        
+
         # Format the summary
         body_top = self.analyzer.format_review_summary(result)
-        
+
         # Determine ship_it status
         ship_it = False
         if self.auto_ship_it and not result.comments and not result.has_critical_issues:
@@ -59,21 +59,21 @@ class Commenter:
         comments = []
         for comment in result.comments:
             formatted_text = self.analyzer.format_comment_text(comment)
-            comments.append({
-                "file_path": comment.file_path,
-                "line_number": comment.line_number,
-                "text": formatted_text,
-            })
+            comments.append(
+                {
+                    "file_path": comment.file_path,
+                    "line_number": comment.line_number,
+                    "text": formatted_text,
+                }
+            )
 
         if dry_run:
             self._print_dry_run(review_request_id, body_top, comments, ship_it)
             return None
 
         # Post the review
-        logger.info(
-            f"Posting review to {review_request_id} with {len(comments)} comments"
-        )
-        
+        logger.info(f"Posting review to {review_request_id} with {len(comments)} comments")
+
         try:
             review = self.rb_client.post_review(
                 review_request_id=review_request_id,
@@ -107,12 +107,12 @@ class Commenter:
         print("\n" + "=" * 60)
         print(f"DRY RUN - Review for request #{review_request_id}")
         print("=" * 60)
-        
+
         print(f"\nShip It: {'Yes' if ship_it else 'No'}")
-        
+
         print("\n--- Review Summary ---")
         print(body_top)
-        
+
         if comments:
             print("\n--- Inline Comments ---")
             for i, comment in enumerate(comments, 1):
@@ -121,7 +121,7 @@ class Commenter:
                 print(comment["text"])
         else:
             print("\n(No inline comments)")
-        
+
         print("\n" + "=" * 60)
 
     def format_cli_output(self, result: ReviewResult) -> str:
@@ -161,7 +161,7 @@ class Commenter:
             for severity in [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW]:
                 if severity not in by_severity:
                     continue
-                
+
                 lines.append(f"### {severity.value.upper()} ({len(by_severity[severity])})")
                 lines.append("")
 
@@ -204,10 +204,12 @@ class ReviewFormatter:
         ]
 
         if result.has_critical_issues:
-            lines.extend([
-                "> ⚠️ **Warning:** Critical issues were found that should be addressed.",
-                "",
-            ])
+            lines.extend(
+                [
+                    "> ⚠️ **Warning:** Critical issues were found that should be addressed.",
+                    "",
+                ]
+            )
 
         if result.comments:
             lines.append("## Issues")
@@ -241,12 +243,14 @@ class ReviewFormatter:
                         lines.append(f"  - 💡 *Suggestion:* {comment.suggestion}")
                     lines.append("")
         else:
-            lines.extend([
-                "## Result",
-                "",
-                "✅ No issues found in this review.",
-                "",
-            ])
+            lines.extend(
+                [
+                    "## Result",
+                    "",
+                    "✅ No issues found in this review.",
+                    "",
+                ]
+            )
 
         return "\n".join(lines)
 

@@ -1,16 +1,16 @@
 """Repository manager for maintaining local clones and checkouts."""
 
+from collections.abc import Generator
+from contextlib import contextmanager
 import logging
+from pathlib import Path
 import subprocess
 import tempfile
-from contextlib import contextmanager
-from pathlib import Path
-from typing import Generator, Optional
 
-import git
 from git import GitCommandError, InvalidGitRepositoryError, Repo
 
 from ..models import RepoConfig
+
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ class RepoManager:
             raise RepoManagerError(f"Repository not found: {name}")
         return self.repos[name]
 
-    def get_repo_by_rb_name(self, rb_name: str) -> Optional[RepoConfig]:
+    def get_repo_by_rb_name(self, rb_name: str) -> RepoConfig | None:
         """Get repository configuration by Review Board name.
 
         Args:
@@ -84,20 +84,20 @@ class RepoManager:
                 logger.debug(f"Repository {repo_name} exists at {local_path}")
                 self._repo_instances[repo_name] = repo
                 return repo
-            except InvalidGitRepositoryError:
-                raise RepoManagerError(f"Path exists but is not a git repo: {local_path}")
-        
+            except InvalidGitRepositoryError as err:
+                raise RepoManagerError(f"Path exists but is not a git repo: {local_path}") from err
+
         # Clone the repository
         logger.info(f"Cloning {config.remote_url} to {local_path}")
         local_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         try:
             repo = Repo.clone_from(config.remote_url, local_path)
             self._repo_instances[repo_name] = repo
             logger.info(f"Cloned {repo_name} successfully")
             return repo
         except GitCommandError as e:
-            raise RepoManagerError(f"Failed to clone {repo_name}: {e}")
+            raise RepoManagerError(f"Failed to clone {repo_name}: {e}") from e
 
     def fetch_all(self, repo_name: str) -> None:
         """Fetch all remote refs for a repository.
@@ -107,7 +107,7 @@ class RepoManager:
         """
         repo = self.ensure_clone(repo_name)
         logger.info(f"Fetching all refs for {repo_name}")
-        
+
         try:
             for remote in repo.remotes:
                 remote.fetch(prune=True)
@@ -143,26 +143,26 @@ class RepoManager:
         """
         repo = self.ensure_clone(repo_name)
         logger.info(f"Checking out {ref} in {repo_name}")
-        
+
         try:
             # First, try to checkout directly
             repo.git.checkout(ref)
             logger.info(f"Checked out {ref} in {repo_name}")
         except GitCommandError:
             # If direct checkout fails, try fetching first
-            logger.debug(f"Direct checkout failed, fetching and retrying")
+            logger.debug("Direct checkout failed, fetching and retrying")
             self.fetch_all(repo_name)
             try:
                 repo.git.checkout(ref)
                 logger.info(f"Checked out {ref} in {repo_name} after fetch")
             except GitCommandError as e:
-                raise RepoManagerError(f"Failed to checkout {ref} in {repo_name}: {e}")
+                raise RepoManagerError(f"Failed to checkout {ref} in {repo_name}: {e}") from e
 
     def smart_checkout(
         self,
         repo_name: str,
-        base_commit: Optional[str] = None,
-        branch: Optional[str] = None,
+        base_commit: str | None = None,
+        branch: str | None = None,
     ) -> str:
         """Smart checkout that handles various scenarios.
 
@@ -183,7 +183,7 @@ class RepoManager:
             RepoManagerError: If no valid ref could be checked out.
         """
         config = self.get_repo(repo_name)
-        repo = self.ensure_clone(repo_name)
+        self.ensure_clone(repo_name)
 
         # Try base commit first
         if base_commit:
@@ -265,13 +265,11 @@ class RepoManager:
         Returns:
             True if patch was applied (or would apply) successfully.
         """
-        repo = self.ensure_clone(repo_name)
+        self.ensure_clone(repo_name)
         local_path = self.get_local_path(repo_name)
 
         # Write patch to temp file
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".patch", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".patch", delete=False) as f:
             f.write(patch)
             patch_file = f.name
 
@@ -317,7 +315,7 @@ class RepoManager:
             logger.warning(f"Error checking commit {commit_sha}: {e}")
             return False
 
-    def get_file_content(self, repo_name: str, file_path: str) -> Optional[str]:
+    def get_file_content(self, repo_name: str, file_path: str) -> str | None:
         """Get the content of a file from the repository.
 
         Args:
@@ -346,7 +344,7 @@ class RepoManager:
         line_start: int,
         line_end: int,
         context_lines: int = 50,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Get file content around specific lines.
 
         Args:
@@ -383,10 +381,10 @@ class RepoManager:
     def checkout_context(
         self,
         repo_name: str,
-        base_commit: Optional[str] = None,
-        branch: Optional[str] = None,
-        target_commit: Optional[str] = None,
-        patch: Optional[str] = None,
+        base_commit: str | None = None,
+        branch: str | None = None,
+        target_commit: str | None = None,
+        patch: str | None = None,
     ) -> Generator[tuple[Path, bool], None, None]:
         """Context manager that checks out a ref and restores original state.
 
@@ -421,7 +419,7 @@ class RepoManager:
                 if target_commit:
                     logger.debug(f"Target commit {target_commit[:12]} not in repo, using base + patch")
                 self.smart_checkout(repo_name, base_commit, branch)
-                
+
                 # Apply patch to get to reviewed state
                 if patch:
                     # Track untracked files before patch to clean up only new ones
@@ -439,7 +437,7 @@ class RepoManager:
             try:
                 # git reset --hard clears index and working tree
                 repo.git.reset("--hard", original_ref)
-                
+
                 # Clean up only new files created by the patch (untracked files)
                 if patch_applied:
                     untracked_after = set(repo.untracked_files)
@@ -474,7 +472,10 @@ class RepoManager:
             if config.local_path.exists():
                 try:
                     repo = Repo(config.local_path)
-                    info["current_branch"] = repo.active_branch.name if not repo.head.is_detached else "detached"
+                    if repo.head.is_detached:
+                        info["current_branch"] = "detached"
+                    else:
+                        info["current_branch"] = repo.active_branch.name
                     info["current_commit"] = repo.head.commit.hexsha[:8]
                 except Exception:
                     info["current_branch"] = "unknown"

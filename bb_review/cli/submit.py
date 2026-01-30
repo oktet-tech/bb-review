@@ -2,13 +2,14 @@
 
 import json
 import logging
-import sys
 from pathlib import Path
+import sys
 
 import click
 
 from ..rr import ReviewBoardClient
-from . import main, get_config
+from . import get_config, main
+
 
 logger = logging.getLogger(__name__)
 
@@ -21,14 +22,14 @@ def submit_cmd(ctx: click.Context, json_file: Path, dry_run: bool) -> None:
     """Submit a pre-edited review JSON file to ReviewBoard.
 
     This allows a workflow where you can:
-    
+
     \b
     1. Run analysis in dry-run mode to generate a JSON file
     2. Review and edit the JSON file as needed
     3. Submit the edited review to ReviewBoard
 
     Example:
-    
+
     \b
         bb-review opencode 42738 --dry-run -o review.json
         # Edit review.json as needed
@@ -61,7 +62,10 @@ def submit_cmd(ctx: click.Context, json_file: Path, dry_run: bool) -> None:
         # Validate comments structure
         for i, comment in enumerate(comments):
             if "file_path" not in comment or "line_number" not in comment or "text" not in comment:
-                click.echo(f"Error: Comment {i} missing required fields (file_path, line_number, text)", err=True)
+                click.echo(
+                    f"Error: Comment {i} missing required fields (file_path, line_number, text)",
+                    err=True,
+                )
                 sys.exit(1)
 
         click.echo(f"  Review request: #{review_request_id}")
@@ -76,7 +80,7 @@ def submit_cmd(ctx: click.Context, json_file: Path, dry_run: bool) -> None:
                 click.echo("\n--- Inline Comments ---")
                 for c in comments:
                     click.echo(f"  {c['file_path']}:{c['line_number']}")
-                    preview = c['text'][:100] + "..." if len(c['text']) > 100 else c['text']
+                    preview = c["text"][:100] + "..." if len(c["text"]) > 100 else c["text"]
                     click.echo(f"    {preview}")
             return
 

@@ -2,20 +2,20 @@
 
 import json
 import logging
-import sys
 from pathlib import Path
-from typing import Optional
+import sys
 
 import click
 
 from ..config import Config
+from ..git import RepoManager
 from ..guidelines import load_guidelines, validate_guidelines
 from ..models import PendingReview
 from ..reviewers import Analyzer, extract_changed_files, filter_diff_by_paths
 from ..rr import Commenter, ReviewBoardClient, ReviewFormatter
-from ..git import RepoManager
-from . import main, get_config
+from . import get_config, main
 from .utils import REVIEW_ID
+
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +26,15 @@ logger = logging.getLogger(__name__)
 @click.option("--format", "output_format", type=click.Choice(["text", "json", "markdown"]), default="text")
 @click.option("--dump-response", type=click.Path(path_type=Path), help="Dump raw LLM response to file")
 @click.pass_context
-def analyze(ctx: click.Context, review_id: int, dry_run: bool, output_format: str, dump_response: Optional[Path]) -> None:
+def analyze(
+    ctx: click.Context,
+    review_id: int,
+    dry_run: bool,
+    output_format: str,
+    dump_response: Path | None,
+) -> None:
     """Analyze a specific review request.
-    
+
     REVIEW_ID can be either a number (e.g., 42738) or a full Review Board URL
     (e.g., https://rb.example.com/r/42738/).
     """
@@ -53,7 +59,7 @@ def analyze(ctx: click.Context, review_id: int, dry_run: bool, output_format: st
         rb_client.connect()
 
         repo_manager = RepoManager(config.get_all_repos())
-        
+
         analyzer = Analyzer(
             api_key=config.llm.api_key,
             model=config.llm.model,
@@ -118,7 +124,7 @@ def process_review(
     repo_manager: RepoManager,
     analyzer: Analyzer,
     config: Config,
-    pending: Optional[PendingReview] = None,
+    pending: PendingReview | None = None,
 ):
     """Process a single review request."""
     # Get review info if not provided
@@ -126,7 +132,7 @@ def process_review(
         rr = rb_client.get_review_request(review_id)
         repo_info = rb_client.get_repository_info(review_id)
         diff_info = rb_client.get_diff(review_id)
-        
+
         pending = PendingReview(
             review_request_id=review_id,
             repository=repo_info["name"],
@@ -141,8 +147,7 @@ def process_review(
     repo_config = repo_manager.get_repo_by_rb_name(pending.repository)
     if repo_config is None:
         raise click.ClickException(
-            f"Repository not configured: {pending.repository}. "
-            f"Add it to config.yaml under 'repositories'."
+            f"Repository not configured: {pending.repository}. Add it to config.yaml under 'repositories'."
         )
 
     # Checkout the commit (with patch applied if target commit unavailable)
@@ -150,10 +155,10 @@ def process_review(
     if diff_info.target_commit_id:
         click.echo(f"  Target commit: {diff_info.target_commit_id[:12]} (reviewing actual commit)")
     click.echo(f"  Base commit: {pending.base_commit or 'default branch'}")
-    
+
     # Get raw diff for potential patch application
     raw_diff = diff_info.raw_diff
-    
+
     with repo_manager.checkout_context(
         repo_config.name,
         base_commit=pending.base_commit,
@@ -162,11 +167,11 @@ def process_review(
         patch=raw_diff,
     ) as (repo_path, used_target):
         if used_target:
-            click.echo(f"  Checked out to reviewed state")
-        
+            click.echo("  Checked out to reviewed state")
+
         # Load guidelines
         guidelines = load_guidelines(repo_path)
-        
+
         # Validate guidelines
         warnings = validate_guidelines(guidelines)
         for warning in warnings:

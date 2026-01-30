@@ -47,11 +47,14 @@ build-backend = "hatchling.build"
 packages = ["bb_review"]
 
 [tool.ruff]
-line-length = 100
+line-length = 110
 target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"bb_review/cli/__init__.py" = ["E402", "F401"]  # Intentional late imports for CLI subcommands
 
 [tool.ruff.lint.flake8-quotes]
 avoid-escape = false

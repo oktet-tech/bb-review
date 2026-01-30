@@ -1,27 +1,26 @@
 """Utility commands for BB Review CLI."""
 
+from pathlib import Path
 import re
 import sys
-from pathlib import Path
-from typing import Optional
 
 import click
 
-from . import main, get_config
+from . import get_config, main
 
 
 def parse_review_id(value: str) -> int:
     """Parse a review ID from either a number or a Review Board URL.
-    
+
     Accepts:
         - Plain number: "42738"
         - RB URL: "https://rb.example.com/r/42738/"
         - RB URL without trailing slash: "https://rb.example.com/r/42738"
         - RB URL with diff: "https://rb.example.com/r/42738/diff/"
-    
+
     Returns:
         The extracted review ID as an integer.
-    
+
     Raises:
         click.BadParameter: If the value cannot be parsed.
     """
@@ -30,12 +29,12 @@ def parse_review_id(value: str) -> int:
         return int(value)
     except ValueError:
         pass
-    
+
     # Try URL pattern: .../r/{id}/... or .../r/{id}
-    match = re.search(r'/r/(\d+)(?:/|$)', value)
+    match = re.search(r"/r/(\d+)(?:/|$)", value)
     if match:
         return int(match.group(1))
-    
+
     raise click.BadParameter(
         f"Cannot parse review ID from '{value}'. "
         "Expected a number or a Review Board URL like 'https://rb.example.com/r/42738/'"
@@ -44,17 +43,17 @@ def parse_review_id(value: str) -> int:
 
 class ReviewIdParamType(click.ParamType):
     """Click parameter type that accepts either a review ID or RB URL."""
-    
+
     name = "review_id"
-    
+
     def convert(self, value, param, ctx):
         if value is None:
             return None
-        
+
         # If already an int, return it
         if isinstance(value, int):
             return value
-        
+
         try:
             return parse_review_id(value)
         except click.BadParameter as e:
@@ -70,7 +69,7 @@ def init(ctx: click.Context) -> None:
     """Initialize BB Review configuration."""
     config_path = Path.cwd() / "config.yaml"
     example_path = Path(__file__).parent.parent.parent / "config.example.yaml"
-    
+
     if config_path.exists():
         click.echo(f"Config file already exists: {config_path}")
         if not click.confirm("Overwrite?"):
@@ -119,26 +118,31 @@ defaults:
 
 
 @main.command("encrypt-password")
-@click.option("--token", "-t", help="Token to use as encryption key (defaults to api_token from config)")
-@click.option("--output", "-o", type=click.Path(path_type=Path), help="Output file path (defaults to password_file from config or ~/.bb_review/password.enc)")
+@click.option("--token", "-t", help="Token for encryption key (default: api_token from config)")
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output file (default: password_file from config or ~/.bb_review/password.enc)",
+)
 @click.pass_context
-def encrypt_password_cmd(ctx: click.Context, token: Optional[str], output: Optional[Path]) -> None:
+def encrypt_password_cmd(ctx: click.Context, token: str | None, output: Path | None) -> None:
     """Encrypt your Review Board password for secure storage.
-    
+
     The password will be encrypted using the api_token from your config
     (or --token if specified). The encrypted file is saved to password_file
     from config (or --output if specified).
-    
+
     Example:
-    
+
         # Uses api_token and password_file from config.yaml
         bb-review encrypt-password
-        
+
         # Or specify explicitly
         bb-review encrypt-password --token "your-token" --output ~/.bb_review/password.enc
     """
     from ..crypto import encrypt_password_to_file
-    
+
     # Try to get token from config if not provided
     if not token:
         try:
@@ -151,7 +155,7 @@ def encrypt_password_cmd(ctx: click.Context, token: Optional[str], output: Optio
         except (FileNotFoundError, Exception) as e:
             click.echo(f"Error: No --token provided and couldn't load config: {e}", err=True)
             sys.exit(1)
-    
+
     # Try to get output path from config if not provided
     if not output:
         try:
@@ -163,16 +167,16 @@ def encrypt_password_cmd(ctx: click.Context, token: Optional[str], output: Optio
                 output = Path("~/.bb_review/password.enc")
         except (FileNotFoundError, Exception):
             output = Path("~/.bb_review/password.enc")
-    
+
     password = click.prompt("Enter your Review Board password", hide_input=True)
     confirm = click.prompt("Confirm password", hide_input=True)
-    
+
     if password != confirm:
         click.echo("Passwords don't match!", err=True)
         sys.exit(1)
-    
+
     output_path = output.expanduser()
-    
+
     try:
         encrypt_password_to_file(password, token, output_path)
         click.echo(f"\nPassword encrypted and saved to: {output_path}")

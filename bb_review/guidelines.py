@@ -2,11 +2,12 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
 from .models import ReviewFocus, ReviewGuidelines, Severity
+
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ def load_guidelines(repo_path: Path) -> ReviewGuidelines:
     """
     # Try primary filename first
     guidelines_path = repo_path / GUIDELINES_FILENAME
-    
+
     if not guidelines_path.exists():
         # Try alternatives
         for alt_name in GUIDELINES_ALTERNATIVES:
@@ -49,17 +50,17 @@ def load_guidelines(repo_path: Path) -> ReviewGuidelines:
             return ReviewGuidelines.default()
 
     logger.info(f"Loading guidelines from {guidelines_path}")
-    
+
     try:
         with open(guidelines_path) as f:
             raw = yaml.safe_load(f)
-        
+
         if raw is None:
             logger.warning(f"Empty guidelines file: {guidelines_path}")
             return ReviewGuidelines.default()
-        
+
         return parse_guidelines(raw)
-    
+
     except yaml.YAMLError as e:
         logger.error(f"Failed to parse guidelines YAML: {e}")
         return ReviewGuidelines.default()
@@ -85,7 +86,7 @@ def parse_guidelines(raw: dict[str, Any]) -> ReviewGuidelines:
             focus.append(ReviewFocus(f))
         except ValueError:
             logger.warning(f"Unknown focus area: {f}")
-    
+
     if not focus:
         focus = [ReviewFocus.BUGS, ReviewFocus.SECURITY]
 
@@ -131,7 +132,7 @@ def create_example_guidelines(repo_path: Path, overwrite: bool = False) -> Path:
         FileExistsError: If file exists and overwrite is False.
     """
     guidelines_path = repo_path / GUIDELINES_FILENAME
-    
+
     if guidelines_path.exists() and not overwrite:
         raise FileExistsError(f"Guidelines file already exists: {guidelines_path}")
 
@@ -180,7 +181,7 @@ custom_rules:
 
     guidelines_path.write_text(example_content)
     logger.info(f"Created example guidelines at {guidelines_path}")
-    
+
     return guidelines_path
 
 

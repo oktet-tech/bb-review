@@ -6,13 +6,14 @@ import sys
 
 import click
 
+from ..git import RepoManager
 from ..models import PendingReview
 from ..poller import Poller, StateDatabase
 from ..reviewers import Analyzer
 from ..rr import Commenter, ReviewBoardClient
-from ..git import RepoManager
+from . import get_config, main
 from .analyze import process_review
-from . import main, get_config
+
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ def poll_once(ctx: click.Context) -> None:
         rb_client.connect()
 
         repo_manager = RepoManager(config.get_all_repos())
-        
+
         analyzer = Analyzer(
             api_key=config.llm.api_key,
             model=config.llm.model,
@@ -65,7 +66,7 @@ def poll_once(ctx: click.Context) -> None:
         )
 
         state_db = StateDatabase(config.database.resolved_path)
-        
+
         poller = Poller(
             state_db=state_db,
             interval_seconds=config.polling.interval_seconds,
@@ -122,7 +123,7 @@ def poll_daemon(ctx: click.Context) -> None:
         rb_client.connect()
 
         repo_manager = RepoManager(config.get_all_repos())
-        
+
         analyzer = Analyzer(
             api_key=config.llm.api_key,
             model=config.llm.model,
@@ -139,7 +140,7 @@ def poll_daemon(ctx: click.Context) -> None:
         )
 
         state_db = StateDatabase(config.database.resolved_path)
-        
+
         poller = Poller(
             state_db=state_db,
             interval_seconds=config.polling.interval_seconds,
@@ -188,7 +189,7 @@ def poll_status(ctx: click.Context) -> None:
         sys.exit(1)
 
     state_db = StateDatabase(config.database.resolved_path)
-    
+
     poll_state = state_db.get_poll_state()
     stats = state_db.get_stats()
 
@@ -203,12 +204,12 @@ def poll_status(ctx: click.Context) -> None:
     click.echo(f"Successful: {stats['successful']}")
     click.echo(f"Failed: {stats['failed']}")
     click.echo(f"Total comments: {stats['total_comments']}")
-    
-    if stats['recent']:
+
+    if stats["recent"]:
         click.echo()
         click.echo("Recent Reviews")
         click.echo("-" * 40)
-        for r in stats['recent'][:5]:
+        for r in stats["recent"][:5]:
             status = "✓" if r.get("success") else "✗"
             click.echo(
                 f"  {status} #{r['review_request_id']} "

@@ -1,12 +1,12 @@
 """Configuration loading and validation for BB Review."""
 
 import os
-import re
 from pathlib import Path
-from typing import Any, Optional
+import re
+from typing import Optional
 
+from pydantic import BaseModel, Field, field_validator
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .models import RepoConfig, ReviewFocus, Severity
 
@@ -15,11 +15,11 @@ class ReviewBoardConfig(BaseModel):
     """Review Board connection configuration."""
 
     url: str
-    api_token: Optional[str] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
-    password_file: Optional[str] = None  # Path to encrypted password file
-    encryption_token: Optional[str] = None  # Token to decrypt password (defaults to api_token)
+    api_token: str | None = None
+    username: str | None = None
+    password: str | None = None
+    password_file: str | None = None  # Path to encrypted password file
+    encryption_token: str | None = None  # Token to decrypt password (defaults to api_token)
     use_kerberos: bool = False  # Use Kerberos/Negotiate authentication
     bot_username: str = "ai-reviewer"
 
@@ -32,29 +32,30 @@ class ReviewBoardConfig(BaseModel):
 
     @field_validator("api_token", "password", "encryption_token")
     @classmethod
-    def resolve_env_var(cls, v: Optional[str]) -> Optional[str]:
+    def resolve_env_var(cls, v: str | None) -> str | None:
         if v is None:
             return None
         return _resolve_env_var(v)
 
-    def get_password(self) -> Optional[str]:
+    def get_password(self) -> str | None:
         """Get the password, decrypting from file if needed."""
         # Direct password takes precedence
         if self.password:
             return self.password
-        
+
         # Try password file
         if self.password_file:
             from pathlib import Path
+
             from .crypto import decrypt_password_from_file
-            
+
             file_path = Path(self.password_file).expanduser()
             token = self.encryption_token or self.api_token
             if not token:
                 raise ValueError("encryption_token or api_token required to decrypt password_file")
-            
+
             return decrypt_password_from_file(file_path, token)
-        
+
         return None
 
 
@@ -67,9 +68,9 @@ class LLMConfig(BaseModel):
     max_tokens: int = 4096
     temperature: float = 0.2
     # OpenRouter-specific settings
-    base_url: Optional[str] = None  # Custom API base URL
-    site_url: Optional[str] = None  # For OpenRouter rankings/analytics
-    site_name: Optional[str] = "BB Review"  # For OpenRouter rankings/analytics
+    base_url: str | None = None  # Custom API base URL
+    site_url: str | None = None  # For OpenRouter rankings/analytics
+    site_name: str | None = "BB Review"  # For OpenRouter rankings/analytics
 
     @field_validator("api_key")
     @classmethod
@@ -93,7 +94,7 @@ class RepositoryConfig(BaseModel):
     local_path: str
     remote_url: str
     default_branch: str = "main"
-    type: Optional[str] = None  # e.g., "te-test-suite" for OpenCode MCP setup
+    type: str | None = None  # e.g., "te-test-suite" for OpenCode MCP setup
     cocoindex: Optional["CocoIndexRepoConfig"] = None  # Per-repo CocoIndex settings
 
     def to_repo_config(self) -> RepoConfig:
@@ -135,7 +136,7 @@ class LoggingConfig(BaseModel):
     """Logging configuration."""
 
     level: str = "INFO"
-    file: Optional[str] = "~/.bb_review/bb_review.log"
+    file: str | None = "~/.bb_review/bb_review.log"
 
     @field_validator("level")
     @classmethod
@@ -147,7 +148,7 @@ class LoggingConfig(BaseModel):
         return v
 
     @property
-    def resolved_file(self) -> Optional[Path]:
+    def resolved_file(self) -> Path | None:
         if self.file:
             return Path(self.file).expanduser()
         return None
@@ -188,7 +189,7 @@ class OpenCodeConfig(BaseModel):
     """OpenCode agent configuration for alternative review mode."""
 
     enabled: bool = False
-    model: Optional[str] = None  # Override model for opencode (e.g., "anthropic/claude-sonnet-4-20250514")
+    model: str | None = None  # Override model for opencode (e.g., "anthropic/claude-sonnet-4-20250514")
     timeout: int = 300  # Timeout in seconds for opencode execution
     binary_path: str = "opencode"  # Path to the opencode binary
 
@@ -201,7 +202,7 @@ class CocoIndexRepoConfig(BaseModel):
 
 class CocoIndexConfig(BaseModel):
     """Global CocoIndex configuration for semantic code indexing.
-    
+
     Uses CocoIndex with local sentence-transformers embeddings.
     Requires PostgreSQL with pgvector extension.
     No API keys needed - embeddings run locally.
@@ -220,13 +221,13 @@ class CocoIndexConfig(BaseModel):
     chunk_size: int = 1000  # Characters per chunk
     chunk_overlap: int = 300  # Overlap between chunks
     # File patterns to include (defaults to common code extensions)
-    included_patterns: Optional[list[str]] = None
+    included_patterns: list[str] | None = None
     # File patterns to exclude (defaults to common excludes like .git, node_modules)
-    excluded_patterns: Optional[list[str]] = None
+    excluded_patterns: list[str] | None = None
 
     @field_validator("database_url")
     @classmethod
-    def resolve_env_var(cls, v: Optional[str]) -> Optional[str]:
+    def resolve_env_var(cls, v: str | None) -> str | None:
         if v is None:
             return None
         return _resolve_env_var(v)
@@ -237,8 +238,7 @@ class CocoIndexConfig(BaseModel):
         # Basic validation - model name should look reasonable
         if not v or "/" not in v:
             raise ValueError(
-                "embedding_model should be a HuggingFace model like "
-                "'sentence-transformers/all-MiniLM-L6-v2'"
+                "embedding_model should be a HuggingFace model like 'sentence-transformers/all-MiniLM-L6-v2'"
             )
         return v
 
@@ -250,9 +250,9 @@ class CocoIndexConfig(BaseModel):
         old_providers = ["jina", "lmstudio", "openai", "mistral", "openrouter"]
         if v in old_providers:
             import logging
+
             logging.getLogger(__name__).warning(
-                f"Old embedding_provider '{v}' detected. "
-                "Migrating to local sentence-transformers model."
+                f"Old embedding_provider '{v}' detected. Migrating to local sentence-transformers model."
             )
             return "sentence-transformers/all-MiniLM-L6-v2"
         return v
@@ -275,14 +275,14 @@ class Config(BaseModel):
     opencode: OpenCodeConfig = Field(default_factory=OpenCodeConfig)
     cocoindex: CocoIndexConfig = Field(default_factory=CocoIndexConfig)
 
-    def get_repo_by_name(self, name: str) -> Optional[RepoConfig]:
+    def get_repo_by_name(self, name: str) -> RepoConfig | None:
         """Get repository config by name."""
         for repo in self.repositories:
             if repo.name == name:
                 return repo.to_repo_config()
         return None
 
-    def get_repo_by_rb_name(self, rb_name: str) -> Optional[RepoConfig]:
+    def get_repo_by_rb_name(self, rb_name: str) -> RepoConfig | None:
         """Get repository config by Review Board repository name."""
         for repo in self.repositories:
             if repo.rb_repo_name == rb_name:
@@ -293,7 +293,7 @@ class Config(BaseModel):
         """Get all repository configs."""
         return [repo.to_repo_config() for repo in self.repositories]
 
-    def get_repo_config_by_name(self, name: str) -> Optional[RepositoryConfig]:
+    def get_repo_config_by_name(self, name: str) -> RepositoryConfig | None:
         """Get repository config (Pydantic model) by name."""
         for repo in self.repositories:
             if repo.name == name:
@@ -302,10 +302,7 @@ class Config(BaseModel):
 
     def get_cocoindex_enabled_repos(self) -> list[RepositoryConfig]:
         """Get all repositories with CocoIndex enabled."""
-        return [
-            repo for repo in self.repositories
-            if repo.is_cocoindex_enabled(self.cocoindex.enabled)
-        ]
+        return [repo for repo in self.repositories if repo.is_cocoindex_enabled(self.cocoindex.enabled)]
 
 
 def _resolve_env_var(value: str) -> str:
@@ -324,7 +321,7 @@ def _resolve_env_var(value: str) -> str:
     return value
 
 
-def load_config(config_path: Optional[Path] = None) -> Config:
+def load_config(config_path: Path | None = None) -> Config:
     """Load configuration from YAML file.
 
     Args:
@@ -349,9 +346,7 @@ def load_config(config_path: Optional[Path] = None) -> Config:
                 config_path = path
                 break
         else:
-            raise FileNotFoundError(
-                f"Config file not found. Searched: {[str(p) for p in search_paths]}"
-            )
+            raise FileNotFoundError(f"Config file not found. Searched: {[str(p) for p in search_paths]}")
 
     config_path = Path(config_path).expanduser()
     if not config_path.exists():
@@ -375,7 +370,7 @@ def ensure_directories(config: Config) -> None:
 
 
 # Global config instance (set by CLI)
-_config: Optional[Config] = None
+_config: Config | None = None
 
 
 def get_config() -> Config:

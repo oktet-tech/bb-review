@@ -1,14 +1,15 @@
 """Poller for monitoring pending reviews and state tracking."""
 
-import logging
-import sqlite3
-import time
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime
+import logging
 from pathlib import Path
-from typing import Generator, Optional
+import sqlite3
+import time
 
 from .models import PendingReview, ProcessedReview
+
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class StateDatabase:
     def _ensure_db(self) -> None:
         """Ensure database and tables exist."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         with self._connection() as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS processed_reviews (
@@ -42,12 +43,12 @@ class StateDatabase:
                     UNIQUE(review_request_id, diff_revision)
                 )
             """)
-            
+
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_review_request
                 ON processed_reviews(review_request_id)
             """)
-            
+
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS poll_state (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -55,13 +56,13 @@ class StateDatabase:
                     last_poll_count INTEGER DEFAULT 0
                 )
             """)
-            
+
             # Initialize poll state if not exists
             conn.execute("""
                 INSERT OR IGNORE INTO poll_state (id, last_poll_at, last_poll_count)
                 VALUES (1, NULL, 0)
             """)
-            
+
             conn.commit()
 
     @contextmanager
@@ -99,7 +100,7 @@ class StateDatabase:
         review_request_id: int,
         diff_revision: int,
         success: bool,
-        error_message: Optional[str] = None,
+        error_message: str | None = None,
         comment_count: int = 0,
     ) -> None:
         """Mark a review as processed.
@@ -147,17 +148,19 @@ class StateDatabase:
                 """,
                 (review_request_id,),
             )
-            
+
             results = []
             for row in cursor:
-                results.append(ProcessedReview(
-                    review_request_id=row["review_request_id"],
-                    diff_revision=row["diff_revision"],
-                    processed_at=datetime.fromisoformat(row["processed_at"]),
-                    success=bool(row["success"]),
-                    error_message=row["error_message"],
-                    comment_count=row["comment_count"],
-                ))
+                results.append(
+                    ProcessedReview(
+                        review_request_id=row["review_request_id"],
+                        diff_revision=row["diff_revision"],
+                        processed_at=datetime.fromisoformat(row["processed_at"]),
+                        success=bool(row["success"]),
+                        error_message=row["error_message"],
+                        comment_count=row["comment_count"],
+                    )
+                )
             return results
 
     def update_poll_state(self, count: int) -> None:
@@ -200,22 +203,21 @@ class StateDatabase:
             Dict with various statistics.
         """
         with self._connection() as conn:
-            total = conn.execute(
-                "SELECT COUNT(*) as count FROM processed_reviews"
-            ).fetchone()["count"]
-            
+            total = conn.execute("SELECT COUNT(*) as count FROM processed_reviews").fetchone()["count"]
+
             success = conn.execute(
                 "SELECT COUNT(*) as count FROM processed_reviews WHERE success = 1"
             ).fetchone()["count"]
-            
+
             failed = conn.execute(
                 "SELECT COUNT(*) as count FROM processed_reviews WHERE success = 0"
             ).fetchone()["count"]
-            
-            total_comments = conn.execute(
-                "SELECT SUM(comment_count) as total FROM processed_reviews"
-            ).fetchone()["total"] or 0
-            
+
+            total_comments = (
+                conn.execute("SELECT SUM(comment_count) as total FROM processed_reviews").fetchone()["total"]
+                or 0
+            )
+
             recent = conn.execute(
                 """
                 SELECT * FROM processed_reviews
@@ -265,11 +267,9 @@ class Poller:
         """
         filtered = []
         for review in pending:
-            if not self.state_db.is_processed(
-                review.review_request_id, review.diff_revision
-            ):
+            if not self.state_db.is_processed(review.review_request_id, review.diff_revision):
                 filtered.append(review)
-        return filtered[:self.max_reviews_per_cycle]
+        return filtered[: self.max_reviews_per_cycle]
 
     def run_once(
         self,
@@ -286,7 +286,7 @@ class Poller:
             Number of reviews processed.
         """
         logger.info("Starting poll cycle")
-        
+
         # Fetch pending reviews
         try:
             all_pending = fetch_pending_func()
@@ -297,18 +297,15 @@ class Poller:
         # Filter to unprocessed
         pending = self.filter_pending(all_pending)
         logger.info(f"Found {len(pending)} reviews to process")
-        
+
         self.state_db.update_poll_state(len(pending))
-        
+
         processed_count = 0
         for review in pending:
             try:
-                logger.info(
-                    f"Processing review {review.review_request_id} "
-                    f"(diff rev {review.diff_revision})"
-                )
+                logger.info(f"Processing review {review.review_request_id} (diff rev {review.diff_revision})")
                 result = process_func(review)
-                
+
                 self.state_db.mark_processed(
                     review.review_request_id,
                     review.diff_revision,
@@ -316,11 +313,9 @@ class Poller:
                     comment_count=result.issue_count if result else 0,
                 )
                 processed_count += 1
-                
+
             except Exception as e:
-                logger.error(
-                    f"Failed to process review {review.review_request_id}: {e}"
-                )
+                logger.error(f"Failed to process review {review.review_request_id}: {e}")
                 self.state_db.mark_processed(
                     review.review_request_id,
                     review.diff_revision,
@@ -346,15 +341,15 @@ class Poller:
             f"Starting polling daemon (interval={self.interval_seconds}s, "
             f"max_per_cycle={self.max_reviews_per_cycle})"
         )
-        
+
         self._running = True
-        
+
         while self._running:
             try:
                 self.run_once(fetch_pending_func, process_func)
             except Exception as e:
                 logger.error(f"Error in poll cycle: {e}")
-            
+
             if self._running:
                 logger.debug(f"Sleeping for {self.interval_seconds}s")
                 time.sleep(self.interval_seconds)

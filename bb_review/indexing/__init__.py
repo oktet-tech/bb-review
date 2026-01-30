@@ -3,6 +3,7 @@
 from .indexer import CodebaseIndexer, IndexConfig, IndexResult
 from .mcp import run_server
 
+
 __all__ = [
     "CodebaseIndexer",
     "IndexConfig",

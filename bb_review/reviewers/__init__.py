@@ -1,17 +1,10 @@
 """Review approaches for BB Review."""
 
 from .llm import (
-    Analyzer,
     SYSTEM_PROMPT,
+    Analyzer,
     extract_changed_files,
     filter_diff_by_paths,
-)
-from .providers import (
-    LLMProvider,
-    AnthropicProvider,
-    OpenRouterProvider,
-    OpenAIProvider,
-    create_provider,
 )
 from .opencode import (
     OpenCodeError,
@@ -26,6 +19,14 @@ from .opencode import (
     run_opencode_agent,
     run_opencode_review,
 )
+from .providers import (
+    AnthropicProvider,
+    LLMProvider,
+    OpenAIProvider,
+    OpenRouterProvider,
+    create_provider,
+)
+
 
 __all__ = [
     # LLM reviewer

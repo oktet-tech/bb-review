@@ -1,14 +1,14 @@
 """OpenCode command for BB Review CLI."""
 
+from datetime import datetime
 import json
 import logging
-import sys
-from datetime import datetime
 from pathlib import Path
-from typing import Optional
+import sys
 
 import click
 
+from ..git import RepoManager
 from ..guidelines import load_guidelines, validate_guidelines
 from ..models import PendingReview
 from ..reviewers import (
@@ -23,9 +23,9 @@ from ..reviewers import (
     run_opencode_review,
 )
 from ..rr import ReviewBoardClient, ReviewFormatter
-from ..git import RepoManager
-from . import main, get_config
+from . import get_config, main
 from .utils import REVIEW_ID
+
 
 logger = logging.getLogger(__name__)
 
@@ -36,16 +36,21 @@ logger = logging.getLogger(__name__)
 @click.option("--model", "-m", help="Override opencode model (e.g., anthropic/claude-sonnet-4-20250514)")
 @click.option("--timeout", default=300, type=int, help="Timeout in seconds for opencode")
 @click.option("--dump-response", type=click.Path(path_type=Path), help="Dump raw opencode response to file")
-@click.option("--output", "-o", type=click.Path(path_type=Path), help="Output JSON file for dry-run (defaults to review_{id}.json)")
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output JSON file for dry-run (defaults to review_{id}.json)",
+)
 @click.pass_context
 def opencode_cmd(
     ctx: click.Context,
     review_id: int,
     dry_run: bool,
-    model: Optional[str],
+    model: str | None,
     timeout: int,
-    dump_response: Optional[Path],
-    output: Optional[Path],
+    dump_response: Path | None,
+    output: Path | None,
 ) -> None:
     """Analyze a review using OpenCode agent.
 
@@ -74,7 +79,7 @@ def opencode_cmd(
     if not available:
         click.echo(f"Error: {msg}", err=True)
         sys.exit(1)
-    
+
     logger.debug(msg)
 
     # Use config values if not overridden
@@ -139,7 +144,7 @@ def opencode_cmd(
             patch=raw_diff,
         ) as (repo_path, used_target):
             if used_target:
-                click.echo(f"  Checked out to reviewed state")
+                click.echo("  Checked out to reviewed state")
 
             # Load guidelines
             guidelines = load_guidelines(repo_path)
@@ -205,10 +210,10 @@ def opencode_cmd(
             api_analysis = None
             if repo_config.repo_type == "te-test-suite":
                 click.echo("  Running API review via api-reviewer agent...")
-                
+
                 context_path = repo_path / ".bb_review_context.tmp"
                 context_path.write_text(f"Review #{review_id}\n\nSummary:\n{pending.summary}")
-                
+
                 try:
                     if used_target:
                         # Changes are staged - use git diff --cached
@@ -221,8 +226,10 @@ def opencode_cmd(
                         patch_path = repo_path / ".bb_review_patch.tmp"
                         patch_path.write_text(raw_diff)
                         click.echo(f"  Patch file: {patch_path}")
-                        api_prompt = "Review the patch @.bb_review_patch.tmp with context @.bb_review_context.tmp"
-                    
+                        api_prompt = (
+                            "Review the patch @.bb_review_patch.tmp with context @.bb_review_context.tmp"
+                        )
+
                     api_analysis = run_opencode_agent(
                         repo_path=repo_path,
                         agent="api-reviewer",
@@ -293,7 +300,9 @@ def opencode_cmd(
 
         click.echo(f"\nParsed {len(all_issues)} issues:")
         if api_parsed:
-            click.echo(f"  - {len(parsed.issues)} from main analysis, {len(api_parsed.issues)} from API review")
+            main_count = len(parsed.issues)
+            api_count = len(api_parsed.issues)
+            click.echo(f"  - {main_count} from main analysis, {api_count} from API review")
         click.echo(f"  - {len(inline_comments)} with file:line (will be inline comments)")
         click.echo(f"  - {len(general_issues)} general (will be in body)")
         if parsed.unparsed_text:
@@ -311,11 +320,13 @@ def opencode_cmd(
             if issue.suggestion:
                 text_parts.append(f"\n**Suggestion:** {issue.suggestion}")
 
-            rb_comments.append({
-                "file_path": issue.file_path,
-                "line_number": issue.line_number,
-                "text": "\n".join(text_parts),
-            })
+            rb_comments.append(
+                {
+                    "file_path": issue.file_path,
+                    "line_number": issue.line_number,
+                    "text": "\n".join(text_parts),
+                }
+            )
 
         # Build body_top from general issues + unparsed text
         body_parts = ["**AI Review (OpenCode)**\n"]
