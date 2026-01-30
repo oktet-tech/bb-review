@@ -19,7 +19,7 @@ TEST_DATA_DIR = Path(__file__).parent / "data"
 @pytest.fixture
 def cli_runner() -> CliRunner:
     """Create a Click CLI runner for testing commands."""
-    return CliRunner(mix_stderr=False)
+    return CliRunner()
 
 
 @pytest.fixture
