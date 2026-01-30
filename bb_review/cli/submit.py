@@ -124,6 +124,14 @@ def submit_cmd(ctx: click.Context, json_file: Path, dry_run: bool, publish: bool
             click.echo(f"\nTo publish: bb-review submit {json_file} --publish")
             click.echo("Or publish manually in Review Board UI")
 
+        # Update status in reviews database if enabled
+        if config.review_db.enabled:
+            _update_review_db_status(
+                config=config,
+                data=data,
+                review_request_id=review_request_id,
+            )
+
     except json.JSONDecodeError as e:
         click.echo(f"Error: Invalid JSON in {json_file}: {e}", err=True)
         sys.exit(1)
@@ -131,3 +139,36 @@ def submit_cmd(ctx: click.Context, json_file: Path, dry_run: bool, publish: bool
         logger.exception("Failed to submit review")
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
+
+
+def _update_review_db_status(config, data: dict, review_request_id: int) -> None:
+    """Update the review status in the database after submission."""
+    from ..db import ReviewDatabase
+
+    try:
+        review_db = ReviewDatabase(config.review_db.resolved_path)
+
+        # Try to find the analysis ID from metadata
+        analysis_id = None
+        if "metadata" in data and isinstance(data["metadata"], dict):
+            analysis_id = data["metadata"].get("analysis_id")
+
+        if analysis_id:
+            # Direct update if we have the ID
+            review_db.mark_submitted(analysis_id)
+            logger.debug(f"Marked analysis {analysis_id} as submitted")
+        else:
+            # Find the most recent draft analysis for this RR
+            analyses = review_db.list_analyses(
+                review_request_id=review_request_id,
+                status="draft",
+                limit=1,
+            )
+            if analyses:
+                review_db.mark_submitted(analyses[0].id)
+                logger.debug(f"Marked analysis {analyses[0].id} as submitted (found by RR ID)")
+            else:
+                logger.debug(f"No draft analysis found for RR {review_request_id}")
+
+    except Exception as e:
+        logger.warning(f"Failed to update review status in database: {e}")
