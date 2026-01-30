@@ -1,0 +1,91 @@
+# https://taskfile.dev
+version: '3'
+
+vars:
+  PYTHON_DIRS: bb_review/ tests/
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  # ===========================================================================
+  # Linting & Formatting
+  # ===========================================================================
+
+  lint:
+    desc: Run ruff linter
+    cmds:
+      - uv run ruff check {{.PYTHON_DIRS}}
+
+  format:
+    desc: Format code with ruff
+    cmds:
+      - uv run ruff check --fix {{.PYTHON_DIRS}}
+      - uv run ruff format {{.PYTHON_DIRS}}
+
+  check:
+    desc: Run lint + format check (no changes)
+    cmds:
+      - uv run ruff check {{.PYTHON_DIRS}}
+      - uv run ruff format --check {{.PYTHON_DIRS}}
+
+  # ===========================================================================
+  # Testing
+  # ===========================================================================
+
+  test:
+    desc: Run all tests
+    cmds:
+      - uv run pytest tests/ -v
+
+  test:unit:
+    desc: Run unit tests only
+    cmds:
+      - uv run pytest tests/unit/ -v
+
+  test:integration:
+    desc: Run integration tests only
+    cmds:
+      - uv run pytest tests/integration/ -v
+
+  test:cli:
+    desc: Run CLI tests only
+    cmds:
+      - uv run pytest tests/cli/ -v
+
+  test:cov:
+    desc: Run tests with coverage report
+    cmds:
+      - uv run pytest tests/ --cov=bb_review --cov-report=term-missing --cov-report=html
+      - cmd: echo "HTML coverage report generated at htmlcov/index.html"
+
+  test:quick:
+    desc: Quick test run (minimal output)
+    cmds:
+      - uv run pytest tests/ -q --tb=short
+
+  test:all:
+    desc: Run all test groups sequentially
+    cmds:
+      - task: test:unit
+      - task: test:integration
+      - task: test:cli
+
+  # ===========================================================================
+  # Development
+  # ===========================================================================
+
+  install:
+    desc: Install dependencies
+    cmds:
+      - uv sync --all-extras
+
+  clean:
+    desc: Remove build artifacts and cache
+    cmds:
+      - rm -rf .pytest_cache/ htmlcov/ .coverage .ruff_cache/
+      - find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+      - find . -type f -name "*.pyc" -delete 2>/dev/null || true
+      - echo "Done."
