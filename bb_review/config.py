@@ -200,6 +200,17 @@ class CocoIndexRepoConfig(BaseModel):
     enabled: bool = False
 
 
+class ReviewDBConfig(BaseModel):
+    """Reviews database configuration for storing analysis history."""
+
+    enabled: bool = False
+    path: str = "~/.bb_review/reviews.db"
+
+    @property
+    def resolved_path(self) -> Path:
+        return Path(self.path).expanduser()
+
+
 class CocoIndexConfig(BaseModel):
     """Global CocoIndex configuration for semantic code indexing.
 
@@ -274,6 +285,7 @@ class Config(BaseModel):
     defaults: DefaultsConfig = Field(default_factory=DefaultsConfig)
     opencode: OpenCodeConfig = Field(default_factory=OpenCodeConfig)
     cocoindex: CocoIndexConfig = Field(default_factory=CocoIndexConfig)
+    review_db: ReviewDBConfig = Field(default_factory=ReviewDBConfig)
 
     def get_repo_by_name(self, name: str) -> RepoConfig | None:
         """Get repository config by name."""
@@ -360,9 +372,14 @@ def load_config(config_path: Path | None = None) -> Config:
 
 def ensure_directories(config: Config) -> None:
     """Ensure required directories exist."""
-    # Database directory
+    # State database directory
     db_path = config.database.resolved_path
     db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Reviews database directory
+    if config.review_db.enabled:
+        review_db_path = config.review_db.resolved_path
+        review_db_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Log directory
     if config.logging.resolved_file:
