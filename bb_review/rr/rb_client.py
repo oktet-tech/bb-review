@@ -26,6 +26,19 @@ class DiffInfo:
     files: list[dict[str, Any]]
 
 
+@dataclass
+class ReviewRequestInfo:
+    """Essential information about a review request for chain resolution."""
+
+    id: int
+    summary: str
+    status: str  # pending, submitted, discarded
+    repository_name: str
+    depends_on: list[int]  # List of RR IDs this depends on
+    base_commit_id: str | None
+    diff_revision: int
+
+
 class ReviewBoardClient:
     """Client for interacting with Review Board API.
 
@@ -562,6 +575,56 @@ class ReviewBoardClient:
             "path": repo.get("path", ""),
             "tool": repo.get("tool", ""),
         }
+
+    def get_review_request_info(self, review_request_id: int) -> ReviewRequestInfo:
+        """Get essential review request info including depends_on for chain resolution.
+
+        Args:
+            review_request_id: The review request ID.
+
+        Returns:
+            ReviewRequestInfo with all fields needed for chain resolution.
+
+        Raises:
+            RuntimeError: If the review request cannot be fetched.
+        """
+        rr = self.get_review_request(review_request_id)
+
+        # Extract depends_on IDs
+        depends_on_ids: list[int] = []
+        depends_on = rr.get("depends_on", [])
+        for dep in depends_on:
+            # depends_on contains review request objects with 'id' field
+            if isinstance(dep, dict) and "id" in dep:
+                depends_on_ids.append(dep["id"])
+            elif isinstance(dep, int):
+                depends_on_ids.append(dep)
+
+        # Get repository name
+        repo_name = "unknown"
+        links = rr.get("links", {})
+        if "repository" in links:
+            try:
+                repo_href = links["repository"]["href"]
+                repo_path = repo_href.replace(self.url, "")
+                repo_result = self._api_get(repo_path)
+                repo_name = repo_result.get("repository", {}).get("name", "unknown")
+            except Exception:
+                pass
+
+        # Get base commit and diff revision
+        base_commit = self._get_base_commit(review_request_id)
+        diff_revision = self._get_latest_diff_revision(review_request_id)
+
+        return ReviewRequestInfo(
+            id=review_request_id,
+            summary=rr.get("summary", ""),
+            status=rr.get("status", "pending"),
+            repository_name=repo_name,
+            depends_on=depends_on_ids,
+            base_commit_id=base_commit,
+            diff_revision=diff_revision,
+        )
 
     def __del__(self):
         """Cleanup cookie file."""
