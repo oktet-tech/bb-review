@@ -108,7 +108,10 @@ uv run bb-review repos sync
 # List configured repos
 uv run bb-review repos list
 
-# Test analysis (dry run)
+# Test analysis (saves to file, doesn't post)
+uv run bb-review analyze <review-id> -O
+
+# Or just see what would be analyzed (no LLM call)
 uv run bb-review analyze <review-id> --dry-run
 ```
 
@@ -129,10 +132,17 @@ uv run bb-review cocoindex status-db
 
 ### Step 8: Run the Service
 
-**Manual review:**
+**Manual review workflow:**
 
 ```bash
-uv run bb-review analyze <review-id>
+# Analyze and save to file
+uv run bb-review analyze <review-id> -O
+
+# Review the JSON file, then submit as draft
+uv run bb-review submit review_<review-id>.json
+
+# After verifying, publish
+uv run bb-review submit review_<review-id>.json --publish
 ```
 
 **Polling daemon:**
@@ -143,49 +153,90 @@ uv run bb-review poll daemon
 
 ## Usage
 
-### Manual Review
-
-Analyze a specific review request:
+### Quick Start: Analyze and Submit
 
 ```bash
-uv run bb-review analyze 18080
-uv run bb-review analyze 18080 --dry-run  # Preview without posting
+# 1. Analyze a review (saves to review_42738.json by default)
+uv run bb-review analyze 42738 -O
+
+# 2. Review the generated JSON file, edit if needed
+
+# 3. Submit as draft (only you can see it)
+uv run bb-review submit review_42738.json
+
+# 4. After verifying in RB UI, publish to everyone
+uv run bb-review submit review_42738.json --publish
 ```
 
-### OpenCode Analysis
+### Analysis Commands
 
-Use OpenCode agent for deeper analysis with full codebase context:
+Both `analyze` (direct LLM) and `opencode` (OpenCode agent) work similarly:
 
 ```bash
-uv run bb-review opencode 42738
-uv run bb-review opencode 42738 --dry-run     # Save to review_42738.json
-uv run bb-review opencode 42738 --dry-run -O  # Same as above (explicit)
-uv run bb-review opencode 42738 --dry-run -o custom.json  # Custom output file
-uv run bb-review opencode 42738 -O            # Post AND save to review_42738.json
+# Run analysis, save to auto-generated file (review_{id}.json)
+uv run bb-review analyze 42738 -O
+uv run bb-review opencode 42738 -O
+
+# Save to custom file
+uv run bb-review analyze 42738 -o my_review.json
+
+# Dry run - show what would be analyzed without calling LLM
+uv run bb-review analyze 42738 --dry-run
+
+# Fake review - run everything but use mock LLM responses (for testing)
+uv run bb-review analyze 42738 --fake-review -O
 ```
 
-### Review, Edit, and Submit Workflow
+### Patch Series (Chain Review)
 
-For more control, you can review and edit AI feedback before posting:
+Review chains of dependent patches:
 
 ```bash
-# 1. Run analysis in dry-run mode (saves JSON file)
-uv run bb-review opencode 42738 --dry-run -O  # Saves to review_42738.json
-# Or with custom filename:
-uv run bb-review opencode 42738 --dry-run -o review.json
+# Review entire chain (auto-detects dependencies via "depends on" field)
+uv run bb-review analyze 42763 -O
+# Output: Chain: r/42761 -> r/42762 -> r/42763
 
-# 2. Review and edit the JSON file
-#    - Edit comments, body_top, or remove unwanted issues
-#    - The unparsed_text field contains any LLM output that couldn't be parsed
+# Review only the last patch (apply earlier patches as context)
+uv run bb-review analyze 42763 --review-from 42763 -O
 
-# 3. Preview what would be submitted
-uv run bb-review submit review.json --dry-run
+# Review from a specific patch onwards
+uv run bb-review analyze 42763 --review-from 42762 -O
 
-# 4. Submit to ReviewBoard
-uv run bb-review submit review.json
+# Skip chain detection, review single patch only
+uv run bb-review analyze 42763 --no-chain -O
+
+# Manual chain order (for complex dependencies)
+uv run bb-review analyze 42763 --chain-file chain.txt -O
+
+# Keep the temporary branch for debugging
+uv run bb-review analyze 42763 --keep-branch -O
 ```
 
-The JSON file structure:
+Chain file format (one RR per line):
+```
+42761
+42762
+42763
+```
+
+### Submit Command
+
+Submit reviews to Review Board:
+
+```bash
+# Submit as draft (default) - only you can see it
+uv run bb-review submit review_42738.json
+
+# Submit and publish - visible to everyone
+uv run bb-review submit review_42738.json --publish
+
+# Preview what would be submitted
+uv run bb-review submit review_42738.json --dry-run
+```
+
+### Review JSON File Structure
+
+The generated JSON file can be edited before submission:
 
 ```json
 {
@@ -197,7 +248,7 @@ The JSON file structure:
   "ship_it": false,
   "unparsed_text": "Any text that couldn't be parsed into structured issues",
   "parsed_issues": [...],
-  "metadata": {"created_at": "...", "model": "...", "dry_run": true}
+  "metadata": {"created_at": "...", "model": "...", "opencode": true}
 }
 ```
 
@@ -228,6 +279,8 @@ uv run bb-review repos list              # List configured repos
 uv run bb-review repos sync              # Fetch all repos
 uv run bb-review repos sync myrepo       # Fetch specific repo
 uv run bb-review repos init-guidelines myrepo  # Setup review guidelines
+uv run bb-review repos clean             # Remove temp branches and reset changes
+uv run bb-review repos clean --dry-run   # Show what would be cleaned
 ```
 
 ### Semantic Code Search (CocoIndex)
