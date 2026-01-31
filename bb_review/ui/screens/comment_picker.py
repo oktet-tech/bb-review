@@ -140,7 +140,7 @@ class CommentPickerScreen(Screen):
         width: 100%;
     }
 
-    ListView > ListItem.--highlight {
+    ListView > ListItem.-highlight {
         background: $primary 30%;
     }
 
