@@ -30,10 +30,16 @@ class CommentItem(ListItem):
     def compose(self) -> ComposeResult:
         """Compose the comment item."""
         c = self.comment.comment
-        checkbox = "[X]" if self.comment.selected else "[ ]"
+
+        # Use escaped brackets for checkbox (Rich interprets [X] as a tag)
+        # Also use different visual style for better visibility
+        if self.comment.selected:
+            checkbox = "[green bold]\\[X][/]"
+        else:
+            checkbox = "[dim]\\[ ][/]"
 
         # Mark if edited
-        edited = " [bold magenta](edited)[/]" if self.comment.edited_message is not None else ""
+        edited = " [magenta](edited)[/]" if self.comment.edited_message is not None else ""
 
         # Build display text with better formatting
         # Line 1: checkbox, file:line, severity/type
