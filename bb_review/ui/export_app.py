@@ -340,14 +340,14 @@ class ExportApp(App):
             exportable: The exportable analysis with selected comments
 
         Returns:
-            Dict in submission-ready format
+            Dict in submission-ready format (also re-importable)
         """
         analysis = exportable.analysis
 
-        # Format body_top
+        # Format body_top for RB submission
         body_top = self._format_body_top(exportable)
 
-        # Format selected comments
+        # Format comments for RB submission
         comments = []
         for sel_comment in exportable.selected_comments:
             c = sel_comment.comment
@@ -360,11 +360,30 @@ class ExportApp(App):
                 }
             )
 
+        # Build parsed_issues with full structured data for re-import
+        parsed_issues = []
+        for sel_comment in exportable.selected_comments:
+            c = sel_comment.comment
+            parsed_issues.append(
+                {
+                    "file_path": c.file_path,
+                    "line_number": c.line_number,
+                    "severity": c.severity,
+                    "issue_type": c.issue_type,
+                    "comment": sel_comment.effective_message,
+                    "suggestion": sel_comment.effective_suggestion,
+                }
+            )
+
         return {
             "review_request_id": analysis.review_request_id,
+            "repository": analysis.repository,
             "body_top": body_top,
             "comments": comments,
             "ship_it": len(comments) == 0 and not analysis.has_critical_issues,
+            "summary": analysis.summary,
+            "has_critical_issues": analysis.has_critical_issues,
+            "parsed_issues": parsed_issues,
             "metadata": {
                 "analysis_id": analysis.id,
                 "diff_revision": analysis.diff_revision,

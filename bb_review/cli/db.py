@@ -426,8 +426,8 @@ def db_search(ctx: click.Context, query: str, limit: int) -> None:
 
 @db.command("import")
 @click.argument("file", type=click.Path(exists=True, path_type=Path))
-@click.option("--repo", "repository", required=True, help="Repository name")
-@click.option("--diff-rev", "diff_revision", type=int, default=1, help="Diff revision (default: 1)")
+@click.option("--repo", "repository", help="Repository name (read from file if not specified)")
+@click.option("--diff-rev", "diff_revision", type=int, help="Diff revision (read from file if not specified)")
 @click.option(
     "--method",
     type=click.Choice(["llm", "opencode"]),
@@ -438,19 +438,20 @@ def db_search(ctx: click.Context, query: str, limit: int) -> None:
 def db_import(
     ctx: click.Context,
     file: Path,
-    repository: str,
-    diff_revision: int,
+    repository: str | None,
+    diff_revision: int | None,
     method: str | None,
     model: str | None,
 ) -> None:
     """Import a review JSON file into the database.
 
     The file should be a JSON file with review results, typically generated
-    by 'bb-review analyze --dry-run' or 'bb-review opencode --dry-run'.
+    by 'bb-review analyze --dry-run', 'bb-review opencode --dry-run', or
+    exported from the interactive command.
 
     Examples:
-        bb-review db import result.json --repo te-dev
-        bb-review db import review_42738.json --repo te-dev --diff-rev 2
+        bb-review db import export_review_42738.json    # All data from file
+        bb-review db import result.json --repo te-dev  # Specify repo
     """
     review_db = get_review_db(ctx)
 
@@ -468,15 +469,37 @@ def db_import(
         click.echo("Error: File missing 'review_request_id' field", err=True)
         sys.exit(1)
 
+    # Get repository from file or option
+    if not repository:
+        repository = data.get("repository")
+    if not repository:
+        click.echo("Error: Repository not in file. Use --repo to specify.", err=True)
+        sys.exit(1)
+
+    # Extract metadata
+    metadata = data.get("metadata", {})
+
+    # Get diff revision from metadata, file root, or option
+    if diff_revision is None:
+        diff_revision = metadata.get("diff_revision", data.get("diff_revision", 1))
+
+    # Get analyzed_at timestamp
+    created_at_str = metadata.get("created_at") or metadata.get("analyzed_at")
+    if created_at_str:
+        try:
+            analyzed_at = datetime.fromisoformat(created_at_str)
+        except ValueError:
+            analyzed_at = datetime.now()
+    else:
+        analyzed_at = datetime.now()
+
     # Get parsed issues (structured comment data)
     parsed_issues = data.get("parsed_issues", [])
     if not parsed_issues:
         # Fall back to comments if parsed_issues not available
-        # Note: comments have less structured data
         click.echo("Warning: No 'parsed_issues' found, using 'comments' (limited data)", err=True)
         parsed_issues = []
         for c in data.get("comments", []):
-            # Try to parse severity from text if available
             parsed_issues.append(
                 {
                     "file_path": c.get("file_path", "unknown"),
@@ -488,18 +511,9 @@ def db_import(
                 }
             )
 
-    # Extract metadata
-    metadata = data.get("metadata", {})
-    created_at_str = metadata.get("created_at")
-    if created_at_str:
-        try:
-            analyzed_at = datetime.fromisoformat(created_at_str)
-        except ValueError:
-            analyzed_at = datetime.now()
-    else:
-        analyzed_at = datetime.now()
-
     # Determine method (auto-detect from body_top or metadata)
+    if not method:
+        method = metadata.get("method")
     if not method:
         body_top = data.get("body_top", "")
         if "OpenCode" in body_top or metadata.get("model") == "default":
@@ -513,7 +527,7 @@ def db_import(
 
     # Build ReviewComment objects
     comments = []
-    has_critical = False
+    has_critical_from_comments = False
     for issue in parsed_issues:
         severity_str = issue.get("severity", "medium").lower()
         try:
@@ -522,7 +536,7 @@ def db_import(
             severity = Severity.MEDIUM
 
         if severity == Severity.CRITICAL:
-            has_critical = True
+            has_critical_from_comments = True
 
         issue_type_str = issue.get("issue_type", "bug").lower()
         try:
@@ -541,8 +555,11 @@ def db_import(
             )
         )
 
-    # Build summary
-    summary = data.get("unparsed_text", "")
+    # Get has_critical_issues from file or derive from comments
+    has_critical = data.get("has_critical_issues", has_critical_from_comments)
+
+    # Get summary from file or derive
+    summary = data.get("summary") or data.get("unparsed_text", "")
     if not summary:
         # Try to extract from body_top
         body_top = data.get("body_top", "")
