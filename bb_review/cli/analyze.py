@@ -368,6 +368,7 @@ def analyze(
                         result=result,
                         repository=review_chain.repository,
                         diff_info=diff_info,
+                        rr_summary=review.summary,
                         chain_id=chain_result.chain_id if len(pending) > 1 else None,
                         chain_position=i + 1 if len(pending) > 1 else None,
                         model=config.llm.model,
@@ -506,12 +507,27 @@ def _save_to_review_db(
     result: ReviewResult,
     repository: str,
     diff_info: DiffInfo,
+    rr_summary: str | None = None,
     chain_id: str | None = None,
     chain_position: int | None = None,
     model: str = "",
 ) -> None:
     """Save a review result to the reviews database."""
     from ..db import ReviewDatabase
+    from ..rr.rb_client import ReviewRequestInfo
+
+    # Create a minimal rr_info to pass the summary
+    rr_info = None
+    if rr_summary:
+        rr_info = ReviewRequestInfo(
+            id=result.review_request_id,
+            summary=rr_summary,
+            status="pending",
+            repository_name=repository,
+            depends_on=[],
+            base_commit_id=diff_info.base_commit_id if diff_info else None,
+            diff_revision=result.diff_revision,
+        )
 
     try:
         review_db = ReviewDatabase(config.review_db.resolved_path)
@@ -521,6 +537,7 @@ def _save_to_review_db(
             analysis_method="llm",
             model=model,
             diff_info=diff_info,
+            rr_info=rr_info,
             chain_id=chain_id,
             chain_position=chain_position,
         )

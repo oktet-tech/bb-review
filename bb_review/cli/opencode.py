@@ -379,6 +379,7 @@ def opencode_cmd(
                         repository=review_chain.repository,
                         parsed=parsed,
                         model=model or config.opencode.model or "default",
+                        rr_summary=review.summary,
                         chain_id=branch_name if len(pending) > 1 else None,
                         chain_position=i + 1 if len(pending) > 1 else None,
                     )
@@ -750,6 +751,7 @@ def run_single_opencode_review(
             repository=repo_config.name,
             parsed=merged_parsed,
             model=model or config.opencode.model or "default",
+            rr_summary=review.summary,
         )
 
 
@@ -808,11 +810,13 @@ def _save_opencode_to_review_db(
     repository: str,
     parsed,
     model: str,
+    rr_summary: str | None = None,
     chain_id: str | None = None,
     chain_position: int | None = None,
 ) -> None:
     """Save an OpenCode review result to the reviews database."""
     from ..db import ReviewDatabase
+    from ..rr.rb_client import ReviewRequestInfo
 
     # Convert parsed issues to ReviewComment objects
     comments = []
@@ -865,6 +869,19 @@ def _save_opencode_to_review_db(
         has_critical_issues=has_critical,
     )
 
+    # Create a minimal rr_info to pass the summary
+    rr_info = None
+    if rr_summary:
+        rr_info = ReviewRequestInfo(
+            id=review_id,
+            summary=rr_summary,
+            status="pending",
+            repository_name=repository,
+            depends_on=[],
+            base_commit_id=None,
+            diff_revision=diff_revision,
+        )
+
     try:
         review_db = ReviewDatabase(config.review_db.resolved_path)
         analysis_id = review_db.save_analysis(
@@ -872,6 +889,7 @@ def _save_opencode_to_review_db(
             repository=repository,
             analysis_method="opencode",
             model=model,
+            rr_info=rr_info,
             chain_id=chain_id,
             chain_position=chain_position,
         )
