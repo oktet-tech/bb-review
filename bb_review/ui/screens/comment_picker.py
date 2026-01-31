@@ -396,8 +396,8 @@ class CommentPickerScreen(Screen):
             self.current_index += 1
             self._refresh_display()
         else:
-            # At the end, proceed to done
-            self.action_done()
+            # At the end, notify user to press 'd' to finish
+            self.notify("Last analysis. Press [D] to export or [Q] to quit.", severity="information")
 
     def action_prev_analysis(self) -> None:
         """Move to the previous analysis."""
