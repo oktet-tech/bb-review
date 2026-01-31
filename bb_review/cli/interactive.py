@@ -83,6 +83,12 @@ def interactive(
         click.echo("No analyses found matching the filter.")
         return
 
+    # Suppress console logging during TUI (logs go to file only)
+    root_logger = logging.getLogger()
+    stream_handlers = [h for h in root_logger.handlers if isinstance(h, logging.StreamHandler)]
+    for handler in stream_handlers:
+        root_logger.removeHandler(handler)
+
     # Run the interactive app with filter params for refresh
     config = get_config(ctx)
     app = ExportApp(
@@ -97,3 +103,7 @@ def interactive(
         filter_limit=limit,
     )
     app.run()
+
+    # Restore stream handlers after TUI exits
+    for handler in stream_handlers:
+        root_logger.addHandler(handler)
