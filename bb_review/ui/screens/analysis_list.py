@@ -31,7 +31,7 @@ class AnalysisListScreen(Screen):
         Binding("x", "show_actions", "Actions"),
         Binding("p", "proceed", "Export Selected"),
         Binding("q", "quit_app", "Quit"),
-        Binding("escape", "quit_app", "Quit"),
+        Binding("escape", "quit_app", "Quit", show=False),
     ]
 
     CSS = """
