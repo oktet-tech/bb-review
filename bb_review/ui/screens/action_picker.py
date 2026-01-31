@@ -309,6 +309,8 @@ class SubmitOptionsScreen(ModalScreen[str | None]):
             yield OptionList(
                 Option("\\[S] Submit as draft (only visible to you)", id="draft"),
                 Option("\\[P] Publish (visible to everyone)", id="publish"),
+                None,  # Separator
+                Option("\\[Esc] Cancel", id="cancel"),
                 id="options-list",
             )
         yield Footer()
@@ -333,6 +335,8 @@ class SubmitOptionsScreen(ModalScreen[str | None]):
         """Process the selected option."""
         if option_id in ("draft", "publish"):
             self.dismiss(option_id)
+        elif option_id == "cancel":
+            self.dismiss(None)
 
     def action_submit_draft(self) -> None:
         """Submit as draft (only visible to you)."""
