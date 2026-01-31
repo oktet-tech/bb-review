@@ -37,6 +37,14 @@ class ReviewRequestInfo:
     depends_on: list[int]  # List of RR IDs this depends on
     base_commit_id: str | None
     diff_revision: int
+    description: str = ""  # Full description text
+
+    @property
+    def full_summary(self) -> str:
+        """Return summary + description combined."""
+        if self.description:
+            return f"{self.summary}\n\n{self.description}"
+        return self.summary
 
 
 class ReviewBoardClient:
@@ -634,6 +642,7 @@ class ReviewBoardClient:
             depends_on=depends_on_ids,
             base_commit_id=base_commit,
             diff_revision=diff_revision,
+            description=rr.get("description", ""),
         )
 
     def __del__(self):

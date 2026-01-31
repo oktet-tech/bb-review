@@ -84,9 +84,17 @@ class ChainedReview:
     summary: str
     status: str  # pending, submitted, discarded
     diff_revision: int
+    description: str = ""  # Full description text
     raw_diff: str | None = None  # Populated later when needed
     base_commit_id: str | None = None
     needs_review: bool = True  # False if already submitted
+
+    @property
+    def full_summary(self) -> str:
+        """Return summary + description combined."""
+        if self.description:
+            return f"{self.summary}\n\n{self.description}"
+        return self.summary
 
 
 @dataclass
@@ -227,6 +235,7 @@ def resolve_chain(
             summary=rr_info.summary,
             status=rr_info.status,
             diff_revision=rr_info.diff_revision,
+            description=rr_info.description,
             base_commit_id=rr_info.base_commit_id,
             needs_review=needs_review,
         )
@@ -318,6 +327,7 @@ def load_chain_from_file(
             summary=rr_info.summary,
             status=rr_info.status,
             diff_revision=rr_info.diff_revision,
+            description=rr_info.description,
             base_commit_id=rr_info.base_commit_id,
             needs_review=rr_info.status == "pending",
         )

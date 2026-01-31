@@ -196,6 +196,7 @@ def analyze(
                     summary=rr_info.summary,
                     status=rr_info.status,
                     diff_revision=rr_info.diff_revision,
+                    description=rr_info.description,
                     base_commit_id=rr_info.base_commit_id,
                     needs_review=True,
                 )

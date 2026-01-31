@@ -185,6 +185,7 @@ def opencode_cmd(
                     summary=rr_info.summary,
                     status=rr_info.status,
                     diff_revision=rr_info.diff_revision,
+                    description=rr_info.description,
                     base_commit_id=rr_info.base_commit_id,
                     needs_review=True,
                 )
@@ -342,7 +343,7 @@ def opencode_cmd(
                 else:
                     analysis = run_opencode_for_review(
                         rr_id,
-                        review.summary,
+                        review.full_summary,
                         diff_info.raw_diff,
                         repo_path,
                         repo_config,
@@ -699,7 +700,7 @@ def run_single_opencode_review(
             else:
                 analysis = run_opencode_for_review(
                     review_id,
-                    review.summary,
+                    review.full_summary,
                     raw_diff,
                     repo_path,
                     repo_config,
@@ -714,7 +715,7 @@ def run_single_opencode_review(
                 click.echo("  Running API review via api-reviewer agent...")
                 api_analysis = run_api_review(
                     review_id,
-                    review.summary,
+                    review.full_summary,
                     raw_diff,
                     repo_path,
                     used_target,
