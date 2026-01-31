@@ -17,6 +17,7 @@ class ActionType(str, Enum):
     """Types of actions available."""
 
     EXPORT = "export"
+    SUBMIT = "submit"
     DELETE = "delete"
     MARK_DRAFT = "mark_draft"
     MARK_SUBMITTED = "mark_submitted"
@@ -104,6 +105,7 @@ class ActionPickerScreen(ModalScreen[ActionResult | None]):
                 )
             yield OptionList(
                 Option("Export", id="export"),
+                Option("Submit to ReviewBoard", id="submit"),
                 Option("Delete", id="delete"),
                 None,  # Separator
                 Option("Mark as: Draft", id="mark_draft"),
@@ -134,6 +136,7 @@ class ActionPickerScreen(ModalScreen[ActionResult | None]):
         """Process the selected action."""
         action_map = {
             "export": ActionType.EXPORT,
+            "submit": ActionType.SUBMIT,
             "delete": ActionType.DELETE,
             "mark_draft": ActionType.MARK_DRAFT,
             "mark_submitted": ActionType.MARK_SUBMITTED,

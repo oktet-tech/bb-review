@@ -1,8 +1,12 @@
 """Main Textual application for interactive review management."""
 
+from __future__ import annotations
+
 from datetime import datetime
 import json
+import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from textual.app import App
 
@@ -20,6 +24,12 @@ from .screens.analysis_list import AnalysisListResult, AnalysisListScreen
 from .screens.comment_picker import CommentPickerScreen
 
 
+if TYPE_CHECKING:
+    from bb_review.config import Config
+
+logger = logging.getLogger(__name__)
+
+
 class ExportApp(App):
     """Interactive review management application."""
 
@@ -35,6 +45,7 @@ class ExportApp(App):
         self,
         analyses: list[AnalysisListItem],
         db: ReviewDatabase,
+        config: Config | None = None,
         output_path: str | None = None,
         # Filter params for refreshing
         filter_rr_id: int | None = None,
@@ -48,6 +59,7 @@ class ExportApp(App):
         Args:
             analyses: List of AnalysisListItem to show for selection
             db: ReviewDatabase instance for loading full analysis details
+            config: Optional config for ReviewBoard submission
             output_path: Optional output file path
             filter_rr_id: Filter by review request ID (for refresh)
             filter_repo: Filter by repository (for refresh)
@@ -58,6 +70,7 @@ class ExportApp(App):
         super().__init__()
         self.initial_analyses = analyses
         self.db = db
+        self.config = config
         self._batch_action_ids: list[int] = []  # Track IDs for batch actions
         self.output_path = output_path
         self.exported_analyses: list[ExportableAnalysis] = []
@@ -177,6 +190,9 @@ class ExportApp(App):
         if result.action == ActionType.EXPORT:
             # Export - go to comment picker
             self._start_batch_export(action_ids)
+        elif result.action == ActionType.SUBMIT:
+            # Submit to ReviewBoard
+            self._submit_analyses(action_ids)
         elif result.action == ActionType.DELETE:
             # Delete with confirmation
             self._delete_analyses(action_ids)
@@ -267,6 +283,120 @@ class ExportApp(App):
                 return
         else:
             self.notify("Failed to update status", severity="error")
+
+        self._show_analysis_list()
+
+    def _submit_analyses(self, analysis_ids: list[int]) -> None:
+        """Submit analyses to ReviewBoard.
+
+        Only supports single analysis submission currently.
+        """
+        if not analysis_ids:
+            self._show_analysis_list()
+            return
+
+        if len(analysis_ids) > 1:
+            self.notify("Batch submission not supported. Please submit one at a time.", severity="warning")
+            self._show_analysis_list()
+            return
+
+        if not self.config:
+            self.notify("Config not available for submission", severity="error")
+            self._show_analysis_list()
+            return
+
+        analysis_id = analysis_ids[0]
+
+        # Load full analysis
+        analysis = self.db.get_analysis(analysis_id)
+        if not analysis:
+            self.notify(f"Analysis #{analysis_id} not found", severity="error")
+            self._show_analysis_list()
+            return
+
+        # Build submission data
+        from bb_review.models import ReviewComment, ReviewFocus, Severity
+
+        comments = []
+        severity_values = [s.value for s in Severity]
+        focus_values = [f.value for f in ReviewFocus]
+        for c in analysis.comments:
+            sev = Severity(c.severity) if c.severity in severity_values else Severity.MEDIUM
+            issue = ReviewFocus(c.issue_type) if c.issue_type in focus_values else ReviewFocus.BUGS
+            comments.append(
+                ReviewComment(
+                    file_path=c.file_path,
+                    line_number=c.line_number,
+                    message=c.message,
+                    severity=sev,
+                    issue_type=issue,
+                    suggestion=c.suggestion,
+                )
+            )
+
+        # Build the review body
+        body_parts = [f"## AI Code Review Summary\n\n{analysis.summary}"]
+        if analysis.has_critical_issues:
+            body_parts.append("\n**Note:** Critical issues found that require attention.")
+        body_parts.append(f"\n\n*Analysis by {analysis.model_used} ({analysis.analysis_method.value})*")
+        body_top = "\n".join(body_parts)
+
+        # Format inline comments
+        inline_comments = []
+        for c in comments:
+            severity_label = c.severity.value.upper()
+            text_parts = [f"**[{severity_label}] {c.issue_type.value.title()}**\n\n{c.message}"]
+            if c.suggestion:
+                text_parts.append(f"\n\n**Suggestion:** {c.suggestion}")
+            inline_comments.append(
+                {
+                    "file_path": c.file_path,
+                    "line_number": c.line_number,
+                    "text": "\n".join(text_parts),
+                }
+            )
+
+        # Submit to ReviewBoard
+        try:
+            from bb_review.rr import ReviewBoardClient
+
+            rb_client = ReviewBoardClient(
+                url=self.config.reviewboard.url,
+                bot_username=self.config.reviewboard.bot_username,
+                api_token=self.config.reviewboard.api_token,
+                username=self.config.reviewboard.username,
+                password=self.config.reviewboard.get_password(),
+                use_kerberos=self.config.reviewboard.use_kerberos,
+            )
+            rb_client.connect()
+
+            ship_it = len(inline_comments) == 0 and not analysis.has_critical_issues
+            rb_client.post_review(
+                review_request_id=analysis.review_request_id,
+                body_top=body_top,
+                comments=inline_comments,
+                ship_it=ship_it,
+                publish=False,  # Submit as draft
+            )
+
+            # Mark as submitted in DB
+            self.db.mark_submitted(analysis_id)
+
+            self.notify(
+                f"Submitted review for RR #{analysis.review_request_id} as draft",
+                severity="information",
+            )
+
+            # Refresh the list
+            self.initial_analyses = self._refresh_analyses()
+            if not self.initial_analyses:
+                self.notify("No analyses remaining after filter", severity="warning")
+                self.exit()
+                return
+
+        except Exception as e:
+            logger.exception("Failed to submit review")
+            self.notify(f"Submit failed: {e}", severity="error")
 
         self._show_analysis_list()
 

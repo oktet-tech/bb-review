@@ -84,9 +84,11 @@ def interactive(
         return
 
     # Run the interactive app with filter params for refresh
+    config = get_config(ctx)
     app = ExportApp(
         analyses=analyses,
         db=review_db,
+        config=config,
         output_path=output,
         filter_rr_id=review_request_id,
         filter_repo=repository,
