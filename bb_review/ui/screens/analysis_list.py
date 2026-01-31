@@ -7,7 +7,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import DataTable, Footer, Header, Label, Static
+from textual.widgets import DataTable, Footer, Header, Label
 
 from bb_review.db.models import AnalysisListItem
 
@@ -48,11 +48,6 @@ class AnalysisListScreen(Screen):
     #title {
         text-style: bold;
         color: $text;
-    }
-
-    #instructions {
-        color: $text-muted;
-        margin-top: 1;
     }
 
     #table-container {
@@ -100,10 +95,6 @@ class AnalysisListScreen(Screen):
         with Vertical():
             with Container(id="header-container"):
                 yield Label("Select Analyses", id="title")
-                yield Static(
-                    "[Space] Toggle  [A] All  [Enter] Open  [X] Actions  [P] Export Selected  [Q] Quit",
-                    id="instructions",
-                )
 
             with Container(id="table-container"):
                 yield DataTable(id="analysis-table", cursor_type="row")
