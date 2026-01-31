@@ -111,11 +111,6 @@ class CommentPickerScreen(Screen):
         text-style: bold;
     }
 
-    #instructions {
-        color: $text-muted;
-        margin-top: 1;
-    }
-
     #summary-container {
         height: auto;
         max-height: 8;
@@ -197,11 +192,6 @@ class CommentPickerScreen(Screen):
                 yield Label("", id="title")
                 yield Label("", id="meta")
                 yield Label("", id="progress")
-                yield Static(
-                    "[Space] Toggle  [A] All  [E] Edit  [N] Next  [P] Prev  [S] Skip  "
-                    "[B] Back  [D] Export  [Ctrl+S] Submit",
-                    id="instructions",
-                )
 
             with Container(id="summary-container"):
                 yield Label("", id="rr-summary-label")
