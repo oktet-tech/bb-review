@@ -1,5 +1,25 @@
 # BB Review - AI Code Review for Review Board
 
+## Commit Convention
+
+Use semantic commit messages with the following prefixes:
+
+- `feat:` - New features or capabilities
+- `fix:` - Bug fixes
+- `refactor:` - Code restructuring without changing behavior
+- `docs:` - Documentation changes
+- `test:` - Adding or updating tests
+- `chore:` - Maintenance tasks, dependency updates
+
+Examples:
+```
+feat: add body_top editing in interactive TUI
+fix: skip general issues without file/line during import
+refactor: extract comment formatting into separate function
+```
+
+Keep the first line under 72 characters. Add a blank line and detailed description if needed.
+
 ## Project Overview
 
 BB Review is a CLI tool that provides AI-powered code reviews for Review Board (RB). It fetches diffs from Review Board, analyzes them using an LLM, and posts review comments back.
