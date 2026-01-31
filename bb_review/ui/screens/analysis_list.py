@@ -114,7 +114,7 @@ class AnalysisListScreen(Screen):
         table.add_column("RR#", key="rr", width=8)
         table.add_column("Repo", key="repo", width=15)
         table.add_column("Issues", key="issues", width=8)
-        table.add_column("Status", key="status", width=10)
+        table.add_column("Status", key="status", width=12)
         table.add_column("Summary", key="summary")
 
         # Add rows
