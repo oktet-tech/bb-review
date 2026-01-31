@@ -118,15 +118,20 @@ class CommentPickerScreen(Screen):
 
     #summary-container {
         height: auto;
-        max-height: 6;
+        max-height: 8;
         padding: 1;
         background: $surface-darken-1;
         border: solid $primary;
         margin: 0 1;
     }
 
-    #summary-label {
+    #rr-summary-label {
+        color: $text-muted;
+    }
+
+    #review-summary-label {
         text-style: italic;
+        margin-top: 1;
     }
 
     #comments-container {
@@ -199,7 +204,8 @@ class CommentPickerScreen(Screen):
                 )
 
             with Container(id="summary-container"):
-                yield Label("", id="summary-label")
+                yield Label("", id="rr-summary-label")
+                yield Label("", id="review-summary-label")
 
             with Container(id="comments-container"):
                 yield ListView(id="comments-list")
@@ -236,12 +242,19 @@ class CommentPickerScreen(Screen):
         progress = self.query_one("#progress", Label)
         progress.update(f"Analysis {self.current_index + 1} of {len(self.analyses)}")
 
-        # Update summary
-        summary = self.query_one("#summary-label", Label)
-        summary_text = analysis.analysis.summary[:200]
+        # Update RR summary (the review request description)
+        rr_summary = self.query_one("#rr-summary-label", Label)
+        rr_summary_text = analysis.analysis.rr_summary or "(no RR summary)"
+        if len(rr_summary_text) > 200:
+            rr_summary_text = rr_summary_text[:200] + "..."
+        rr_summary.update(f"RR Summary: {rr_summary_text}")
+
+        # Update review summary (AI analysis body)
+        review_summary = self.query_one("#review-summary-label", Label)
+        review_summary_text = analysis.analysis.summary[:200]
         if len(analysis.analysis.summary) > 200:
-            summary_text += "..."
-        summary.update(f"Summary: {summary_text}")
+            review_summary_text += "..."
+        review_summary.update(f"Review Summary: {review_summary_text}")
 
         # Rebuild comments list
         self._rebuild_comments_list()
