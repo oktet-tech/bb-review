@@ -232,8 +232,9 @@ class SubmitOptionsScreen(ModalScreen[str | None]):
     """Modal screen for choosing submit or publish."""
 
     BINDINGS = [
-        Binding("s", "submit_draft", "Submit (draft)"),
-        Binding("p", "publish", "Publish"),
+        Binding("s", "submit_draft", "Submit (draft)", show=False),
+        Binding("p", "publish", "Publish", show=False),
+        Binding("enter", "select", "Select", priority=True),
         Binding("escape", "cancel", "Cancel"),
     ]
 
@@ -243,7 +244,7 @@ class SubmitOptionsScreen(ModalScreen[str | None]):
     }
 
     #dialog {
-        width: 45;
+        width: 50;
         height: auto;
         border: thick $primary;
         background: $surface;
@@ -257,14 +258,14 @@ class SubmitOptionsScreen(ModalScreen[str | None]):
         padding-bottom: 1;
     }
 
-    #message {
-        text-align: center;
-        padding-bottom: 1;
+    OptionList {
+        height: auto;
+        max-height: 10;
+        background: $surface;
     }
 
-    #hint {
-        color: $text-muted;
-        text-align: center;
+    OptionList:focus {
+        border: tall $primary;
     }
     """
 
@@ -272,9 +273,33 @@ class SubmitOptionsScreen(ModalScreen[str | None]):
         """Compose the submit options dialog."""
         with Container(id="dialog"):
             yield Label("Submit Review", id="title")
-            yield Static("How would you like to submit?", id="message")
-            yield Static("\\[S]ubmit as draft / \\[P]ublish", id="hint")
+            yield OptionList(
+                Option("[S] Submit as draft (only visible to you)", id="draft"),
+                Option("[P] Publish (visible to everyone)", id="publish"),
+                id="options-list",
+            )
         yield Footer()
+
+    def on_mount(self) -> None:
+        """Focus the option list on mount."""
+        self.query_one("#options-list", OptionList).focus()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """Handle option selection."""
+        self._select_option(str(event.option_id))
+
+    def action_select(self) -> None:
+        """Select the highlighted option."""
+        option_list = self.query_one("#options-list", OptionList)
+        if option_list.highlighted is not None:
+            option = option_list.get_option_at_index(option_list.highlighted)
+            if option.id:
+                self._select_option(str(option.id))
+
+    def _select_option(self, option_id: str) -> None:
+        """Process the selected option."""
+        if option_id in ("draft", "publish"):
+            self.dismiss(option_id)
 
     def action_submit_draft(self) -> None:
         """Submit as draft (only visible to you)."""
