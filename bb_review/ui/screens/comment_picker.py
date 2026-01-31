@@ -128,11 +128,13 @@ class CommentPickerScreen(Screen):
 
     #rr-summary-label {
         color: $text-muted;
+        width: 100%;
     }
 
     #review-summary-label {
         text-style: italic;
         margin-top: 1;
+        width: 100%;
     }
 
     #comments-container {
@@ -201,8 +203,8 @@ class CommentPickerScreen(Screen):
                 yield Label("", id="progress")
 
             with Container(id="summary-container"):
-                yield Label("", id="rr-summary-label")
-                yield Label("", id="review-summary-label")
+                yield Static("", id="rr-summary-label")
+                yield Static("", id="review-summary-label")
 
             with Container(id="comments-container"):
                 yield ListView(id="comments-list")
@@ -248,12 +250,12 @@ class CommentPickerScreen(Screen):
         progress.update(f"Analysis {self.current_index + 1} of {len(self.analyses)}")
 
         # Update RR summary (the review request description)
-        rr_summary = self.query_one("#rr-summary-label", Label)
+        rr_summary = self.query_one("#rr-summary-label", Static)
         rr_summary_text = analysis.analysis.rr_summary or "(no RR summary)"
         rr_summary.update(f"RR Summary: {rr_summary_text}")
 
         # Update review summary (AI analysis body) - show full text
-        review_summary = self.query_one("#review-summary-label", Label)
+        review_summary = self.query_one("#review-summary-label", Static)
         review_summary.update(f"Review Summary: {analysis.analysis.summary}")
 
         # Rebuild comments list
