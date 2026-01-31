@@ -531,6 +531,9 @@ def _save_to_review_db(
             diff_revision=result.diff_revision,
         )
 
+    # Build the RB URL for this review request
+    rb_url = f"{config.reviewboard.url.rstrip('/')}/r/{result.review_request_id}/"
+
     try:
         review_db = ReviewDatabase(config.review_db.resolved_path)
 
@@ -548,6 +551,7 @@ def _save_to_review_db(
             chain_id=chain_id,
             chain_position=chain_position,
             fake=fake,
+            rb_url=rb_url,
         )
         logger.debug(f"Saved analysis {analysis_id} to reviews database")
     except Exception as e:

@@ -64,6 +64,7 @@ class StoredAnalysis:
     # Optional extras
     raw_response_path: str | None = None
     fake: bool = False  # True for test/fake reviews
+    rb_url: str | None = None  # Review Board URL for this review request
     # Comments (populated separately)
     comments: list[StoredComment] = field(default_factory=list)
 
@@ -112,6 +113,7 @@ class AnalysisListItem:
     chain_id: str | None = None
     rr_summary: str | None = None
     fake: bool = False
+    rb_url: str | None = None
 
 
 @dataclass

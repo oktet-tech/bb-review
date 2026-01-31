@@ -72,7 +72,8 @@ class ReviewDatabase:
                     status TEXT NOT NULL DEFAULT 'draft',
                     submitted_at TEXT,
                     raw_response_path TEXT,
-                    fake INTEGER NOT NULL DEFAULT 0
+                    fake INTEGER NOT NULL DEFAULT 0,
+                    rb_url TEXT
                 );
 
                 -- Comments table
@@ -101,6 +102,12 @@ class ReviewDatabase:
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
+            # Migration: add rb_url column if it doesn't exist
+            try:
+                conn.execute("ALTER TABLE analyses ADD COLUMN rb_url TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
         """Context manager for database connections."""
@@ -125,6 +132,7 @@ class ReviewDatabase:
         chain_position: int | None = None,
         raw_response_path: str | None = None,
         fake: bool = False,
+        rb_url: str | None = None,
     ) -> int:
         """Save an analysis result to the database.
 
@@ -139,6 +147,7 @@ class ReviewDatabase:
             chain_position: Position in chain (1-indexed)
             raw_response_path: Optional path to raw LLM response file
             fake: Whether this is a fake/test review
+            rb_url: Review Board base URL
 
         Returns:
             The database ID of the saved analysis
@@ -166,8 +175,8 @@ class ReviewDatabase:
                     review_request_id, diff_revision, base_commit_id, target_commit_id,
                     repository, submitter, rr_summary, branch, depends_on_json,
                     analysis_method, model_used, analyzed_at, chain_id, chain_position,
-                    summary, has_critical_issues, status, raw_response_path, fake
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    summary, has_critical_issues, status, raw_response_path, fake, rb_url
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     result.review_request_id,
@@ -189,6 +198,7 @@ class ReviewDatabase:
                     AnalysisStatus.DRAFT.value,
                     raw_response_path,
                     1 if fake else 0,
+                    rb_url,
                 ),
             )
             analysis_id = cursor.lastrowid
@@ -718,6 +728,12 @@ class ReviewDatabase:
         except (IndexError, KeyError):
             fake = False
 
+        # Handle rb_url column (may not exist in older databases)
+        try:
+            rb_url = row["rb_url"]
+        except (IndexError, KeyError):
+            rb_url = None
+
         return StoredAnalysis(
             id=row["id"],
             review_request_id=row["review_request_id"],
@@ -740,6 +756,7 @@ class ReviewDatabase:
             submitted_at=(datetime.fromisoformat(row["submitted_at"]) if row["submitted_at"] else None),
             raw_response_path=row["raw_response_path"],
             fake=fake,
+            rb_url=rb_url,
         )
 
     def _row_to_comment(self, row: sqlite3.Row) -> StoredComment:
@@ -763,6 +780,12 @@ class ReviewDatabase:
         except (IndexError, KeyError):
             fake = False
 
+        # Handle rb_url column (may not exist in older databases)
+        try:
+            rb_url = row["rb_url"]
+        except (IndexError, KeyError):
+            rb_url = None
+
         return AnalysisListItem(
             id=row["id"],
             review_request_id=row["review_request_id"],
@@ -778,4 +801,5 @@ class ReviewDatabase:
             chain_id=row["chain_id"],
             rr_summary=row["rr_summary"],
             fake=fake,
+            rb_url=rb_url,
         )
