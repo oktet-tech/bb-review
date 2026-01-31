@@ -277,7 +277,7 @@ class SubmitOptionsScreen(ModalScreen[str | None]):
     }
 
     #dialog {
-        width: 50;
+        width: 60;
         height: auto;
         border: thick $primary;
         background: $surface;
