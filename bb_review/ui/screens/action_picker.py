@@ -213,7 +213,7 @@ class ConfirmDeleteScreen(ModalScreen[bool]):
                     f"Delete analysis #{self.analysis.id} for RR #{self.analysis.review_request_id}?",
                     id="message",
                 )
-            yield Static("[Y]es / [N]o", id="hint")
+            yield Static("\\[Y]es / \\[N]o", id="hint")
         yield Footer()
 
     def action_confirm(self) -> None:
