@@ -478,6 +478,7 @@ class ReviewBoardClient:
             f"/api/review-requests/{review_request_id}/reviews/",
             {
                 "body_top": body_top,
+                "body_top_text_type": "markdown",
                 "ship_it": "1" if ship_it else "0",
                 "public": "0",
             },
