@@ -104,36 +104,43 @@ class ExportApp(App):
             self.exit()
             return
 
-        # Build export data
-        exports = []
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        exported_files: list[str] = []
+
+        # Export each analysis to a separate file
         for exportable in self.exported_analyses:
             export_data = self._build_export_data(exportable)
-            exports.append(export_data)
+            rr_id = exportable.analysis.review_request_id
 
-        # Determine output path
-        if self.output_path:
-            output_file = Path(self.output_path)
-        else:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_file = Path(f"export_{timestamp}.json")
+            # Determine output path
+            if self.output_path and len(self.exported_analyses) == 1:
+                # Use provided path only for single export
+                output_file = Path(self.output_path)
+            else:
+                # Generate filename: export_review_<RR_ID>_<date>_<time>.json
+                output_file = Path(f"export_review_{rr_id}_{timestamp}.json")
 
-        # Write output
-        if len(exports) == 1:
-            # Single analysis - write flat structure
-            output_data = exports[0]
-        else:
-            # Multiple analyses - wrap in array
-            output_data = {"exports": exports}
+            try:
+                with open(output_file, "w") as f:
+                    json.dump(export_data, f, indent=2)
+                exported_files.append(str(output_file))
+            except Exception as e:
+                self.notify(f"Export failed for RR #{rr_id}: {e}", severity="error")
 
-        try:
-            with open(output_file, "w") as f:
-                json.dump(output_data, f, indent=2)
-
-            self.notify(f"Exported to {output_file}", severity="information")
-        except Exception as e:
-            self.notify(f"Export failed: {e}", severity="error")
+        # Log exported files
+        if exported_files:
+            self.log_exports(exported_files)
 
         self.exit()
+
+    def log_exports(self, files: list[str]) -> None:
+        """Log the exported files to console."""
+        import click
+
+        click.echo("\nExported reviews:")
+        for f in files:
+            click.echo(f"  - {f}")
+        click.echo(f"\nTotal: {len(files)} file(s)")
 
     def _build_export_data(self, exportable: ExportableAnalysis) -> dict:
         """Build export data for a single analysis.
