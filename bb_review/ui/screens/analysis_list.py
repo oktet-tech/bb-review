@@ -115,8 +115,10 @@ class AnalysisListScreen(Screen):
         # Add rows
         for analysis in self.analyses:
             status_icon = self._get_status_icon(analysis.status.value)
-            summary = (analysis.rr_summary or analysis.summary or "")[:50]
-            if len(analysis.rr_summary or analysis.summary or "") > 50:
+            # Show RR summary (commit description), not the AI analysis summary
+            rr_summary = analysis.rr_summary or ""
+            summary = rr_summary[:50]
+            if len(rr_summary) > 50:
                 summary += "..."
 
             table.add_row(
