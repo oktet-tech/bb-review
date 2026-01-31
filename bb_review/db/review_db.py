@@ -385,7 +385,7 @@ class ReviewDatabase:
         Args:
             review_request_id: Filter by RR ID
             repository: Filter by repository name
-            status: Filter by status (draft, submitted, abandoned)
+            status: Filter by status (draft, submitted, obsolete, invalid)
             chain_id: Filter by chain ID
             limit: Maximum number of results
             offset: Offset for pagination
@@ -492,8 +492,8 @@ class ReviewDatabase:
                 (AnalysisStatus.SUBMITTED.value, datetime.now().isoformat(), analysis_id),
             )
 
-    def mark_abandoned(self, analysis_id: int) -> None:
-        """Mark an analysis as abandoned.
+    def mark_obsolete(self, analysis_id: int) -> None:
+        """Mark an analysis as obsolete.
 
         Args:
             analysis_id: Database ID of the analysis
@@ -503,7 +503,7 @@ class ReviewDatabase:
                 """
                 UPDATE analyses SET status = ? WHERE id = ?
                 """,
-                (AnalysisStatus.ABANDONED.value, analysis_id),
+                (AnalysisStatus.OBSOLETE.value, analysis_id),
             )
 
     def update_status(self, analysis_id: int, status: str) -> None:
@@ -511,7 +511,7 @@ class ReviewDatabase:
 
         Args:
             analysis_id: Database ID of the analysis
-            status: New status (draft, submitted, abandoned)
+            status: New status (draft, submitted, obsolete, invalid)
         """
         # Validate status
         try:

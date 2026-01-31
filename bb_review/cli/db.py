@@ -46,7 +46,11 @@ def db():
 @db.command("list")
 @click.option("--rr", "review_request_id", type=int, help="Filter by review request ID")
 @click.option("--repo", "repository", help="Filter by repository name")
-@click.option("--status", type=click.Choice(["draft", "submitted", "abandoned"]), help="Filter by status")
+@click.option(
+    "--status",
+    type=click.Choice(["draft", "submitted", "obsolete", "invalid"]),
+    help="Filter by status",
+)
 @click.option("--chain", "chain_id", help="Filter by chain ID")
 @click.option("--limit", "-n", default=20, type=int, help="Maximum number of results")
 @click.pass_context
@@ -84,7 +88,8 @@ def db_list(
     click.echo("=" * 80)
 
     for a in analyses:
-        status_icon = {"draft": "📝", "submitted": "✓", "abandoned": "✗"}.get(a.status.value, "?")
+        status_icons = {"draft": "📝", "submitted": "✓", "obsolete": "⊘", "invalid": "✗"}
+        status_icon = status_icons.get(a.status.value, "?")
         chain_info = f" [chain: {a.chain_id[:20]}...]" if a.chain_id else ""
 
         click.echo(
@@ -242,7 +247,7 @@ def db_stats(ctx: click.Context) -> None:
 @click.argument("analysis_id", type=int)
 @click.option(
     "--status",
-    type=click.Choice(["draft", "submitted", "abandoned"]),
+    type=click.Choice(["draft", "submitted", "obsolete", "invalid"]),
     required=True,
     help="New status",
 )
@@ -252,7 +257,7 @@ def db_mark(ctx: click.Context, analysis_id: int, status: str) -> None:
 
     Examples:
         bb-review db mark 1 --status submitted
-        bb-review db mark 1 --status abandoned
+        bb-review db mark 1 --status obsolete
     """
     review_db = get_review_db(ctx)
 

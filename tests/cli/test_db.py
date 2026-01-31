@@ -244,14 +244,14 @@ class TestDbMark:
         assert result.exit_code == 0
         assert "draft -> submitted" in result.output
 
-    def test_db_mark_abandoned(self, runner: CliRunner, db_with_data: Path):
-        """Mark analysis as abandoned."""
+    def test_db_mark_obsolete(self, runner: CliRunner, db_with_data: Path):
+        """Mark analysis as obsolete."""
         result = runner.invoke(
-            main, ["--config", str(db_with_data), "db", "mark", "1", "--status", "abandoned"]
+            main, ["--config", str(db_with_data), "db", "mark", "1", "--status", "obsolete"]
         )
 
         assert result.exit_code == 0
-        assert "draft -> abandoned" in result.output
+        assert "draft -> obsolete" in result.output
 
     def test_db_mark_not_found(self, runner: CliRunner, config_with_db: Path):
         """Error when analysis not found."""

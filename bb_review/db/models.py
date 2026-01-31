@@ -10,7 +10,8 @@ class AnalysisStatus(str, Enum):
 
     DRAFT = "draft"
     SUBMITTED = "submitted"
-    ABANDONED = "abandoned"
+    OBSOLETE = "obsolete"
+    INVALID = "invalid"
 
 
 class AnalysisMethod(str, Enum):

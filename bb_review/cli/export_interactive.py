@@ -36,7 +36,7 @@ def get_review_db(ctx: click.Context) -> ReviewDatabase:
 @click.option("--repo", "repository", help="Filter by repository name")
 @click.option(
     "--status",
-    type=click.Choice(["draft", "submitted", "abandoned"]),
+    type=click.Choice(["draft", "submitted", "obsolete", "invalid"]),
     default="draft",
     help="Filter by status (default: draft)",
 )

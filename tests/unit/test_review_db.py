@@ -303,8 +303,8 @@ class TestReviewDatabase:
         assert analysis.status == AnalysisStatus.SUBMITTED
         assert analysis.submitted_at is not None
 
-    def test_mark_abandoned(self, temp_db: ReviewDatabase, sample_review_result: ReviewResult):
-        """Mark analysis as abandoned."""
+    def test_mark_obsolete(self, temp_db: ReviewDatabase, sample_review_result: ReviewResult):
+        """Mark analysis as obsolete."""
         analysis_id = temp_db.save_analysis(
             result=sample_review_result,
             repository="test-repo",
@@ -312,11 +312,11 @@ class TestReviewDatabase:
             model="claude-sonnet-4",
         )
 
-        temp_db.mark_abandoned(analysis_id)
+        temp_db.mark_obsolete(analysis_id)
 
         analysis = temp_db.get_analysis(analysis_id)
         assert analysis is not None
-        assert analysis.status == AnalysisStatus.ABANDONED
+        assert analysis.status == AnalysisStatus.OBSOLETE
 
     def test_update_status(self, temp_db: ReviewDatabase, sample_review_result: ReviewResult):
         """Update analysis status."""

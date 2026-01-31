@@ -140,7 +140,8 @@ class AnalysisListScreen(Screen):
         icons = {
             "draft": "D",
             "submitted": "S",
-            "abandoned": "X",
+            "obsolete": "O",
+            "invalid": "I",
         }
         return icons.get(status, "?")
 
