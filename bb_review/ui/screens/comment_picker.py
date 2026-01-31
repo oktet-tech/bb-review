@@ -6,7 +6,7 @@ import tempfile
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, ScrollableContainer, Vertical
+from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Label, ListItem, ListView, Static
 
@@ -69,6 +69,10 @@ class CommentPickerScreen(Screen):
         Binding("d", "done", "Done"),
         Binding("q", "quit_app", "Quit"),
         Binding("escape", "quit_app", "Quit"),
+        Binding("up", "cursor_up", "Up", show=False),
+        Binding("down", "cursor_down", "Down", show=False),
+        Binding("j", "cursor_down", "Down", show=False),
+        Binding("k", "cursor_up", "Up", show=False),
     ]
 
     CSS = """
@@ -177,7 +181,7 @@ class CommentPickerScreen(Screen):
             with Container(id="summary-container"):
                 yield Label("", id="summary-label")
 
-            with ScrollableContainer(id="comments-container"):
+            with Container(id="comments-container"):
                 yield ListView(id="comments-list")
 
             with Horizontal(id="status-bar"):
@@ -188,6 +192,9 @@ class CommentPickerScreen(Screen):
     def on_mount(self) -> None:
         """Set up the screen when mounted."""
         self._refresh_display()
+        # Focus the ListView for arrow key navigation
+        list_view = self.query_one("#comments-list", ListView)
+        list_view.focus()
 
     def _refresh_display(self) -> None:
         """Refresh the display for the current analysis."""
@@ -228,6 +235,9 @@ class CommentPickerScreen(Screen):
         for i, comment in enumerate(self.current_analysis.comments):
             list_view.append(CommentItem(comment, i))
 
+        # Ensure ListView stays focused
+        list_view.focus()
+
     def _update_status(self) -> None:
         """Update the status bar."""
         label = self.query_one("#status-label", Label)
@@ -241,6 +251,23 @@ class CommentPickerScreen(Screen):
             if isinstance(list_view.highlighted_child, CommentItem):
                 return list_view.highlighted_child.index
         return None
+
+    def action_cursor_up(self) -> None:
+        """Move cursor up in the comments list."""
+        list_view = self.query_one("#comments-list", ListView)
+        if list_view.index is not None and list_view.index > 0:
+            list_view.index -= 1
+        list_view.focus()
+
+    def action_cursor_down(self) -> None:
+        """Move cursor down in the comments list."""
+        list_view = self.query_one("#comments-list", ListView)
+        if list_view.index is not None:
+            if list_view.index < len(list_view.children) - 1:
+                list_view.index += 1
+        elif len(list_view.children) > 0:
+            list_view.index = 0
+        list_view.focus()
 
     def action_toggle_comment(self) -> None:
         """Toggle selection on current comment."""
