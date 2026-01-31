@@ -104,11 +104,19 @@ To review effectively:
 Do NOT use any attached patch file - use `git diff --cached` instead.
 """
     else:
-        prompt = f"""You are reviewing a code change. Analyze the attached patch file.
+        prompt = f"""You are reviewing a code change. The patch could not be applied to the repository,
+so you must analyze the patch file directly.
 
 Repository: {repo_name}
 Review Request: #{review_id}
 Description: {summary}
+
+To review effectively:
+1. Read the patch file at `.bb_review_patch.diff` to see the changes
+2. Read the affected files in the repository to understand context
+   (note: they show the OLD version before the patch)
+3. Line numbers in your findings must match the NEW line numbers shown in the patch
+   (lines starting with +)
 """
 
     if guidelines_context:
@@ -202,15 +210,11 @@ def run_opencode_review(
             f"Review-{review_id}",
         ]
 
-        # Attach the patch file if we have one
-        if patch_path:
-            cmd.extend(["-f", str(patch_path)])
-
         if model:
             cmd.extend(["--model", model])
 
         # Use @filename to include the prompt - file must be relative to cwd (repo_path)
-        # This is the cleanest way to pass long prompts to opencode
+        # The prompt itself references the patch file when in fallback mode
         cmd.append("@.bb_review_prompt.md")
 
         logger.info(f"Running opencode in {repo_path}")
