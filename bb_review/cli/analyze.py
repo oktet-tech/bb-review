@@ -372,6 +372,7 @@ def analyze(
                         chain_id=chain_result.chain_id if len(pending) > 1 else None,
                         chain_position=i + 1 if len(pending) > 1 else None,
                         model=config.llm.model,
+                        fake=fake_review,
                     )
 
                 # Note: staged changes are kept and will be committed at the start
@@ -511,6 +512,7 @@ def _save_to_review_db(
     chain_id: str | None = None,
     chain_position: int | None = None,
     model: str = "",
+    fake: bool = False,
 ) -> None:
     """Save a review result to the reviews database."""
     from ..db import ReviewDatabase
@@ -545,6 +547,7 @@ def _save_to_review_db(
             rr_info=rr_info,
             chain_id=chain_id,
             chain_position=chain_position,
+            fake=fake,
         )
         logger.debug(f"Saved analysis {analysis_id} to reviews database")
     except Exception as e:
