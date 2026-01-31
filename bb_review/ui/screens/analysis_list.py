@@ -15,7 +15,8 @@ class AnalysisListScreen(Screen):
     BINDINGS = [
         Binding("space", "toggle_selection", "Toggle"),
         Binding("a", "toggle_all", "Select All"),
-        Binding("enter", "proceed", "Proceed"),
+        Binding("enter", "proceed", "Proceed", priority=True),
+        Binding("p", "proceed", "Proceed"),
         Binding("q", "quit_app", "Quit"),
         Binding("escape", "quit_app", "Quit"),
     ]
@@ -87,7 +88,7 @@ class AnalysisListScreen(Screen):
             with Container(id="header-container"):
                 yield Label("Select Analyses to Export", id="title")
                 yield Static(
-                    "[Space] Toggle  [A] Select All  [Enter] Proceed  [Q] Quit",
+                    "[Space/Enter] Toggle  [A] Select All  [P] Proceed  [Q] Quit",
                     id="instructions",
                 )
 
@@ -188,10 +189,17 @@ class AnalysisListScreen(Screen):
 
         self._update_status()
 
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Handle row double-click or Enter on DataTable - toggle selection."""
+        # When Enter is pressed on a row, toggle its selection
+        if event.row_key:
+            row_key_str = str(event.row_key.value)
+            self._toggle_row(row_key_str)
+
     def action_proceed(self) -> None:
         """Proceed with selected analyses."""
         if not self.selected:
-            self.notify("No analyses selected", severity="warning")
+            self.notify("No analyses selected. Press Space to select.", severity="warning")
             return
 
         # Post message to app with selected IDs
