@@ -76,7 +76,8 @@ class CommentPickerScreen(Screen):
         Binding("p", "prev_analysis", "Previous"),
         Binding("s", "skip_analysis", "Skip"),
         Binding("b", "back", "Back"),
-        Binding("d", "done", "Done"),
+        Binding("d", "done", "Export"),
+        Binding("ctrl+s", "submit", "Submit"),
         Binding("q", "quit_app", "Quit"),
         Binding("escape", "back", "Back"),
         Binding("up", "cursor_up", "Up", show=False),
@@ -192,7 +193,8 @@ class CommentPickerScreen(Screen):
                 yield Label("", id="meta")
                 yield Label("", id="progress")
                 yield Static(
-                    "[Space] Toggle  [A] All  [E] Edit  [N] Next  [P] Prev  [S] Skip  [B] Back  [D] Done",
+                    "[Space] Toggle  [A] All  [E] Edit  [N] Next  [P] Prev  [S] Skip  "
+                    "[B] Back  [D] Export  [Ctrl+S] Submit",
                     id="instructions",
                 )
 
@@ -482,6 +484,22 @@ class CommentPickerScreen(Screen):
             return
 
         self.dismiss(result)
+
+    def action_submit(self) -> None:
+        """Submit selected comments to ReviewBoard."""
+        # Filter out skipped analyses and those with no selected comments
+        result = [a for a in self.analyses if not a.skipped and a.selected_count > 0]
+
+        if not result:
+            self.notify("No comments selected for submission", severity="warning")
+            return
+
+        if len(result) > 1:
+            self.notify("Can only submit one analysis at a time", severity="warning")
+            return
+
+        # Return special result indicating submit action
+        self.dismiss(("submit", result))
 
     def action_back(self) -> None:
         """Go back to analysis selection."""

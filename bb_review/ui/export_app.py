@@ -400,11 +400,97 @@ class ExportApp(App):
 
         self._show_analysis_list()
 
+    def _submit_from_comment_picker(self, exportable: ExportableAnalysis) -> None:
+        """Submit an analysis with selected/edited comments from comment picker.
+
+        Args:
+            exportable: The ExportableAnalysis with selected comments
+        """
+        if not self.config:
+            self.notify("Config not available for submission", severity="error")
+            self._show_analysis_list()
+            return
+
+        analysis = exportable.analysis
+
+        # Build the review body
+        body_parts = [f"## AI Code Review Summary\n\n{analysis.summary}"]
+        if analysis.has_critical_issues:
+            body_parts.append("\n**Note:** Critical issues found that require attention.")
+        body_parts.append(f"\n\n*Analysis by {analysis.model_used} ({analysis.analysis_method.value})*")
+        body_top = "\n".join(body_parts)
+
+        # Format inline comments from selected comments (with edits applied)
+        inline_comments = []
+        for sc in exportable.comments:
+            if not sc.selected:
+                continue
+            c = sc.comment
+            severity_label = c.severity.upper()
+            message = sc.effective_message  # Uses edited message if available
+            text_parts = [f"**[{severity_label}] {c.issue_type.title()}**\n\n{message}"]
+            suggestion = sc.effective_suggestion
+            if suggestion:
+                text_parts.append(f"\n\n**Suggestion:** {suggestion}")
+            inline_comments.append(
+                {
+                    "file_path": c.file_path,
+                    "line_number": c.line_number,
+                    "text": "\n".join(text_parts),
+                }
+            )
+
+        # Submit to ReviewBoard
+        try:
+            from bb_review.rr import ReviewBoardClient
+
+            rb_client = ReviewBoardClient(
+                url=self.config.reviewboard.url,
+                bot_username=self.config.reviewboard.bot_username,
+                api_token=self.config.reviewboard.api_token,
+                username=self.config.reviewboard.username,
+                password=self.config.reviewboard.get_password(),
+                use_kerberos=self.config.reviewboard.use_kerberos,
+            )
+            rb_client.connect()
+
+            ship_it = len(inline_comments) == 0 and not analysis.has_critical_issues
+            rb_client.post_review(
+                review_request_id=analysis.review_request_id,
+                body_top=body_top,
+                comments=inline_comments,
+                ship_it=ship_it,
+                publish=False,  # Submit as draft
+            )
+
+            # Mark as submitted in DB
+            self.db.mark_submitted(analysis.id)
+
+            self.notify(
+                f"Submitted review for RR #{analysis.review_request_id} as draft "
+                f"({len(inline_comments)} comments)",
+                severity="information",
+            )
+
+            # Refresh the list
+            self.initial_analyses = self._refresh_analyses()
+            if not self.initial_analyses:
+                self.notify("No analyses remaining after filter", severity="warning")
+                self.exit()
+                return
+
+        except Exception as e:
+            logger.exception("Failed to submit review")
+            self.notify(f"Submit failed: {e}", severity="error")
+
+        self._show_analysis_list()
+
     def _on_comments_picked(self, result) -> None:
         """Handle picked comments from the comment picker screen.
 
         Args:
-            result: List of analyses, "back" to return to selection, or None if cancelled
+            result: List of analyses, "back" to return to selection,
+                    ("submit", analyses) for submission, or None if cancelled
         """
         if result == "back":
             # Go back to analysis selection
@@ -413,6 +499,13 @@ class ExportApp(App):
 
         if not result:
             self.exit()
+            return
+
+        # Check for submit action
+        if isinstance(result, tuple) and len(result) == 2 and result[0] == "submit":
+            analyses = result[1]
+            if analyses:
+                self._submit_from_comment_picker(analyses[0])
             return
 
         self.exported_analyses = result
