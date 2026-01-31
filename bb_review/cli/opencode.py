@@ -384,6 +384,7 @@ def opencode_cmd(
                         chain_id=branch_name if len(pending) > 1 else None,
                         chain_position=i + 1 if len(pending) > 1 else None,
                         fake=fake_review,
+                        body_top=output_data.get("body_top"),
                     )
 
                 # Dump raw response if requested (last review)
@@ -816,6 +817,7 @@ def run_single_opencode_review(
             model=model or config.opencode.model or "default",
             rr_summary=review.summary,
             fake=fake_review,
+            body_top=output_data.get("body_top"),
         )
 
 
@@ -878,6 +880,7 @@ def _save_opencode_to_review_db(
     chain_id: str | None = None,
     chain_position: int | None = None,
     fake: bool = False,
+    body_top: str | None = None,
 ) -> None:
     """Save an OpenCode review result to the reviews database."""
     from ..db import ReviewDatabase
@@ -967,6 +970,7 @@ def _save_opencode_to_review_db(
             chain_position=chain_position,
             fake=fake,
             rb_url=rb_url,
+            body_top=body_top,
         )
         logger.debug(f"Saved opencode analysis {analysis_id} to reviews database")
     except Exception as e:

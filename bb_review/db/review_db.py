@@ -73,7 +73,8 @@ class ReviewDatabase:
                     submitted_at TEXT,
                     raw_response_path TEXT,
                     fake INTEGER NOT NULL DEFAULT 0,
-                    rb_url TEXT
+                    rb_url TEXT,
+                    body_top TEXT
                 );
 
                 -- Comments table
@@ -108,6 +109,12 @@ class ReviewDatabase:
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
+            # Migration: add body_top column if it doesn't exist
+            try:
+                conn.execute("ALTER TABLE analyses ADD COLUMN body_top TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
         """Context manager for database connections."""
@@ -133,6 +140,7 @@ class ReviewDatabase:
         raw_response_path: str | None = None,
         fake: bool = False,
         rb_url: str | None = None,
+        body_top: str | None = None,
     ) -> int:
         """Save an analysis result to the database.
 
@@ -148,6 +156,7 @@ class ReviewDatabase:
             raw_response_path: Optional path to raw LLM response file
             fake: Whether this is a fake/test review
             rb_url: Review Board base URL
+            body_top: Full review body text for submission
 
         Returns:
             The database ID of the saved analysis
@@ -175,8 +184,9 @@ class ReviewDatabase:
                     review_request_id, diff_revision, base_commit_id, target_commit_id,
                     repository, submitter, rr_summary, branch, depends_on_json,
                     analysis_method, model_used, analyzed_at, chain_id, chain_position,
-                    summary, has_critical_issues, status, raw_response_path, fake, rb_url
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    summary, has_critical_issues, status, raw_response_path, fake, rb_url,
+                    body_top
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     result.review_request_id,
@@ -199,6 +209,7 @@ class ReviewDatabase:
                     raw_response_path,
                     1 if fake else 0,
                     rb_url,
+                    body_top,
                 ),
             )
             analysis_id = cursor.lastrowid
@@ -734,6 +745,12 @@ class ReviewDatabase:
         except (IndexError, KeyError):
             rb_url = None
 
+        # Handle body_top column (may not exist in older databases)
+        try:
+            body_top = row["body_top"]
+        except (IndexError, KeyError):
+            body_top = None
+
         return StoredAnalysis(
             id=row["id"],
             review_request_id=row["review_request_id"],
@@ -757,6 +774,7 @@ class ReviewDatabase:
             raw_response_path=row["raw_response_path"],
             fake=fake,
             rb_url=rb_url,
+            body_top=body_top,
         )
 
     def _row_to_comment(self, row: sqlite3.Row) -> StoredComment:

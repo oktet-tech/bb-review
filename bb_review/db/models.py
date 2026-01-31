@@ -65,6 +65,7 @@ class StoredAnalysis:
     raw_response_path: str | None = None
     fake: bool = False  # True for test/fake reviews
     rb_url: str | None = None  # Review Board URL for this review request
+    body_top: str | None = None  # Full review body text for submission
     # Comments (populated separately)
     comments: list[StoredComment] = field(default_factory=list)
 

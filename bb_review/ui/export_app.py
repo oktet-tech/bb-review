@@ -653,9 +653,17 @@ class ExportApp(App):
             exportable: The exportable analysis
 
         Returns:
-            Formatted body_top string
+            Formatted body_top string - uses stored body_top if available (opencode reviews),
+            otherwise builds a generic one.
         """
         analysis = exportable.analysis
+
+        # If we have a stored body_top (from opencode), use it directly
+        stored_body = getattr(analysis, "body_top", None)
+        if stored_body:
+            return stored_body
+
+        # Otherwise, build a generic body_top for LLM reviews
         lines = []
 
         lines.append("## AI Code Review")

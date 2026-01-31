@@ -254,9 +254,13 @@ class CommentPickerScreen(Screen):
         rr_summary_text = analysis.analysis.rr_summary or "(no RR summary)"
         rr_summary.update(f"RR Summary: {rr_summary_text}")
 
-        # Update review summary (AI analysis body) - show full text
+        # Update review summary (AI analysis body) - show full body_top if available
         review_summary = self.query_one("#review-summary-label", Static)
-        review_summary.update(f"Review Summary: {analysis.analysis.summary}")
+        body_top = getattr(analysis.analysis, "body_top", None)
+        if body_top:
+            review_summary.update(f"Review Summary:\n{body_top}")
+        else:
+            review_summary.update(f"Review Summary: {analysis.analysis.summary}")
 
         # Rebuild comments list
         self._rebuild_comments_list()
@@ -491,22 +495,28 @@ class CommentPickerScreen(Screen):
 
     def action_done(self) -> None:
         """Finish and return to export."""
-        # Filter out skipped analyses and those with no selected comments
-        result = [a for a in self.analyses if not a.skipped and a.selected_count > 0]
+        # Filter out skipped analyses
+        # Include analyses that have selected comments OR no comments at all (body-only reviews)
+        result = [
+            a for a in self.analyses if not a.skipped and (a.selected_count > 0 or len(a.comments) == 0)
+        ]
 
         if not result:
-            self.notify("No comments selected for export", severity="warning")
+            self.notify("No analyses selected for export", severity="warning")
             return
 
         self.dismiss(result)
 
     def action_submit(self) -> None:
         """Submit selected comments to ReviewBoard."""
-        # Filter out skipped analyses and those with no selected comments
-        result = [a for a in self.analyses if not a.skipped and a.selected_count > 0]
+        # Filter out skipped analyses
+        # Include analyses that have selected comments OR no comments at all (body-only reviews)
+        result = [
+            a for a in self.analyses if not a.skipped and (a.selected_count > 0 or len(a.comments) == 0)
+        ]
 
         if not result:
-            self.notify("No comments selected for submission", severity="warning")
+            self.notify("No analyses to submit", severity="warning")
             return
 
         if len(result) > 1:
