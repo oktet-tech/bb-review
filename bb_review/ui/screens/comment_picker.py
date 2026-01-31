@@ -478,18 +478,19 @@ class CommentPickerScreen(Screen):
         body_top = getattr(analysis.analysis, "body_top", None) or analysis.analysis.summary
 
         # Open in editor
-        editor = os.environ.get("EDITOR", "vim")
-        temp_path = tempfile.mktemp(suffix=".md")
+        editor = os.environ.get("EDITOR", os.environ.get("VISUAL", "vim"))
+
+        # Create temp file
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+            f.write("# Edit the review summary below\n")
+            f.write("# Lines starting with # will be removed\n\n")
+            f.write(body_top)
+            temp_path = f.name
 
         try:
-            # Write content to temp file with instructions
-            with open(temp_path, "w") as f:
-                f.write("# Edit the review summary below\n")
-                f.write("# Lines starting with # will be removed\n\n")
-                f.write(body_top)
-
-            # Run editor
-            subprocess.run([editor, temp_path], check=True)
+            # Suspend the app and run editor
+            with self.app.suspend():
+                subprocess.run([editor, temp_path], check=True)
 
             # Read back edited content
             with open(temp_path) as f:
