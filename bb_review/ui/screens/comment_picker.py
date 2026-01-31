@@ -66,9 +66,10 @@ class CommentPickerScreen(Screen):
         Binding("enter", "next_analysis", "Next"),
         Binding("p", "prev_analysis", "Previous"),
         Binding("s", "skip_analysis", "Skip"),
+        Binding("b", "back", "Back"),
         Binding("d", "done", "Done"),
         Binding("q", "quit_app", "Quit"),
-        Binding("escape", "quit_app", "Quit"),
+        Binding("escape", "back", "Back"),
         Binding("up", "cursor_up", "Up", show=False),
         Binding("down", "cursor_down", "Down", show=False),
         Binding("j", "cursor_down", "Down", show=False),
@@ -174,7 +175,7 @@ class CommentPickerScreen(Screen):
                 yield Label("", id="meta")
                 yield Label("", id="progress")
                 yield Static(
-                    "[Space] Toggle  [A] All  [E] Edit  [N] Next  [P] Prev  [S] Skip  [D] Done  [Q] Quit",
+                    "[Space] Toggle  [A] All  [E] Edit  [N] Next  [P] Prev  [S] Skip  [B] Back  [D] Done",
                     id="instructions",
                 )
 
@@ -424,6 +425,10 @@ class CommentPickerScreen(Screen):
             return
 
         self.dismiss(result)
+
+    def action_back(self) -> None:
+        """Go back to analysis selection."""
+        self.dismiss("back")
 
     def action_quit_app(self) -> None:
         """Quit the application."""

@@ -84,17 +84,25 @@ class ExportApp(App):
             callback=self._on_comments_picked,
         )
 
-    def _on_comments_picked(self, analyses: list[ExportableAnalysis] | None) -> None:
+    def _on_comments_picked(self, result) -> None:
         """Handle picked comments from the comment picker screen.
 
         Args:
-            analyses: List of analyses with selected comments, or None if cancelled
+            result: List of analyses, "back" to return to selection, or None if cancelled
         """
-        if not analyses:
+        if result == "back":
+            # Go back to analysis selection
+            self.push_screen(
+                AnalysisListScreen(self.initial_analyses),
+                callback=self._on_analyses_selected,
+            )
+            return
+
+        if not result:
             self.exit()
             return
 
-        self.exported_analyses = analyses
+        self.exported_analyses = result
         self._do_export()
 
     def _do_export(self) -> None:
