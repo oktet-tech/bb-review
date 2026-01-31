@@ -563,10 +563,17 @@ def db_import(
     if not model:
         model = metadata.get("model", "unknown")
 
-    # Build ReviewComment objects
+    # Build ReviewComment objects (only for issues with file_path and line_number)
+    # General issues without file/line are kept in body_top, not as inline comments
     comments = []
     has_critical_from_comments = False
     for issue in parsed_issues:
+        # Skip general issues without file/line - they belong in body_top
+        file_path = issue.get("file_path")
+        line_number = issue.get("line_number")
+        if not file_path or not line_number:
+            continue
+
         severity_str = issue.get("severity", "medium").lower()
         try:
             severity = Severity(severity_str)
@@ -584,8 +591,8 @@ def db_import(
 
         comments.append(
             ReviewComment(
-                file_path=issue.get("file_path", "unknown"),
-                line_number=issue.get("line_number", 0),
+                file_path=file_path,
+                line_number=line_number,
                 message=issue.get("comment", issue.get("message", "")),
                 severity=severity,
                 issue_type=issue_type,
