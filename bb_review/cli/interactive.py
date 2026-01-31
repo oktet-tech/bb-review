@@ -36,9 +36,9 @@ def get_review_db(ctx: click.Context) -> ReviewDatabase:
 @click.option("--repo", "repository", help="Filter by repository name")
 @click.option(
     "--status",
-    type=click.Choice(["draft", "submitted", "obsolete", "invalid"]),
+    type=click.Choice(["all", "draft", "submitted", "obsolete", "invalid"]),
     default="draft",
-    help="Filter by status (default: draft)",
+    help="Filter by status (default: draft, use 'all' for no filter)",
 )
 @click.option("--chain", "chain_id", help="Filter by chain ID")
 @click.option("--limit", "-n", default=50, type=int, help="Maximum number of results")
@@ -66,15 +66,19 @@ def interactive(
         bb-review interactive --rr 42738        # Filter by specific RR
         bb-review interactive --repo te-dev     # Filter by repository
         bb-review interactive --status submitted # Browse submitted analyses
+        bb-review interactive --status all      # Browse all analyses
         bb-review interactive -o review.json    # Specify export output file
     """
     review_db = get_review_db(ctx)
+
+    # Convert "all" to None for no status filter
+    status_filter = None if status == "all" else status
 
     # Fetch analyses matching the filter
     analyses = review_db.list_analyses(
         review_request_id=review_request_id,
         repository=repository,
-        status=status,
+        status=status_filter,
         chain_id=chain_id,
         limit=limit,
     )
@@ -98,7 +102,7 @@ def interactive(
         output_path=output,
         filter_rr_id=review_request_id,
         filter_repo=repository,
-        filter_status=status,
+        filter_status=status_filter,
         filter_chain_id=chain_id,
         filter_limit=limit,
     )
