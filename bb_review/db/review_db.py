@@ -557,6 +557,45 @@ class ReviewDatabase:
             conn.execute("DELETE FROM analyses WHERE id = ?", (analysis_id,))
             return True
 
+    def update_comment(
+        self, comment_id: int, message: str | None = None, suggestion: str | None = None
+    ) -> bool:
+        """Update a comment's message and/or suggestion.
+
+        Args:
+            comment_id: Database ID of the comment
+            message: New message text (None to keep existing)
+            suggestion: New suggestion text (None to keep existing)
+
+        Returns:
+            True if the comment was updated, False if not found
+        """
+        with self._connection() as conn:
+            # Check if exists
+            exists = conn.execute("SELECT 1 FROM comments WHERE id = ?", (comment_id,)).fetchone()
+            if not exists:
+                return False
+
+            # Build update query dynamically
+            updates = []
+            params = []
+            if message is not None:
+                updates.append("message = ?")
+                params.append(message)
+            if suggestion is not None:
+                updates.append("suggestion = ?")
+                params.append(suggestion)
+
+            if not updates:
+                return True  # Nothing to update
+
+            params.append(comment_id)
+            conn.execute(
+                f"UPDATE comments SET {', '.join(updates)} WHERE id = ?",
+                params,
+            )
+            return True
+
     def get_stats(self) -> DBStats:
         """Get statistics about the database.
 

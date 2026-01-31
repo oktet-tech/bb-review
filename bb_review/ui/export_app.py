@@ -139,7 +139,7 @@ class ExportApp(App):
 
         # Show comment picker
         self.push_screen(
-            CommentPickerScreen(exportable),
+            CommentPickerScreen(exportable, db=self.db),
             callback=self._on_comments_picked,
         )
 

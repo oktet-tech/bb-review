@@ -1,8 +1,11 @@
 """Comment picker screen for selecting individual comments."""
 
+from __future__ import annotations
+
 import os
 import subprocess
 import tempfile
+from typing import TYPE_CHECKING
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -11,6 +14,10 @@ from textual.screen import Screen
 from textual.widgets import Footer, Header, Label, ListItem, ListView, Static
 
 from bb_review.ui.models import ExportableAnalysis, SelectableComment
+
+
+if TYPE_CHECKING:
+    from bb_review.db.review_db import ReviewDatabase
 
 
 class CommentItem(ListItem):
@@ -155,16 +162,19 @@ class CommentPickerScreen(Screen):
     def __init__(
         self,
         analyses: list[ExportableAnalysis],
+        db: ReviewDatabase | None = None,
         name: str | None = None,
     ) -> None:
         """Initialize the comment picker screen.
 
         Args:
             analyses: List of exportable analyses to process
+            db: Optional database for persisting edits
             name: Optional screen name
         """
         super().__init__(name=name)
         self.analyses = analyses
+        self.db = db
         self.current_index = 0
 
     @property
@@ -324,25 +334,25 @@ class CommentPickerScreen(Screen):
         """Edit the selected comment in external editor."""
         idx = self._get_selected_comment_index()
         if idx is None:
-            self.notify("No comment selected", severity="warning")
+            self.notify("No comment selected. Use arrow keys to select.", severity="warning")
             return
 
         comment = self.current_analysis.comments[idx]
-        self._edit_comment_in_editor(comment)
+        edited = self._edit_comment_in_editor(comment)
 
-        # Refresh display after editing
-        self._rebuild_comments_list()
+        if edited:
+            # Update the display
+            self._update_comment_item(idx)
+            self.notify("Comment updated", severity="information")
 
-        # Restore selection
-        list_view = self.query_one("#comments-list", ListView)
-        if idx < len(list_view.children):
-            list_view.index = idx
-
-    def _edit_comment_in_editor(self, comment: SelectableComment) -> None:
+    def _edit_comment_in_editor(self, comment: SelectableComment) -> bool:
         """Open comment in external editor.
 
         Args:
             comment: The comment to edit
+
+        Returns:
+            True if the comment was edited, False otherwise
         """
         c = comment.comment
 
@@ -375,24 +385,29 @@ class CommentPickerScreen(Screen):
             with open(temp_path) as f:
                 edited_content = f.read()
 
-            # Parse edited content
-            self._parse_edited_content(comment, edited_content)
+            # Parse and apply edited content
+            return self._apply_edited_content(comment, edited_content)
 
         except subprocess.CalledProcessError:
             self.notify("Editor exited with error", severity="error")
+            return False
         except Exception as e:
             self.notify(f"Error editing: {e}", severity="error")
+            return False
         finally:
             # Clean up temp file
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
 
-    def _parse_edited_content(self, comment: SelectableComment, content: str) -> None:
-        """Parse edited content back into the comment.
+    def _apply_edited_content(self, comment: SelectableComment, content: str) -> bool:
+        """Parse edited content and apply to comment and database.
 
         Args:
             comment: The comment to update
             content: The edited content from the file
+
+        Returns:
+            True if changes were made, False otherwise
         """
         lines = content.split("\n")
 
@@ -409,12 +424,29 @@ class CommentPickerScreen(Screen):
             message = text
             suggestion = ""
 
-        # Update comment with edits
-        if message != comment.comment.message:
-            comment.edited_message = message
+        # Check if anything changed
+        original_message = comment.effective_message
+        original_suggestion = comment.effective_suggestion or ""
 
-        if suggestion != (comment.comment.suggestion or ""):
-            comment.edited_suggestion = suggestion
+        if message == original_message and suggestion == original_suggestion:
+            return False  # No changes
+
+        # Update comment object
+        comment.edited_message = message
+        comment.edited_suggestion = suggestion if suggestion else None
+
+        # Save to database if available
+        if self.db is not None:
+            try:
+                self.db.update_comment(
+                    comment.comment.id,
+                    message=message,
+                    suggestion=suggestion if suggestion else None,
+                )
+            except Exception as e:
+                self.notify(f"Failed to save to DB: {e}", severity="warning")
+
+        return True
 
     def action_next_analysis(self) -> None:
         """Move to the next analysis."""
