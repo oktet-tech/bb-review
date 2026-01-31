@@ -16,9 +16,9 @@ from bb_review.db.models import AnalysisListItem
 class AnalysisListResult:
     """Result from the analysis list screen."""
 
-    type: Literal["batch_export", "single_action", "batch_action"]
+    type: Literal["batch_export", "single_action", "batch_action", "open_analysis"]
     ids: list[int] | None = None  # For batch_export and batch_action
-    analysis_id: int | None = None  # For single_action
+    analysis_id: int | None = None  # For single_action and open_analysis
 
 
 class AnalysisListScreen(Screen):
@@ -27,7 +27,8 @@ class AnalysisListScreen(Screen):
     BINDINGS = [
         Binding("space", "toggle_selection", "Toggle Select"),
         Binding("a", "toggle_all", "Select All"),
-        Binding("enter", "show_actions", "Actions", priority=True),
+        Binding("enter", "open_analysis", "Open", priority=True),
+        Binding("x", "show_actions", "Actions"),
         Binding("p", "proceed", "Export Selected"),
         Binding("q", "quit_app", "Quit"),
         Binding("escape", "quit_app", "Quit"),
@@ -100,7 +101,7 @@ class AnalysisListScreen(Screen):
             with Container(id="header-container"):
                 yield Label("Select Analyses", id="title")
                 yield Static(
-                    "[Space] Toggle  [A] All  [Enter] Actions  [P] Export Selected  [Q] Quit",
+                    "[Space] Toggle  [A] All  [Enter] Open  [X] Actions  [P] Export Selected  [Q] Quit",
                     id="instructions",
                 )
 
@@ -207,10 +208,17 @@ class AnalysisListScreen(Screen):
         self._update_status()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        """Handle row double-click on DataTable - show actions."""
-        # Note: Enter key is handled by action_show_actions binding
+        """Handle row double-click on DataTable - open analysis."""
+        # Note: Enter key is handled by action_open_analysis binding
         # This handles double-click - same logic as Enter
-        self.action_show_actions()
+        self.action_open_analysis()
+
+    def action_open_analysis(self) -> None:
+        """Open the current analysis (go to comment picker)."""
+        table = self.query_one("#analysis-table", DataTable)
+        if table.cursor_row is not None and table.row_count > 0:
+            analysis_id = self.analyses[table.cursor_row].id
+            self.dismiss(AnalysisListResult(type="open_analysis", analysis_id=analysis_id))
 
     def action_show_actions(self) -> None:
         """Show action picker for selected items or current row."""

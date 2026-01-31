@@ -120,6 +120,10 @@ class ExportApp(App):
         if result.type == "batch_export":
             # Batch export selected analyses
             self._start_batch_export(result.ids or [])
+        elif result.type == "open_analysis":
+            # Open single analysis in comment picker
+            if result.analysis_id:
+                self._start_batch_export([result.analysis_id])
         elif result.type == "single_action":
             # Show action picker for single analysis
             self._batch_action_ids = []
