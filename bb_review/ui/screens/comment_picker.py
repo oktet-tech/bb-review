@@ -226,10 +226,11 @@ class CommentPickerScreen(Screen):
         title = self.query_one("#title", Label)
         title.update(f"Review RR #{analysis.analysis.review_request_id} - {analysis.analysis.repository}")
 
-        # Update URL (clickable in most terminals)
+        # Update URL (clickable in most terminals that support OSC 8 hyperlinks)
         rb_url_label = self.query_one("#rb-url", Label)
-        if analysis.analysis.rb_url:
-            rb_url_label.update(f"[link={analysis.analysis.rb_url}]{analysis.analysis.rb_url}[/link]")
+        rb_url = getattr(analysis.analysis, "rb_url", None)
+        if rb_url:
+            rb_url_label.update(rb_url)
         else:
             rb_url_label.update("")
 
