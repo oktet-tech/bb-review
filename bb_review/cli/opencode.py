@@ -711,6 +711,7 @@ def run_single_opencode_review(
                     model,
                     timeout,
                     binary_path,
+                    at_reviewed_state=used_target,
                 )
 
             # Run API review for te-test-suite repos
