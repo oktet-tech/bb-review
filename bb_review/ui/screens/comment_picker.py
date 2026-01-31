@@ -118,7 +118,7 @@ class CommentPickerScreen(Screen):
 
     #summary-container {
         height: auto;
-        max-height: 15;
+        max-height: 50%;
         padding: 1;
         background: $surface-darken-1;
         border: solid $primary;
