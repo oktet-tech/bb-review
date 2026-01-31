@@ -1,5 +1,6 @@
 """Database commands for BB Review CLI."""
 
+from datetime import datetime
 import json
 import logging
 from pathlib import Path
@@ -13,6 +14,7 @@ from ..db import (
     export_to_json,
     export_to_markdown,
 )
+from ..models import ReviewComment, ReviewFocus, ReviewResult, Severity
 from . import get_config, main
 
 
@@ -420,3 +422,164 @@ def db_search(ctx: click.Context, query: str, limit: int) -> None:
         # Show matching context
         summary_preview = a.summary[:100] + "..." if len(a.summary) > 100 else a.summary
         click.echo(f"      {summary_preview}")
+
+
+@db.command("import")
+@click.argument("file", type=click.Path(exists=True, path_type=Path))
+@click.option("--repo", "repository", required=True, help="Repository name")
+@click.option("--diff-rev", "diff_revision", type=int, default=1, help="Diff revision (default: 1)")
+@click.option(
+    "--method",
+    type=click.Choice(["llm", "opencode"]),
+    help="Analysis method (auto-detected if not specified)",
+)
+@click.option("--model", help="Model name (auto-detected from metadata if not specified)")
+@click.pass_context
+def db_import(
+    ctx: click.Context,
+    file: Path,
+    repository: str,
+    diff_revision: int,
+    method: str | None,
+    model: str | None,
+) -> None:
+    """Import a review JSON file into the database.
+
+    The file should be a JSON file with review results, typically generated
+    by 'bb-review analyze --dry-run' or 'bb-review opencode --dry-run'.
+
+    Examples:
+        bb-review db import result.json --repo te-dev
+        bb-review db import review_42738.json --repo te-dev --diff-rev 2
+    """
+    review_db = get_review_db(ctx)
+
+    # Read and parse the JSON file
+    try:
+        with open(file) as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        click.echo(f"Error: Invalid JSON file: {e}", err=True)
+        sys.exit(1)
+
+    # Extract required fields
+    review_request_id = data.get("review_request_id")
+    if not review_request_id:
+        click.echo("Error: File missing 'review_request_id' field", err=True)
+        sys.exit(1)
+
+    # Get parsed issues (structured comment data)
+    parsed_issues = data.get("parsed_issues", [])
+    if not parsed_issues:
+        # Fall back to comments if parsed_issues not available
+        # Note: comments have less structured data
+        click.echo("Warning: No 'parsed_issues' found, using 'comments' (limited data)", err=True)
+        parsed_issues = []
+        for c in data.get("comments", []):
+            # Try to parse severity from text if available
+            parsed_issues.append(
+                {
+                    "file_path": c.get("file_path", "unknown"),
+                    "line_number": c.get("line_number", 0),
+                    "comment": c.get("text", ""),
+                    "severity": "medium",
+                    "issue_type": "bug",
+                    "suggestion": None,
+                }
+            )
+
+    # Extract metadata
+    metadata = data.get("metadata", {})
+    created_at_str = metadata.get("created_at")
+    if created_at_str:
+        try:
+            analyzed_at = datetime.fromisoformat(created_at_str)
+        except ValueError:
+            analyzed_at = datetime.now()
+    else:
+        analyzed_at = datetime.now()
+
+    # Determine method (auto-detect from body_top or metadata)
+    if not method:
+        body_top = data.get("body_top", "")
+        if "OpenCode" in body_top or metadata.get("model") == "default":
+            method = "opencode"
+        else:
+            method = "llm"
+
+    # Determine model
+    if not model:
+        model = metadata.get("model", "unknown")
+
+    # Build ReviewComment objects
+    comments = []
+    has_critical = False
+    for issue in parsed_issues:
+        severity_str = issue.get("severity", "medium").lower()
+        try:
+            severity = Severity(severity_str)
+        except ValueError:
+            severity = Severity.MEDIUM
+
+        if severity == Severity.CRITICAL:
+            has_critical = True
+
+        issue_type_str = issue.get("issue_type", "bug").lower()
+        try:
+            issue_type = ReviewFocus(issue_type_str)
+        except ValueError:
+            issue_type = ReviewFocus.BUGS
+
+        comments.append(
+            ReviewComment(
+                file_path=issue.get("file_path", "unknown"),
+                line_number=issue.get("line_number", 0),
+                message=issue.get("comment", issue.get("message", "")),
+                severity=severity,
+                issue_type=issue_type,
+                suggestion=issue.get("suggestion"),
+            )
+        )
+
+    # Build summary
+    summary = data.get("unparsed_text", "")
+    if not summary:
+        # Try to extract from body_top
+        body_top = data.get("body_top", "")
+        if body_top:
+            # Take first non-header paragraph
+            lines = body_top.split("\n")
+            for line in lines:
+                if line and not line.startswith("#") and not line.startswith("**"):
+                    summary = line[:200]
+                    break
+    if not summary:
+        summary = f"Imported review with {len(comments)} issues"
+
+    # Create ReviewResult
+    result = ReviewResult(
+        review_request_id=review_request_id,
+        diff_revision=diff_revision,
+        comments=comments,
+        summary=summary,
+        has_critical_issues=has_critical,
+        analyzed_at=analyzed_at,
+    )
+
+    # Save to database
+    try:
+        analysis_id = review_db.save_analysis(
+            result=result,
+            repository=repository,
+            analysis_method=method,
+            model=model,
+        )
+        click.echo(f"Imported review as analysis #{analysis_id}")
+        click.echo(f"  RR: #{review_request_id}")
+        click.echo(f"  Repository: {repository}")
+        click.echo(f"  Method: {method}")
+        click.echo(f"  Model: {model}")
+        click.echo(f"  Comments: {len(comments)}")
+    except Exception as e:
+        click.echo(f"Error saving to database: {e}", err=True)
+        sys.exit(1)
