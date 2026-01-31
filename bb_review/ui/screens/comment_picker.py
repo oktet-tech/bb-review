@@ -31,26 +31,22 @@ class CommentItem(ListItem):
         """Compose the comment item."""
         c = self.comment.comment
         checkbox = "[X]" if self.comment.selected else "[ ]"
-        severity_colors = {
-            "critical": "red",
-            "high": "yellow",
-            "medium": "cyan",
-            "low": "green",
-        }
-        color = severity_colors.get(c.severity.lower(), "white")
-
-        # Truncate message for display
-        msg = self.comment.effective_message[:80]
-        if len(self.comment.effective_message) > 80:
-            msg += "..."
 
         # Mark if edited
-        edited = " [edited]" if self.comment.edited_message is not None else ""
+        edited = " [bold magenta](edited)[/]" if self.comment.edited_message is not None else ""
+
+        # Build display text with better formatting
+        # Line 1: checkbox, file:line, severity/type
+        line1 = (
+            f"{checkbox} [bold]{c.file_path}[/]:[cyan]{c.line_number}[/] "
+            f"({c.severity}/{c.issue_type}){edited}"
+        )
+
+        # Line 2+: full message (no truncation for readability)
+        msg = self.comment.effective_message.replace("\n", " ")
 
         yield Static(
-            f"{checkbox} [{color}]{c.file_path}:{c.line_number}[/{color}] "
-            f"({c.severity}/{c.issue_type}){edited}\n"
-            f"    {msg}",
+            f"{line1}\n    {msg}",
             markup=True,
         )
 
@@ -131,6 +127,11 @@ class CommentPickerScreen(Screen):
 
     ListView > ListItem {
         padding: 1;
+        height: auto;
+    }
+
+    ListView > ListItem > Static {
+        width: 100%;
     }
 
     ListView > ListItem.--highlight {
