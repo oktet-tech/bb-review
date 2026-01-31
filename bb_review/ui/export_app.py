@@ -58,6 +58,7 @@ class ExportApp(App):
         super().__init__()
         self.initial_analyses = analyses
         self.db = db
+        self._batch_action_ids: list[int] = []  # Track IDs for batch actions
         self.output_path = output_path
         self.exported_analyses: list[ExportableAnalysis] = []
         # Store filter params for refresh
@@ -108,7 +109,14 @@ class ExportApp(App):
             self._start_batch_export(result.ids or [])
         elif result.type == "single_action":
             # Show action picker for single analysis
+            self._batch_action_ids = []
             self._show_action_picker(result.analysis_id)
+        elif result.type == "batch_action":
+            # Show action picker for batch (apply to all selected)
+            self._batch_action_ids = result.ids or []
+            if self._batch_action_ids:
+                # Show picker using first analysis as representative
+                self._show_action_picker(self._batch_action_ids[0])
 
     def _start_batch_export(self, selected_ids: list[int]) -> None:
         """Start batch export flow for selected analyses."""
@@ -136,7 +144,7 @@ class ExportApp(App):
         )
 
     def _show_action_picker(self, analysis_id: int | None) -> None:
-        """Show action picker for a single analysis."""
+        """Show action picker for analysis/analyses."""
         if analysis_id is None:
             self._show_analysis_list()
             return
@@ -148,35 +156,37 @@ class ExportApp(App):
             self._show_analysis_list()
             return
 
+        # Pass count if batch action
+        count = len(self._batch_action_ids) if self._batch_action_ids else 1
         self.push_screen(
-            ActionPickerScreen(analysis),
+            ActionPickerScreen(analysis, count=count),
             callback=self._on_action_picked,
         )
 
     def _on_action_picked(self, result: ActionResult | None) -> None:
         """Handle action picker result."""
         if not result:
+            self._batch_action_ids = []
             self._show_analysis_list()
             return
 
+        # Get the IDs to apply action to (batch or single)
+        action_ids = self._batch_action_ids if self._batch_action_ids else [result.analysis_id]
+        self._batch_action_ids = []  # Clear batch IDs
+
         if result.action == ActionType.EXPORT:
-            # Single export - go to comment picker
-            self._start_batch_export([result.analysis_id])
+            # Export - go to comment picker
+            self._start_batch_export(action_ids)
         elif result.action == ActionType.DELETE:
-            # Show delete confirmation
-            analysis = next((a for a in self.initial_analyses if a.id == result.analysis_id), None)
-            if analysis:
-                self.push_screen(
-                    ConfirmDeleteScreen(analysis),
-                    callback=lambda confirmed: self._on_delete_confirmed(confirmed, result.analysis_id),
-                )
+            # Delete with confirmation
+            self._delete_analyses(action_ids)
         elif result.action in (
             ActionType.MARK_DRAFT,
             ActionType.MARK_SUBMITTED,
             ActionType.MARK_OBSOLETE,
             ActionType.MARK_INVALID,
         ):
-            # Update status
+            # Update status for all
             status_map = {
                 ActionType.MARK_DRAFT: "draft",
                 ActionType.MARK_SUBMITTED: "submitted",
@@ -184,13 +194,44 @@ class ExportApp(App):
                 ActionType.MARK_INVALID: "invalid",
             }
             new_status = status_map[result.action]
-            self._update_status(result.analysis_id, new_status)
+            self._update_statuses(action_ids, new_status)
 
-    def _on_delete_confirmed(self, confirmed: bool, analysis_id: int) -> None:
+    def _delete_analyses(self, analysis_ids: list[int]) -> None:
+        """Delete analyses with confirmation."""
+        if not analysis_ids:
+            self._show_analysis_list()
+            return
+
+        # Store IDs for deletion callback
+        self._pending_delete_ids = analysis_ids
+
+        # Find first analysis for confirmation display
+        analysis = next((a for a in self.initial_analyses if a.id == analysis_ids[0]), None)
+        if analysis:
+            self.push_screen(
+                ConfirmDeleteScreen(analysis, count=len(analysis_ids)),
+                callback=self._on_delete_confirmed,
+            )
+        else:
+            self._show_analysis_list()
+
+    def _on_delete_confirmed(self, confirmed: bool) -> None:
         """Handle delete confirmation result."""
-        if confirmed:
-            if self.db.delete_analysis(analysis_id):
-                self.notify(f"Deleted analysis #{analysis_id}", severity="information")
+        analysis_ids = getattr(self, "_pending_delete_ids", [])
+        self._pending_delete_ids = []
+
+        if confirmed and analysis_ids:
+            deleted = 0
+            for analysis_id in analysis_ids:
+                if self.db.delete_analysis(analysis_id):
+                    deleted += 1
+
+            if deleted > 0:
+                if deleted == 1:
+                    self.notify(f"Deleted analysis #{analysis_ids[0]}", severity="information")
+                else:
+                    self.notify(f"Deleted {deleted} analyses", severity="information")
+
                 # Refresh and show list
                 self.initial_analyses = self._refresh_analyses()
                 if not self.initial_analyses:
@@ -198,23 +239,34 @@ class ExportApp(App):
                     self.exit()
                     return
             else:
-                self.notify(f"Failed to delete analysis #{analysis_id}", severity="error")
+                self.notify("Failed to delete analyses", severity="error")
 
         self._show_analysis_list()
 
-    def _update_status(self, analysis_id: int, new_status: str) -> None:
-        """Update analysis status and refresh list."""
-        try:
-            self.db.update_status(analysis_id, new_status)
-            self.notify(f"Marked analysis #{analysis_id} as {new_status}")
+    def _update_statuses(self, analysis_ids: list[int], new_status: str) -> None:
+        """Update status for multiple analyses and refresh list."""
+        updated = 0
+        for analysis_id in analysis_ids:
+            try:
+                self.db.update_status(analysis_id, new_status)
+                updated += 1
+            except ValueError:
+                pass  # Skip invalid
+
+        if updated > 0:
+            if updated == 1:
+                self.notify(f"Marked analysis #{analysis_ids[0]} as {new_status}")
+            else:
+                self.notify(f"Marked {updated} analyses as {new_status}")
+
             # Refresh and show list
             self.initial_analyses = self._refresh_analyses()
             if not self.initial_analyses:
                 self.notify("No analyses remaining after filter", severity="warning")
                 self.exit()
                 return
-        except ValueError as e:
-            self.notify(str(e), severity="error")
+        else:
+            self.notify("Failed to update status", severity="error")
 
         self._show_analysis_list()
 

@@ -16,8 +16,8 @@ from bb_review.db.models import AnalysisListItem
 class AnalysisListResult:
     """Result from the analysis list screen."""
 
-    type: Literal["batch_export", "single_action"]
-    ids: list[int] | None = None  # For batch_export
+    type: Literal["batch_export", "single_action", "batch_action"]
+    ids: list[int] | None = None  # For batch_export and batch_action
     analysis_id: int | None = None  # For single_action
 
 
@@ -205,17 +205,20 @@ class AnalysisListScreen(Screen):
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Handle row double-click on DataTable - show actions."""
         # Note: Enter key is handled by action_show_actions binding
-        # This handles double-click
-        if event.row_key:
-            analysis_id = int(event.row_key.value)
-            self.dismiss(AnalysisListResult(type="single_action", analysis_id=analysis_id))
+        # This handles double-click - same logic as Enter
+        self.action_show_actions()
 
     def action_show_actions(self) -> None:
-        """Show action picker for current row."""
-        table = self.query_one("#analysis-table", DataTable)
-        if table.cursor_row is not None and table.row_count > 0:
-            analysis_id = self.analyses[table.cursor_row].id
-            self.dismiss(AnalysisListResult(type="single_action", analysis_id=analysis_id))
+        """Show action picker for selected items or current row."""
+        if self.selected:
+            # If items are selected, apply action to all selected
+            self.dismiss(AnalysisListResult(type="batch_action", ids=list(self.selected)))
+        else:
+            # No selection - apply to current cursor row
+            table = self.query_one("#analysis-table", DataTable)
+            if table.cursor_row is not None and table.row_count > 0:
+                analysis_id = self.analyses[table.cursor_row].id
+                self.dismiss(AnalysisListResult(type="single_action", analysis_id=analysis_id))
 
     def action_proceed(self) -> None:
         """Proceed with batch export of selected analyses."""

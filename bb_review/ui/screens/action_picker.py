@@ -79,24 +79,29 @@ class ActionPickerScreen(ModalScreen[ActionResult | None]):
     }
     """
 
-    def __init__(self, analysis: AnalysisListItem, name: str | None = None):
+    def __init__(self, analysis: AnalysisListItem, count: int = 1, name: str | None = None):
         """Initialize the action picker.
 
         Args:
-            analysis: The analysis to act on
+            analysis: The analysis to act on (or first of batch)
+            count: Number of analyses being acted on
             name: Optional screen name
         """
         super().__init__(name=name)
         self.analysis = analysis
+        self.count = count
 
     def compose(self) -> ComposeResult:
         """Compose the modal dialog."""
         with Container(id="dialog"):
             yield Label("Select Action", id="title")
-            yield Static(
-                f"RR #{self.analysis.review_request_id} ({self.analysis.repository})",
-                id="analysis-info",
-            )
+            if self.count > 1:
+                yield Static(f"{self.count} analyses selected", id="analysis-info")
+            else:
+                yield Static(
+                    f"RR #{self.analysis.review_request_id} ({self.analysis.repository})",
+                    id="analysis-info",
+                )
             yield OptionList(
                 Option("Export", id="export"),
                 Option("Delete", id="delete"),
@@ -185,24 +190,29 @@ class ConfirmDeleteScreen(ModalScreen[bool]):
     }
     """
 
-    def __init__(self, analysis: AnalysisListItem, name: str | None = None):
+    def __init__(self, analysis: AnalysisListItem, count: int = 1, name: str | None = None):
         """Initialize the confirmation dialog.
 
         Args:
-            analysis: The analysis to delete
+            analysis: The analysis to delete (or first of batch)
+            count: Number of analyses to delete
             name: Optional screen name
         """
         super().__init__(name=name)
         self.analysis = analysis
+        self.count = count
 
     def compose(self) -> ComposeResult:
         """Compose the confirmation dialog."""
         with Container(id="dialog"):
             yield Label("Confirm Delete", id="title")
-            yield Static(
-                f"Delete analysis #{self.analysis.id} for RR #{self.analysis.review_request_id}?",
-                id="message",
-            )
+            if self.count > 1:
+                yield Static(f"Delete {self.count} analyses?", id="message")
+            else:
+                yield Static(
+                    f"Delete analysis #{self.analysis.id} for RR #{self.analysis.review_request_id}?",
+                    id="message",
+                )
             yield Static("[Y]es / [N]o", id="hint")
         yield Footer()
 
