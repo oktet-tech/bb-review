@@ -118,11 +118,12 @@ class CommentPickerScreen(Screen):
 
     #summary-container {
         height: auto;
-        max-height: 8;
+        max-height: 15;
         padding: 1;
         background: $surface-darken-1;
         border: solid $primary;
         margin: 0 1;
+        overflow-y: auto;
     }
 
     #rr-summary-label {
@@ -249,16 +250,11 @@ class CommentPickerScreen(Screen):
         # Update RR summary (the review request description)
         rr_summary = self.query_one("#rr-summary-label", Label)
         rr_summary_text = analysis.analysis.rr_summary or "(no RR summary)"
-        if len(rr_summary_text) > 200:
-            rr_summary_text = rr_summary_text[:200] + "..."
         rr_summary.update(f"RR Summary: {rr_summary_text}")
 
-        # Update review summary (AI analysis body)
+        # Update review summary (AI analysis body) - show full text
         review_summary = self.query_one("#review-summary-label", Label)
-        review_summary_text = analysis.analysis.summary[:200]
-        if len(analysis.analysis.summary) > 200:
-            review_summary_text += "..."
-        review_summary.update(f"Review Summary: {review_summary_text}")
+        review_summary.update(f"Review Summary: {analysis.analysis.summary}")
 
         # Rebuild comments list
         self._rebuild_comments_list()
