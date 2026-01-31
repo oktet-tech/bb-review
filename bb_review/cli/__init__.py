@@ -82,7 +82,7 @@ from . import (
     analyze,  # noqa: E402, F401
     cocoindex,  # noqa: E402, F401
     db,  # noqa: E402, F401
-    export_interactive,  # noqa: E402, F401
+    interactive,  # noqa: E402, F401
     opencode,  # noqa: E402, F401
     poll,  # noqa: E402, F401
     repos,  # noqa: E402, F401

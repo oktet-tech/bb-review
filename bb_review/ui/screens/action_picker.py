@@ -8,7 +8,7 @@ from textual.binding import Binding
 from textual.containers import Container
 from textual.screen import ModalScreen
 from textual.widgets import Footer, Label, OptionList, Static
-from textual.widgets.option_list import Option, Separator
+from textual.widgets.option_list import Option
 
 from bb_review.db.models import AnalysisListItem
 
@@ -100,7 +100,7 @@ class ActionPickerScreen(ModalScreen[ActionResult | None]):
             yield OptionList(
                 Option("Export", id="export"),
                 Option("Delete", id="delete"),
-                Separator(),
+                None,  # Separator
                 Option("Mark as: Draft", id="mark_draft"),
                 Option("Mark as: Submitted", id="mark_submitted"),
                 Option("Mark as: Obsolete", id="mark_obsolete"),
