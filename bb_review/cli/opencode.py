@@ -418,19 +418,80 @@ def opencode_cmd(
 
 
 def create_mock_opencode_output(review_id: int) -> str:
-    """Create mock OpenCode output for --fake-review mode."""
-    return f"""### Issue: [MOCK] Style Issue
-**File:** example.c
-**Line:** 42
-**Severity:** low
+    """Create mock OpenCode output for --fake-review mode.
 
-[MOCK] This is a fake review comment for testing purposes.
+    Generates multiple fake comments with different severities and types
+    to test the UI properly.
+    """
+    return f"""### Issue: [MOCK] Critical Security Vulnerability
+**File:** src/auth/login.c
+**Line:** 127
+**Severity:** critical
+**Type:** security
 
-**Suggestion:** No actual suggestion - this is mock data.
+[MOCK] Potential buffer overflow in authentication handler. User input is copied
+to a fixed-size buffer without bounds checking, which could allow remote code
+execution.
+
+**Suggestion:** Use strncpy() with proper size limits or switch to a safer string handling library.
 
 ---
 
-**Summary:** [MOCK REVIEW] This is a fake review generated for r/{review_id} for testing purposes.
+### Issue: [MOCK] Memory Leak in Error Path
+**File:** src/network/socket.c
+**Line:** 256
+**Severity:** high
+**Type:** bugs
+
+[MOCK] Memory allocated for the connection context is not freed when the
+connection fails during handshake. This can lead to memory exhaustion
+under heavy load.
+
+**Suggestion:** Add proper cleanup in the error handling block before returning.
+
+---
+
+### Issue: [MOCK] Inefficient Loop Pattern
+**File:** src/data/parser.c
+**Line:** 89
+**Severity:** medium
+**Type:** performance
+
+[MOCK] Nested loops with O(n^2) complexity for data parsing. Consider using
+a hash map for lookups to improve performance with large datasets.
+
+**Suggestion:** Replace the inner loop with a hash table lookup.
+
+---
+
+### Issue: [MOCK] Inconsistent Naming Convention
+**File:** src/utils/helpers.c
+**Line:** 34
+**Severity:** low
+**Type:** style
+
+[MOCK] Function name 'getData' uses camelCase while the rest of the codebase
+uses snake_case. This inconsistency can make the code harder to maintain.
+
+**Suggestion:** Rename to 'get_data' to match the project's coding style.
+
+---
+
+### Issue: [MOCK] Missing Error Handling
+**File:** src/config/loader.c
+**Line:** 178
+**Severity:** high
+**Type:** bugs
+
+[MOCK] The return value of fopen() is not checked before use. If the config
+file doesn't exist, this will cause a segmentation fault.
+
+**Suggestion:** Add a NULL check and proper error reporting.
+
+---
+
+**Summary:** [MOCK REVIEW] This is a fake review generated for r/{review_id} for testing \
+purposes. Found 5 issues: 1 critical, 2 high, 1 medium, 1 low severity.
 """
 
 
