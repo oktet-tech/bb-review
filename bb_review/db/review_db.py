@@ -71,7 +71,8 @@ class ReviewDatabase:
                     has_critical_issues INTEGER NOT NULL DEFAULT 0,
                     status TEXT NOT NULL DEFAULT 'draft',
                     submitted_at TEXT,
-                    raw_response_path TEXT
+                    raw_response_path TEXT,
+                    fake INTEGER NOT NULL DEFAULT 0
                 );
 
                 -- Comments table
@@ -94,6 +95,11 @@ class ReviewDatabase:
                 CREATE INDEX IF NOT EXISTS idx_comments_analysis_id ON comments(analysis_id);
                 """
             )
+            # Migration: add fake column if it doesn't exist (for existing databases)
+            try:
+                conn.execute("ALTER TABLE analyses ADD COLUMN fake INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
@@ -118,6 +124,7 @@ class ReviewDatabase:
         chain_id: str | None = None,
         chain_position: int | None = None,
         raw_response_path: str | None = None,
+        fake: bool = False,
     ) -> int:
         """Save an analysis result to the database.
 
@@ -131,6 +138,7 @@ class ReviewDatabase:
             chain_id: Optional chain ID if part of a chain
             chain_position: Position in chain (1-indexed)
             raw_response_path: Optional path to raw LLM response file
+            fake: Whether this is a fake/test review
 
         Returns:
             The database ID of the saved analysis
@@ -158,8 +166,8 @@ class ReviewDatabase:
                     review_request_id, diff_revision, base_commit_id, target_commit_id,
                     repository, submitter, rr_summary, branch, depends_on_json,
                     analysis_method, model_used, analyzed_at, chain_id, chain_position,
-                    summary, has_critical_issues, status, raw_response_path
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    summary, has_critical_issues, status, raw_response_path, fake
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     result.review_request_id,
@@ -180,6 +188,7 @@ class ReviewDatabase:
                     1 if result.has_critical_issues else 0,
                     AnalysisStatus.DRAFT.value,
                     raw_response_path,
+                    1 if fake else 0,
                 ),
             )
             analysis_id = cursor.lastrowid
@@ -685,11 +694,29 @@ class ReviewDatabase:
 
             return count
 
+    def delete_fake_analyses(self) -> int:
+        """Delete all fake/test analyses.
+
+        Returns:
+            Number of analyses deleted
+        """
+        with self._connection() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM analyses WHERE fake = 1").fetchone()[0]
+            if count > 0:
+                conn.execute("DELETE FROM analyses WHERE fake = 1")
+            return count
+
     def _row_to_analysis(self, row: sqlite3.Row) -> StoredAnalysis:
         """Convert a database row to StoredAnalysis."""
         depends_on = []
         if row["depends_on_json"]:
             depends_on = json.loads(row["depends_on_json"])
+
+        # Handle fake column (may not exist in older databases before migration runs)
+        try:
+            fake = bool(row["fake"])
+        except (IndexError, KeyError):
+            fake = False
 
         return StoredAnalysis(
             id=row["id"],
@@ -712,6 +739,7 @@ class ReviewDatabase:
             chain_position=row["chain_position"],
             submitted_at=(datetime.fromisoformat(row["submitted_at"]) if row["submitted_at"] else None),
             raw_response_path=row["raw_response_path"],
+            fake=fake,
         )
 
     def _row_to_comment(self, row: sqlite3.Row) -> StoredComment:
@@ -729,6 +757,12 @@ class ReviewDatabase:
 
     def _row_to_list_item(self, row: sqlite3.Row) -> AnalysisListItem:
         """Convert a database row to AnalysisListItem."""
+        # Handle fake column (may not exist in older databases before migration runs)
+        try:
+            fake = bool(row["fake"])
+        except (IndexError, KeyError):
+            fake = False
+
         return AnalysisListItem(
             id=row["id"],
             review_request_id=row["review_request_id"],
@@ -743,4 +777,5 @@ class ReviewDatabase:
             has_critical_issues=bool(row["has_critical_issues"]),
             chain_id=row["chain_id"],
             rr_summary=row["rr_summary"],
+            fake=fake,
         )

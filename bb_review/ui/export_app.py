@@ -383,6 +383,7 @@ class ExportApp(App):
             "ship_it": len(comments) == 0 and not analysis.has_critical_issues,
             "summary": analysis.summary,
             "has_critical_issues": analysis.has_critical_issues,
+            "fake": analysis.fake,
             "parsed_issues": parsed_issues,
             "metadata": {
                 "analysis_id": analysis.id,

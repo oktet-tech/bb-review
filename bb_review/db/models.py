@@ -63,6 +63,7 @@ class StoredAnalysis:
     submitted_at: datetime | None = None
     # Optional extras
     raw_response_path: str | None = None
+    fake: bool = False  # True for test/fake reviews
     # Comments (populated separately)
     comments: list[StoredComment] = field(default_factory=list)
 
@@ -110,6 +111,7 @@ class AnalysisListItem:
     has_critical_issues: bool
     chain_id: str | None = None
     rr_summary: str | None = None
+    fake: bool = False
 
 
 @dataclass

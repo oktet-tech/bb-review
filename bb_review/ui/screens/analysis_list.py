@@ -134,6 +134,10 @@ class AnalysisListScreen(Screen):
             if len(rr_summary) > 50:
                 summary += "..."
 
+            # Add FAKE indicator to summary if fake
+            if analysis.fake:
+                summary = f"[FAKE] {summary}"
+
             table.add_row(
                 "[ ]",
                 str(analysis.id),

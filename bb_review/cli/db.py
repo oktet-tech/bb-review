@@ -374,6 +374,41 @@ def db_cleanup(ctx: click.Context, days: int, dry_run: bool, force: bool) -> Non
     click.echo(f"Removed {count} analyses.")
 
 
+@db.command("cleanup-fake")
+@click.option("--force", "-f", is_flag=True, help="Don't ask for confirmation")
+@click.pass_context
+def db_cleanup_fake(ctx: click.Context, force: bool) -> None:
+    """Remove all fake/test analyses from the database.
+
+    Examples:
+        bb-review db cleanup-fake           # Remove all fake analyses
+        bb-review db cleanup-fake --force   # Remove without confirmation
+    """
+    review_db = get_review_db(ctx)
+
+    # Get count of fake analyses
+    analyses = review_db.list_analyses(limit=10000)
+    fake_analyses = [a for a in analyses if a.fake]
+
+    if not fake_analyses:
+        click.echo("No fake analyses found.")
+        return
+
+    click.echo(f"Found {len(fake_analyses)} fake analyses:")
+    for a in fake_analyses[:10]:
+        click.echo(f"  #{a.id}: RR {a.review_request_id} ({a.repository})")
+    if len(fake_analyses) > 10:
+        click.echo(f"  ... and {len(fake_analyses) - 10} more")
+
+    if not force:
+        if not click.confirm(f"\nDelete {len(fake_analyses)} fake analyses?"):
+            click.echo("Aborted.")
+            return
+
+    count = review_db.delete_fake_analyses()
+    click.echo(f"Removed {count} fake analyses.")
+
+
 @db.command("search")
 @click.argument("query")
 @click.option("--limit", "-n", default=20, type=int, help="Maximum number of results")
@@ -434,6 +469,7 @@ def db_search(ctx: click.Context, query: str, limit: int) -> None:
     help="Analysis method (auto-detected if not specified)",
 )
 @click.option("--model", help="Model name (auto-detected from metadata if not specified)")
+@click.option("--fake", is_flag=True, help="Mark as fake/test review")
 @click.pass_context
 def db_import(
     ctx: click.Context,
@@ -442,6 +478,7 @@ def db_import(
     diff_revision: int | None,
     method: str | None,
     model: str | None,
+    fake: bool,
 ) -> None:
     """Import a review JSON file into the database.
 
@@ -452,6 +489,7 @@ def db_import(
     Examples:
         bb-review db import export_review_42738.json    # All data from file
         bb-review db import result.json --repo te-dev  # Specify repo
+        bb-review db import test.json --fake           # Import as fake
     """
     review_db = get_review_db(ctx)
 
@@ -574,6 +612,9 @@ def db_import(
         summary = f"Imported review with {len(comments)} issues"
 
     # Create ReviewResult
+    # Get fake flag from file or command line
+    is_fake = fake or data.get("fake", False)
+
     result = ReviewResult(
         review_request_id=review_request_id,
         diff_revision=diff_revision,
@@ -590,6 +631,7 @@ def db_import(
             repository=repository,
             analysis_method=method,
             model=model,
+            fake=is_fake,
         )
         click.echo(f"Imported review as analysis #{analysis_id}")
         click.echo(f"  RR: #{review_request_id}")
@@ -597,6 +639,8 @@ def db_import(
         click.echo(f"  Method: {method}")
         click.echo(f"  Model: {model}")
         click.echo(f"  Comments: {len(comments)}")
+        if is_fake:
+            click.echo("  Fake: Yes")
     except Exception as e:
         click.echo(f"Error saving to database: {e}", err=True)
         sys.exit(1)
