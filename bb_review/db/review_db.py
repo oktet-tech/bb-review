@@ -536,6 +536,27 @@ class ReviewDatabase:
                     (status, analysis_id),
                 )
 
+    def delete_analysis(self, analysis_id: int) -> bool:
+        """Delete an analysis and its comments.
+
+        Args:
+            analysis_id: Database ID of the analysis to delete
+
+        Returns:
+            True if the analysis was deleted, False if not found
+        """
+        with self._connection() as conn:
+            # Check if exists first
+            exists = conn.execute("SELECT 1 FROM analyses WHERE id = ?", (analysis_id,)).fetchone()
+            if not exists:
+                return False
+
+            # Delete comments first (though CASCADE should handle this)
+            conn.execute("DELETE FROM comments WHERE analysis_id = ?", (analysis_id,))
+            # Delete the analysis
+            conn.execute("DELETE FROM analyses WHERE id = ?", (analysis_id,))
+            return True
+
     def get_stats(self) -> DBStats:
         """Get statistics about the database.
 
