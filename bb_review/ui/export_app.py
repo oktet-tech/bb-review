@@ -309,8 +309,29 @@ class ExportApp(App):
             self._show_analysis_list()
             return
 
-        analysis_id = analysis_ids[0]
+        # Store analysis ID for callback
+        self._pending_submit_analysis_id = analysis_ids[0]
 
+        # Show submit options modal
+        from .screens.action_picker import SubmitOptionsScreen
+
+        self.push_screen(SubmitOptionsScreen(), callback=self._on_submit_option_chosen)
+
+    def _on_submit_option_chosen(self, option: str | None) -> None:
+        """Handle submit option selection from action picker flow."""
+        analysis_id = getattr(self, "_pending_submit_analysis_id", None)
+        self._pending_submit_analysis_id = None
+
+        if option is None or analysis_id is None:
+            # Cancelled
+            self._show_analysis_list()
+            return
+
+        publish = option == "publish"
+        self._do_submit_analysis(analysis_id, publish=publish)
+
+    def _do_submit_analysis(self, analysis_id: int, publish: bool = False) -> None:
+        """Actually submit an analysis to ReviewBoard."""
         # Load full analysis
         analysis = self.db.get_analysis(analysis_id)
         if not analysis:
@@ -380,14 +401,15 @@ class ExportApp(App):
                 body_top=body_top,
                 comments=inline_comments,
                 ship_it=ship_it,
-                publish=False,  # Submit as draft
+                publish=publish,
             )
 
             # Mark as submitted in DB
             self.db.mark_submitted(analysis_id)
 
+            mode = "published" if publish else "draft"
             self.notify(
-                f"Submitted review for RR #{analysis.review_request_id} as draft",
+                f"Submitted review for RR #{analysis.review_request_id} as {mode}",
                 severity="information",
             )
 
@@ -404,11 +426,12 @@ class ExportApp(App):
 
         self._show_analysis_list()
 
-    def _submit_from_comment_picker(self, exportable: ExportableAnalysis) -> None:
+    def _submit_from_comment_picker(self, exportable: ExportableAnalysis, publish: bool = False) -> None:
         """Submit an analysis with selected/edited comments from comment picker.
 
         Args:
             exportable: The ExportableAnalysis with selected comments
+            publish: If True, publish the review (visible to all); if False, submit as draft
         """
         if not self.config:
             self.notify("Config not available for submission", severity="error")
@@ -464,14 +487,15 @@ class ExportApp(App):
                 body_top=body_top,
                 comments=inline_comments,
                 ship_it=ship_it,
-                publish=False,  # Submit as draft
+                publish=publish,
             )
 
             # Mark as submitted in DB
             self.db.mark_submitted(analysis.id)
 
+            mode = "published" if publish else "draft"
             self.notify(
-                f"Submitted review for RR #{analysis.review_request_id} as draft "
+                f"Submitted review for RR #{analysis.review_request_id} as {mode} "
                 f"({len(inline_comments)} comments)",
                 severity="information",
             )
@@ -505,11 +529,12 @@ class ExportApp(App):
             self.exit()
             return
 
-        # Check for submit action
-        if isinstance(result, tuple) and len(result) == 2 and result[0] == "submit":
+        # Check for submit action (format: ("submit", analyses, publish_flag))
+        if isinstance(result, tuple) and len(result) >= 2 and result[0] == "submit":
             analyses = result[1]
+            publish = result[2] if len(result) > 2 else False
             if analyses:
-                self._submit_from_comment_picker(analyses[0])
+                self._submit_from_comment_picker(analyses[0], publish=publish)
             return
 
         self.exported_analyses = result

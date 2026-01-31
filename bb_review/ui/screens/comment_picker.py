@@ -514,8 +514,26 @@ class CommentPickerScreen(Screen):
             self.notify("Can only submit one analysis at a time", severity="warning")
             return
 
-        # Return special result indicating submit action
-        self.dismiss(("submit", result))
+        # Store result for callback
+        self._pending_submit_analyses = result
+
+        # Show submit options modal
+        from .action_picker import SubmitOptionsScreen
+
+        self.app.push_screen(SubmitOptionsScreen(), callback=self._on_submit_option_chosen)
+
+    def _on_submit_option_chosen(self, option: str | None) -> None:
+        """Handle submit option selection."""
+        analyses = getattr(self, "_pending_submit_analyses", [])
+        self._pending_submit_analyses = []
+
+        if option is None:
+            # Cancelled
+            return
+
+        # Return result with submit mode (draft or publish)
+        publish = option == "publish"
+        self.dismiss(("submit", analyses, publish))
 
     def action_back(self) -> None:
         """Go back to analysis selection."""

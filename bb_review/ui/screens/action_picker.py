@@ -226,3 +226,64 @@ class ConfirmDeleteScreen(ModalScreen[bool]):
     def action_cancel(self) -> None:
         """Cancel deletion."""
         self.dismiss(False)
+
+
+class SubmitOptionsScreen(ModalScreen[str | None]):
+    """Modal screen for choosing submit or publish."""
+
+    BINDINGS = [
+        Binding("s", "submit_draft", "Submit (draft)"),
+        Binding("p", "publish", "Publish"),
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    CSS = """
+    SubmitOptionsScreen {
+        align: center middle;
+    }
+
+    #dialog {
+        width: 45;
+        height: auto;
+        border: thick $primary;
+        background: $surface;
+        padding: 1 2;
+    }
+
+    #title {
+        text-style: bold;
+        text-align: center;
+        width: 100%;
+        padding-bottom: 1;
+    }
+
+    #message {
+        text-align: center;
+        padding-bottom: 1;
+    }
+
+    #hint {
+        color: $text-muted;
+        text-align: center;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        """Compose the submit options dialog."""
+        with Container(id="dialog"):
+            yield Label("Submit Review", id="title")
+            yield Static("How would you like to submit?", id="message")
+            yield Static("\\[S]ubmit as draft / \\[P]ublish", id="hint")
+        yield Footer()
+
+    def action_submit_draft(self) -> None:
+        """Submit as draft (only visible to you)."""
+        self.dismiss("draft")
+
+    def action_publish(self) -> None:
+        """Publish (visible to everyone)."""
+        self.dismiss("publish")
+
+    def action_cancel(self) -> None:
+        """Cancel submission."""
+        self.dismiss(None)
