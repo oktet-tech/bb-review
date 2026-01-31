@@ -283,23 +283,41 @@ class CommentPickerScreen(Screen):
         if idx is not None:
             comment = self.current_analysis.comments[idx]
             comment.selected = not comment.selected
-            self._rebuild_comments_list()
+            self._update_comment_item(idx)
             self._update_status()
 
-            # Restore selection
-            list_view = self.query_one("#comments-list", ListView)
-            if idx < len(list_view.children):
-                list_view.index = idx
+    def _update_comment_item(self, idx: int) -> None:
+        """Update the display of a single comment item."""
+        list_view = self.query_one("#comments-list", ListView)
+        if idx < len(list_view.children):
+            item = list_view.children[idx]
+            if isinstance(item, CommentItem):
+                # Update the Static widget inside the CommentItem
+                static = item.query_one(Static)
+                c = item.comment.comment
+
+                if item.comment.selected:
+                    checkbox = "[green bold]\\[X][/]"
+                else:
+                    checkbox = "[dim]\\[ ][/]"
+
+                edited = " [magenta](edited)[/]" if item.comment.edited_message is not None else ""
+                line1 = (
+                    f"{checkbox} [bold]{c.file_path}[/]:[cyan]{c.line_number}[/] "
+                    f"({c.severity}/{c.issue_type}){edited}"
+                )
+                msg = item.comment.effective_message.replace("\n", " ")
+                static.update(f"{line1}\n    {msg}")
 
     def action_toggle_all(self) -> None:
         """Toggle all comment selections."""
         analysis = self.current_analysis
         all_selected = all(c.selected for c in analysis.comments)
 
-        for comment in analysis.comments:
+        for i, comment in enumerate(analysis.comments):
             comment.selected = not all_selected
+            self._update_comment_item(i)
 
-        self._rebuild_comments_list()
         self._update_status()
 
     def action_edit_comment(self) -> None:
