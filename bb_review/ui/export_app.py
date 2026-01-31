@@ -534,7 +534,8 @@ class ExportApp(App):
             return
 
         if not result:
-            self.exit()
+            # Cancelled - return to list
+            self._show_analysis_list()
             return
 
         # Check for submit action (format: ("submit", analyses, publish_flag))
@@ -552,7 +553,7 @@ class ExportApp(App):
         """Perform the export to JSON."""
         if not self.exported_analyses:
             self.notify("No analyses to export", severity="warning")
-            self.exit()
+            self._show_analysis_list()
             return
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -578,11 +579,14 @@ class ExportApp(App):
             except Exception as e:
                 self.notify(f"Export failed for RR #{rr_id}: {e}", severity="error")
 
-        # Log exported files
+        # Show notification and return to list
         if exported_files:
-            self.log_exports(exported_files)
+            if len(exported_files) == 1:
+                self.notify(f"Exported to {exported_files[0]}", severity="information")
+            else:
+                self.notify(f"Exported {len(exported_files)} files", severity="information")
 
-        self.exit()
+        self._show_analysis_list()
 
     def log_exports(self, files: list[str]) -> None:
         """Log the exported files to console."""
