@@ -362,6 +362,7 @@ def opencode_cmd(
                     analysis=analysis,
                     parsed=parsed,
                     model=model,
+                    rr_summary=review.summary,
                 )
 
                 # Save to file
@@ -576,6 +577,7 @@ def build_submission_data(
     analysis: str,
     parsed,
     model: str | None,
+    rr_summary: str | None = None,
 ) -> dict:
     """Build submission data from parsed OpenCode output."""
     # Build comments
@@ -653,6 +655,7 @@ def build_submission_data(
             "model": model or "default",
             "opencode": True,
         },
+        rr_summary=rr_summary,
     )
 
 
@@ -762,7 +765,7 @@ def run_single_opencode_review(
         all_issues.extend(api_parsed.issues)
 
     # Build output data
-    output_data = build_submission_data(review_id, analysis, parsed, model)
+    output_data = build_submission_data(review_id, analysis, parsed, model, rr_summary=review.summary)
 
     # Add API info if available
     if api_parsed:

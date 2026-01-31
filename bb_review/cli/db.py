@@ -632,8 +632,9 @@ def db_import(
     )
 
     # Save to database
-    # Get body_top from file for preservation
+    # Get body_top and rr_summary from file for preservation
     import_body_top = data.get("body_top")
+    import_rr_summary = data.get("rr_summary")
 
     try:
         analysis_id = review_db.save_analysis(
@@ -644,6 +645,7 @@ def db_import(
             fake=is_fake,
             rb_url=data.get("rb_url"),
             body_top=import_body_top,
+            rr_summary=import_rr_summary,
         )
         click.echo(f"Imported review as analysis #{analysis_id}")
         click.echo(f"  RR: #{review_request_id}")

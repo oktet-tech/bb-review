@@ -71,6 +71,7 @@ class CommentPickerScreen(Screen):
         Binding("space", "toggle_comment", "Toggle"),
         Binding("a", "toggle_all", "Select All"),
         Binding("e", "edit_comment", "Edit"),
+        Binding("r", "edit_body", "Edit Review"),
         Binding("n", "next_analysis", "Next"),
         Binding("enter", "next_analysis", "Next"),
         Binding("p", "prev_analysis", "Previous"),
@@ -468,6 +469,63 @@ class CommentPickerScreen(Screen):
                 self.notify(f"Failed to save to DB: {e}", severity="warning")
 
         return True
+
+    def action_edit_body(self) -> None:
+        """Edit the review body/summary in an external editor."""
+        analysis = self.current_analysis
+
+        # Get current body_top or summary
+        body_top = getattr(analysis.analysis, "body_top", None) or analysis.analysis.summary
+
+        # Open in editor
+        editor = os.environ.get("EDITOR", "vim")
+        temp_path = tempfile.mktemp(suffix=".md")
+
+        try:
+            # Write content to temp file with instructions
+            with open(temp_path, "w") as f:
+                f.write("# Edit the review summary below\n")
+                f.write("# Lines starting with # will be removed\n\n")
+                f.write(body_top)
+
+            # Run editor
+            subprocess.run([editor, temp_path], check=True)
+
+            # Read back edited content
+            with open(temp_path) as f:
+                edited_content = f.read()
+
+            # Filter out comment lines
+            lines = edited_content.split("\n")
+            non_comment_lines = [line for line in lines if not line.strip().startswith("#")]
+            new_body = "\n".join(non_comment_lines).strip()
+
+            if new_body != body_top:
+                # Update the analysis object
+                analysis.analysis.body_top = new_body
+
+                # Save to database if available
+                if self.db is not None:
+                    try:
+                        self.db.update_body_top(analysis.analysis.id, new_body)
+                        self.notify("Review body updated and saved to DB")
+                    except Exception as e:
+                        self.notify(f"Updated in memory, but DB save failed: {e}", severity="warning")
+                else:
+                    self.notify("Review body updated (not saved to DB)")
+
+                # Refresh display
+                self._refresh_display()
+            else:
+                self.notify("No changes made")
+
+        except subprocess.CalledProcessError:
+            self.notify("Editor exited with error", severity="error")
+        except Exception as e:
+            self.notify(f"Error editing: {e}", severity="error")
+        finally:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
 
     def action_next_analysis(self) -> None:
         """Move to the next analysis."""

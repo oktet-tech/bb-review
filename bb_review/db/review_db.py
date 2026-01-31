@@ -141,6 +141,7 @@ class ReviewDatabase:
         fake: bool = False,
         rb_url: str | None = None,
         body_top: str | None = None,
+        rr_summary: str | None = None,
     ) -> int:
         """Save an analysis result to the database.
 
@@ -157,6 +158,7 @@ class ReviewDatabase:
             fake: Whether this is a fake/test review
             rb_url: Review Board base URL
             body_top: Full review body text for submission
+            rr_summary: Review request summary (overrides rr_info.summary if set)
 
         Returns:
             The database ID of the saved analysis
@@ -166,13 +168,14 @@ class ReviewDatabase:
             base_commit_id = diff_info.base_commit_id if diff_info else None
             target_commit_id = diff_info.target_commit_id if diff_info else None
             submitter = None
-            rr_summary = None
+            rr_summary_val = rr_summary  # Use direct param if provided
             branch = None
             depends_on_json = None
 
             if rr_info:
                 submitter = getattr(rr_info, "submitter", None)
-                rr_summary = rr_info.summary
+                if not rr_summary_val:  # Only use rr_info.summary if not directly provided
+                    rr_summary_val = rr_info.summary
                 branch = getattr(rr_info, "branch", None)
                 if rr_info.depends_on:
                     depends_on_json = json.dumps(rr_info.depends_on)
@@ -195,7 +198,7 @@ class ReviewDatabase:
                     target_commit_id,
                     repository,
                     submitter,
-                    rr_summary,
+                    rr_summary_val,
                     branch,
                     depends_on_json,
                     analysis_method,
@@ -623,6 +626,27 @@ class ReviewDatabase:
             conn.execute(
                 f"UPDATE comments SET {', '.join(updates)} WHERE id = ?",
                 params,
+            )
+            return True
+
+    def update_body_top(self, analysis_id: int, body_top: str) -> bool:
+        """Update an analysis's body_top.
+
+        Args:
+            analysis_id: Database ID of the analysis
+            body_top: New body_top text
+
+        Returns:
+            True if the analysis was updated, False if not found
+        """
+        with self._connection() as conn:
+            exists = conn.execute("SELECT 1 FROM analyses WHERE id = ?", (analysis_id,)).fetchone()
+            if not exists:
+                return False
+
+            conn.execute(
+                "UPDATE analyses SET body_top = ? WHERE id = ?",
+                (body_top, analysis_id),
             )
             return True
 

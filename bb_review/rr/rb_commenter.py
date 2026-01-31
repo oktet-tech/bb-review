@@ -293,6 +293,7 @@ class ReviewFormatter:
         unparsed_text: str = "",
         parsed_issues: list[dict] | None = None,
         metadata: dict | None = None,
+        rr_summary: str | None = None,
     ) -> dict:
         """Format review data for submission JSON file.
 
@@ -307,6 +308,7 @@ class ReviewFormatter:
             unparsed_text: Any unparsed text from LLM output (for user review).
             parsed_issues: Optional list of parsed issues for reference.
             metadata: Optional metadata dict (model, analyzed_at, etc.).
+            rr_summary: Optional review request summary from Review Board.
 
         Returns:
             Dictionary ready for JSON serialization and submission.
@@ -320,6 +322,9 @@ class ReviewFormatter:
             "ship_it": ship_it,
             "unparsed_text": unparsed_text,
         }
+
+        if rr_summary:
+            result["rr_summary"] = rr_summary
 
         if parsed_issues is not None:
             result["parsed_issues"] = parsed_issues
