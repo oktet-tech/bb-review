@@ -359,12 +359,16 @@ class ExportApp(App):
                 )
             )
 
-        # Build the review body
-        body_parts = [f"## AI Code Review Summary\n\n{analysis.summary}"]
-        if analysis.has_critical_issues:
-            body_parts.append("\n**Note:** Critical issues found that require attention.")
-        body_parts.append(f"\n\n*Analysis by {analysis.model_used} ({analysis.analysis_method.value})*")
-        body_top = "\n".join(body_parts)
+        # Build the review body - use stored body_top if available
+        if analysis.body_top:
+            body_top = analysis.body_top
+        else:
+            # Fallback to building from summary
+            body_parts = [f"## AI Code Review Summary\n\n{analysis.summary}"]
+            if analysis.has_critical_issues:
+                body_parts.append("\n**Note:** Critical issues found that require attention.")
+            body_parts.append(f"\n\n*Analysis by {analysis.model_used} ({analysis.analysis_method.value})*")
+            body_top = "\n".join(body_parts)
 
         # Format inline comments
         inline_comments = []
@@ -440,12 +444,16 @@ class ExportApp(App):
 
         analysis = exportable.analysis
 
-        # Build the review body
-        body_parts = [f"## AI Code Review Summary\n\n{analysis.summary}"]
-        if analysis.has_critical_issues:
-            body_parts.append("\n**Note:** Critical issues found that require attention.")
-        body_parts.append(f"\n\n*Analysis by {analysis.model_used} ({analysis.analysis_method.value})*")
-        body_top = "\n".join(body_parts)
+        # Build the review body - use stored body_top if available
+        if analysis.body_top:
+            body_top = analysis.body_top
+        else:
+            # Fallback to building from summary
+            body_parts = [f"## AI Code Review Summary\n\n{analysis.summary}"]
+            if analysis.has_critical_issues:
+                body_parts.append("\n**Note:** Critical issues found that require attention.")
+            body_parts.append(f"\n\n*Analysis by {analysis.model_used} ({analysis.analysis_method.value})*")
+            body_top = "\n".join(body_parts)
 
         # Format inline comments from selected comments (with edits applied)
         inline_comments = []
