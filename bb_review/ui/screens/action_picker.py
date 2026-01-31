@@ -156,8 +156,9 @@ class ConfirmDeleteScreen(ModalScreen[bool]):
     """Modal screen for confirming deletion."""
 
     BINDINGS = [
-        Binding("y", "confirm", "Yes"),
-        Binding("n", "cancel", "No"),
+        Binding("y", "confirm", "Yes", show=False),
+        Binding("n", "cancel", "No", show=False),
+        Binding("enter", "select", "Select", priority=True),
         Binding("escape", "cancel", "Cancel"),
     ]
 
@@ -167,7 +168,7 @@ class ConfirmDeleteScreen(ModalScreen[bool]):
     }
 
     #dialog {
-        width: 50;
+        width: 55;
         height: auto;
         border: thick $error;
         background: $surface;
@@ -187,9 +188,14 @@ class ConfirmDeleteScreen(ModalScreen[bool]):
         padding-bottom: 1;
     }
 
-    #hint {
-        color: $text-muted;
-        text-align: center;
+    OptionList {
+        height: auto;
+        max-height: 10;
+        background: $surface;
+    }
+
+    OptionList:focus {
+        border: tall $error;
     }
     """
 
@@ -216,8 +222,35 @@ class ConfirmDeleteScreen(ModalScreen[bool]):
                     f"Delete analysis #{self.analysis.id} for RR #{self.analysis.review_request_id}?",
                     id="message",
                 )
-            yield Static("\\[Y]es / \\[N]o", id="hint")
+            yield OptionList(
+                Option("[N] No, cancel", id="no"),
+                Option("[Y] Yes, delete", id="yes"),
+                id="options-list",
+            )
         yield Footer()
+
+    def on_mount(self) -> None:
+        """Focus the option list on mount."""
+        self.query_one("#options-list", OptionList).focus()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """Handle option selection."""
+        self._select_option(str(event.option_id))
+
+    def action_select(self) -> None:
+        """Select the highlighted option."""
+        option_list = self.query_one("#options-list", OptionList)
+        if option_list.highlighted is not None:
+            option = option_list.get_option_at_index(option_list.highlighted)
+            if option.id:
+                self._select_option(str(option.id))
+
+    def _select_option(self, option_id: str) -> None:
+        """Process the selected option."""
+        if option_id == "yes":
+            self.dismiss(True)
+        elif option_id == "no":
+            self.dismiss(False)
 
     def action_confirm(self) -> None:
         """Confirm deletion."""
