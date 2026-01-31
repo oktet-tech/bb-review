@@ -307,8 +307,8 @@ class SubmitOptionsScreen(ModalScreen[str | None]):
         with Container(id="dialog"):
             yield Label("Submit Review", id="title")
             yield OptionList(
-                Option("[S] Submit as draft (only visible to you)", id="draft"),
-                Option("[P] Publish (visible to everyone)", id="publish"),
+                Option("\\[S] Submit as draft (only visible to you)", id="draft"),
+                Option("\\[P] Publish (visible to everyone)", id="publish"),
                 id="options-list",
             )
         yield Footer()
