@@ -206,6 +206,40 @@ class ReviewDatabase:
 
             return analysis_id
 
+    def ensure_chain_exists(
+        self,
+        chain_id: str,
+        repository: str,
+        branch_name: str | None = None,
+    ) -> None:
+        """Ensure a chain entry exists in the database.
+
+        Creates the chain if it doesn't exist. Used when saving analyses
+        one at a time in a chain context.
+
+        Args:
+            chain_id: The chain identifier
+            repository: Repository name
+            branch_name: Optional branch name
+        """
+        with self._connection() as conn:
+            # Check if chain exists
+            existing = conn.execute(
+                "SELECT 1 FROM chains WHERE chain_id = ?",
+                (chain_id,),
+            ).fetchone()
+
+            if not existing:
+                conn.execute(
+                    """
+                    INSERT INTO chains (
+                        chain_id, created_at, repository, partial,
+                        failed_at_rr_id, branch_name
+                    ) VALUES (?, ?, ?, 0, NULL, ?)
+                    """,
+                    (chain_id, datetime.now().isoformat(), repository, branch_name),
+                )
+
     def save_chain(
         self,
         chain_result: ChainReviewResult,

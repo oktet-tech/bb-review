@@ -531,6 +531,11 @@ def _save_to_review_db(
 
     try:
         review_db = ReviewDatabase(config.review_db.resolved_path)
+
+        # Ensure chain exists if we have a chain_id
+        if chain_id:
+            review_db.ensure_chain_exists(chain_id, repository)
+
         analysis_id = review_db.save_analysis(
             result=result,
             repository=repository,
