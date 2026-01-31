@@ -1,4 +1,4 @@
-"""Main Textual application for interactive export."""
+"""Main Textual application for interactive review management."""
 
 from datetime import datetime
 import json
@@ -10,14 +10,20 @@ from bb_review.db.models import AnalysisListItem
 from bb_review.db.review_db import ReviewDatabase
 
 from .models import ExportableAnalysis
-from .screens.analysis_list import AnalysisListScreen
+from .screens.action_picker import (
+    ActionPickerScreen,
+    ActionResult,
+    ActionType,
+    ConfirmDeleteScreen,
+)
+from .screens.analysis_list import AnalysisListResult, AnalysisListScreen
 from .screens.comment_picker import CommentPickerScreen
 
 
 class ExportApp(App):
-    """Interactive export application."""
+    """Interactive review management application."""
 
-    TITLE = "BB Review Export"
+    TITLE = "BB Review Interactive"
 
     CSS = """
     Screen {
@@ -30,19 +36,53 @@ class ExportApp(App):
         analyses: list[AnalysisListItem],
         db: ReviewDatabase,
         output_path: str | None = None,
+        # Filter params for refreshing
+        filter_rr_id: int | None = None,
+        filter_repo: str | None = None,
+        filter_status: str | None = None,
+        filter_chain_id: str | None = None,
+        filter_limit: int = 50,
     ):
-        """Initialize the export app.
+        """Initialize the interactive app.
 
         Args:
             analyses: List of AnalysisListItem to show for selection
             db: ReviewDatabase instance for loading full analysis details
             output_path: Optional output file path
+            filter_rr_id: Filter by review request ID (for refresh)
+            filter_repo: Filter by repository (for refresh)
+            filter_status: Filter by status (for refresh)
+            filter_chain_id: Filter by chain ID (for refresh)
+            filter_limit: Maximum results (for refresh)
         """
         super().__init__()
         self.initial_analyses = analyses
         self.db = db
         self.output_path = output_path
         self.exported_analyses: list[ExportableAnalysis] = []
+        # Store filter params for refresh
+        self._filter_rr_id = filter_rr_id
+        self._filter_repo = filter_repo
+        self._filter_status = filter_status
+        self._filter_chain_id = filter_chain_id
+        self._filter_limit = filter_limit
+
+    def _refresh_analyses(self) -> list[AnalysisListItem]:
+        """Refresh the analysis list from database."""
+        return self.db.list_analyses(
+            review_request_id=self._filter_rr_id,
+            repository=self._filter_repo,
+            status=self._filter_status,
+            chain_id=self._filter_chain_id,
+            limit=self._filter_limit,
+        )
+
+    def _show_analysis_list(self) -> None:
+        """Show the analysis list screen."""
+        self.push_screen(
+            AnalysisListScreen(self.initial_analyses),
+            callback=self._on_analysis_list_result,
+        )
 
     def on_mount(self) -> None:
         """Start the app by showing the analysis list."""
@@ -51,19 +91,30 @@ class ExportApp(App):
             self.exit()
             return
 
-        self.push_screen(
-            AnalysisListScreen(self.initial_analyses),
-            callback=self._on_analyses_selected,
-        )
+        self._show_analysis_list()
 
-    def _on_analyses_selected(self, selected_ids: list[int] | None) -> None:
-        """Handle selected analyses from the list screen.
+    def _on_analysis_list_result(self, result: AnalysisListResult | None) -> None:
+        """Handle result from the analysis list screen.
 
         Args:
-            selected_ids: List of selected analysis IDs, or None if cancelled
+            result: AnalysisListResult or None if cancelled
         """
-        if not selected_ids:
+        if not result:
             self.exit()
+            return
+
+        if result.type == "batch_export":
+            # Batch export selected analyses
+            self._start_batch_export(result.ids or [])
+        elif result.type == "single_action":
+            # Show action picker for single analysis
+            self._show_action_picker(result.analysis_id)
+
+    def _start_batch_export(self, selected_ids: list[int]) -> None:
+        """Start batch export flow for selected analyses."""
+        if not selected_ids:
+            self.notify("No analyses selected", severity="warning")
+            self._show_analysis_list()
             return
 
         # Load full analysis details
@@ -75,7 +126,7 @@ class ExportApp(App):
 
         if not exportable:
             self.notify("Failed to load analysis details", severity="error")
-            self.exit()
+            self._show_analysis_list()
             return
 
         # Show comment picker
@@ -83,6 +134,89 @@ class ExportApp(App):
             CommentPickerScreen(exportable),
             callback=self._on_comments_picked,
         )
+
+    def _show_action_picker(self, analysis_id: int | None) -> None:
+        """Show action picker for a single analysis."""
+        if analysis_id is None:
+            self._show_analysis_list()
+            return
+
+        # Find the analysis in the list
+        analysis = next((a for a in self.initial_analyses if a.id == analysis_id), None)
+        if not analysis:
+            self.notify(f"Analysis {analysis_id} not found", severity="error")
+            self._show_analysis_list()
+            return
+
+        self.push_screen(
+            ActionPickerScreen(analysis),
+            callback=self._on_action_picked,
+        )
+
+    def _on_action_picked(self, result: ActionResult | None) -> None:
+        """Handle action picker result."""
+        if not result:
+            self._show_analysis_list()
+            return
+
+        if result.action == ActionType.EXPORT:
+            # Single export - go to comment picker
+            self._start_batch_export([result.analysis_id])
+        elif result.action == ActionType.DELETE:
+            # Show delete confirmation
+            analysis = next((a for a in self.initial_analyses if a.id == result.analysis_id), None)
+            if analysis:
+                self.push_screen(
+                    ConfirmDeleteScreen(analysis),
+                    callback=lambda confirmed: self._on_delete_confirmed(confirmed, result.analysis_id),
+                )
+        elif result.action in (
+            ActionType.MARK_DRAFT,
+            ActionType.MARK_SUBMITTED,
+            ActionType.MARK_OBSOLETE,
+            ActionType.MARK_INVALID,
+        ):
+            # Update status
+            status_map = {
+                ActionType.MARK_DRAFT: "draft",
+                ActionType.MARK_SUBMITTED: "submitted",
+                ActionType.MARK_OBSOLETE: "obsolete",
+                ActionType.MARK_INVALID: "invalid",
+            }
+            new_status = status_map[result.action]
+            self._update_status(result.analysis_id, new_status)
+
+    def _on_delete_confirmed(self, confirmed: bool, analysis_id: int) -> None:
+        """Handle delete confirmation result."""
+        if confirmed:
+            if self.db.delete_analysis(analysis_id):
+                self.notify(f"Deleted analysis #{analysis_id}", severity="information")
+                # Refresh and show list
+                self.initial_analyses = self._refresh_analyses()
+                if not self.initial_analyses:
+                    self.notify("No analyses remaining", severity="warning")
+                    self.exit()
+                    return
+            else:
+                self.notify(f"Failed to delete analysis #{analysis_id}", severity="error")
+
+        self._show_analysis_list()
+
+    def _update_status(self, analysis_id: int, new_status: str) -> None:
+        """Update analysis status and refresh list."""
+        try:
+            self.db.update_status(analysis_id, new_status)
+            self.notify(f"Marked analysis #{analysis_id} as {new_status}")
+            # Refresh and show list
+            self.initial_analyses = self._refresh_analyses()
+            if not self.initial_analyses:
+                self.notify("No analyses remaining after filter", severity="warning")
+                self.exit()
+                return
+        except ValueError as e:
+            self.notify(str(e), severity="error")
+
+        self._show_analysis_list()
 
     def _on_comments_picked(self, result) -> None:
         """Handle picked comments from the comment picker screen.
@@ -92,10 +226,7 @@ class ExportApp(App):
         """
         if result == "back":
             # Go back to analysis selection
-            self.push_screen(
-                AnalysisListScreen(self.initial_analyses),
-                callback=self._on_analyses_selected,
-            )
+            self._show_analysis_list()
             return
 
         if not result:
