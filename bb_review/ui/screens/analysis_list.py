@@ -1,4 +1,7 @@
-"""Analysis list screen for selecting analyses to export."""
+"""Analysis list screen for selecting analyses."""
+
+from dataclasses import dataclass
+from typing import Literal
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -9,14 +12,23 @@ from textual.widgets import DataTable, Footer, Header, Label, Static
 from bb_review.db.models import AnalysisListItem
 
 
+@dataclass
+class AnalysisListResult:
+    """Result from the analysis list screen."""
+
+    type: Literal["batch_export", "single_action"]
+    ids: list[int] | None = None  # For batch_export
+    analysis_id: int | None = None  # For single_action
+
+
 class AnalysisListScreen(Screen):
-    """Screen for listing and selecting analyses to export."""
+    """Screen for listing and selecting analyses."""
 
     BINDINGS = [
-        Binding("space", "toggle_selection", "Toggle"),
+        Binding("space", "toggle_selection", "Toggle Select"),
         Binding("a", "toggle_all", "Select All"),
-        Binding("enter", "proceed", "Proceed", priority=True),
-        Binding("p", "proceed", "Proceed"),
+        Binding("enter", "show_actions", "Actions", priority=True),
+        Binding("p", "proceed", "Export Selected"),
         Binding("q", "quit_app", "Quit"),
         Binding("escape", "quit_app", "Quit"),
     ]
@@ -86,9 +98,9 @@ class AnalysisListScreen(Screen):
 
         with Vertical():
             with Container(id="header-container"):
-                yield Label("Select Analyses to Export", id="title")
+                yield Label("Select Analyses", id="title")
                 yield Static(
-                    "[Space/Enter] Toggle  [A] Select All  [P] Proceed  [Q] Quit",
+                    "[Space] Toggle  [A] All  [Enter] Actions  [P] Export Selected  [Q] Quit",
                     id="instructions",
                 )
 
@@ -191,20 +203,28 @@ class AnalysisListScreen(Screen):
         self._update_status()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        """Handle row double-click or Enter on DataTable - toggle selection."""
-        # When Enter is pressed on a row, toggle its selection
+        """Handle row double-click on DataTable - show actions."""
+        # Note: Enter key is handled by action_show_actions binding
+        # This handles double-click
         if event.row_key:
-            row_key_str = str(event.row_key.value)
-            self._toggle_row(row_key_str)
+            analysis_id = int(event.row_key.value)
+            self.dismiss(AnalysisListResult(type="single_action", analysis_id=analysis_id))
+
+    def action_show_actions(self) -> None:
+        """Show action picker for current row."""
+        table = self.query_one("#analysis-table", DataTable)
+        if table.cursor_row is not None and table.row_count > 0:
+            analysis_id = self.analyses[table.cursor_row].id
+            self.dismiss(AnalysisListResult(type="single_action", analysis_id=analysis_id))
 
     def action_proceed(self) -> None:
-        """Proceed with selected analyses."""
+        """Proceed with batch export of selected analyses."""
         if not self.selected:
             self.notify("No analyses selected. Press Space to select.", severity="warning")
             return
 
-        # Post message to app with selected IDs
-        self.dismiss(list(self.selected))
+        # Return batch export result
+        self.dismiss(AnalysisListResult(type="batch_export", ids=list(self.selected)))
 
     def action_quit_app(self) -> None:
         """Quit the application."""
