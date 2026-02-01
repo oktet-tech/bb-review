@@ -231,7 +231,24 @@ claude_code:
     - Grep
     - Glob
     - Bash
+  # mcp_config: .mcp.json  # MCP servers config for semantic search
 ```
+
+#### MCP Integration (Semantic Code Search)
+
+Claude Code can use MCP servers for semantic code search via CocoIndex.
+Generate a `.mcp.json` config and pass it with `--mcp-config`:
+
+```bash
+# Setup: index the repo and generate .mcp.json
+uv run bb-review cocoindex index myrepo
+uv run bb-review cocoindex setup myrepo --tool claude
+
+# Review with MCP-powered code search
+uv run bb-review claude 42738 --mcp-config /path/to/repo/.mcp.json -O
+```
+
+Set `mcp_config` in `config.yaml` to avoid passing `--mcp-config` every time.
 
 ### Patch Series (Chain Review)
 
@@ -342,9 +359,10 @@ uv run bb-review cocoindex index myrepo  # Index a repository
 uv run bb-review cocoindex index myrepo --clear  # Re-index from scratch
 uv run bb-review cocoindex status-db     # Show indexing status
 
-# MCP Server (for OpenCode integration)
+# MCP Server
 uv run bb-review cocoindex serve myrepo  # Start MCP server
-uv run bb-review cocoindex setup myrepo  # Generate opencode.json for repo
+uv run bb-review cocoindex setup myrepo  # Generate opencode.json for OpenCode
+uv run bb-review cocoindex setup myrepo --tool claude  # Generate .mcp.json for Claude Code
 ```
 
 ### Reviews Database

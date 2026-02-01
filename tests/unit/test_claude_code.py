@@ -298,6 +298,54 @@ class TestRunClaudeReview:
                     timeout=60,
                 )
 
+    def test_mcp_config_in_command(self, tmp_path):
+        """--mcp-config is passed to Claude when mcp_config is set."""
+        json_output = json.dumps({"result": "No issues."})
+        mcp_path = tmp_path / ".mcp.json"
+        mcp_path.write_text('{"mcpServers": {}}')
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json_output
+        mock_result.stderr = ""
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch("subprocess.run", return_value=mock_result) as mock_run,
+        ):
+            run_claude_review(
+                repo_path=tmp_path,
+                patch_content="diff content",
+                prompt="Review this",
+                mcp_config=mcp_path,
+                at_reviewed_state=True,
+            )
+            cmd = mock_run.call_args[0][0]
+            assert "--mcp-config" in cmd
+            assert str(mcp_path) in cmd
+
+    def test_mcp_config_not_added_when_none(self, tmp_path):
+        """--mcp-config flag is absent when mcp_config is None."""
+        json_output = json.dumps({"result": "No issues."})
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json_output
+        mock_result.stderr = ""
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch("subprocess.run", return_value=mock_result) as mock_run,
+        ):
+            run_claude_review(
+                repo_path=tmp_path,
+                patch_content="diff content",
+                prompt="Review this",
+                at_reviewed_state=True,
+            )
+            cmd = mock_run.call_args[0][0]
+            assert "--mcp-config" not in cmd
+
     def test_empty_stdout_raises(self, tmp_path):
         mock_result = MagicMock()
         mock_result.returncode = 0

@@ -176,16 +176,22 @@ def cocoindex_logs(ctx: click.Context, repo_name: str) -> None:
 
 @cocoindex.command("setup")
 @click.argument("repo_name")
-@click.option("--force", is_flag=True, help="Overwrite existing opencode.json")
+@click.option("--force", is_flag=True, help="Overwrite existing config file")
 @click.option(
     "--template", type=click.Choice(["local", "filesystem"]), default="local", help="MCP template to use"
 )
+@click.option(
+    "--tool",
+    type=click.Choice(["opencode", "claude"]),
+    default="opencode",
+    help="Target tool: opencode (opencode.json) or claude (.mcp.json)",
+)
 @click.pass_context
-def cocoindex_setup(ctx: click.Context, repo_name: str, force: bool, template: str) -> None:
-    """Setup OpenCode MCP config in a repository.
+def cocoindex_setup(ctx: click.Context, repo_name: str, force: bool, template: str, tool: str) -> None:
+    """Setup MCP config for OpenCode or Claude Code in a repository.
 
-    Generates opencode.json for semantic code search.
-    The 'local' template uses our CocoIndex-based MCP server with local embeddings.
+    Generates opencode.json (default) or .mcp.json (--tool claude) for
+    semantic code search via CocoIndex MCP server.
 
     Templates:
         local       - Use bb-review MCP server with local embeddings (default)
@@ -197,6 +203,7 @@ def cocoindex_setup(ctx: click.Context, repo_name: str, force: bool, template: s
 
     Example:
         bb-review cocoindex setup te-dev
+        bb-review cocoindex setup te-dev --tool claude
         bb-review cocoindex setup te-dev --template filesystem
     """
 
@@ -218,13 +225,20 @@ def cocoindex_setup(ctx: click.Context, repo_name: str, force: bool, template: s
         click.echo(f"Error: Repository not cloned. Run 'bb-review repos sync {repo_name}' first.", err=True)
         sys.exit(1)
 
-    target_file = repo_path / "opencode.json"
+    # Determine target file based on tool
+    if tool == "claude":
+        target_file = repo_path / ".mcp.json"
+    else:
+        target_file = repo_path / "opencode.json"
 
     if target_file.exists() and not force:
         click.echo(f"Error: {target_file} already exists. Use --force to overwrite.", err=True)
         sys.exit(1)
 
-    # Find bb-review binary path
+    # Find bb-review installation directory (for uv run --directory)
+    bb_review_dir = str(Path(__file__).parent.parent.parent)
+
+    # Find bb-review binary path (for opencode)
     bb_review_bin = shutil.which("bb-review")
     if not bb_review_bin:
         venv_bb = Path(__file__).parent.parent.parent / ".venv" / "bin" / "bb-review"
@@ -233,9 +247,78 @@ def cocoindex_setup(ctx: click.Context, repo_name: str, force: bool, template: s
         else:
             bb_review_bin = "bb-review"  # Hope it's in PATH
 
-    # Generate config based on template
+    if tool == "claude":
+        output_config = _build_claude_mcp_config(repo_name, bb_review_dir, config, template, repo_path)
+    else:
+        output_config = _build_opencode_config(repo_name, bb_review_bin, config, template, repo_path)
+
+    # Write config
+    target_file.write_text(json.dumps(output_config, indent=2) + "\n")
+    click.echo(f"Created: {target_file}")
+    click.echo(f"Template: {template}")
+
+    if tool == "claude":
+        click.echo("\nUse with Claude Code:")
+        click.echo(f"  bb-review claude <rr-id> --mcp-config {target_file} -O")
+    else:
+        click.echo("\nNow run OpenCode in the repo:")
+        click.echo(f"  cd {repo_path} && opencode")
+
+
+def _build_claude_mcp_config(
+    repo_name: str,
+    bb_review_dir: str,
+    config,
+    template: str,
+    repo_path: Path,
+) -> dict:
+    """Build .mcp.json content for Claude Code."""
     if template == "local":
-        opencode_config = {
+        click.echo("Using local CocoIndex MCP server")
+        click.echo("Make sure you've indexed the repo: bb-review cocoindex index " + repo_name)
+        return {
+            "mcpServers": {
+                f"cocode-search-{repo_name}": {
+                    "command": "uv",
+                    "args": [
+                        "run",
+                        "--directory",
+                        bb_review_dir,
+                        "bb-review",
+                        "cocoindex",
+                        "serve",
+                        repo_name,
+                    ],
+                    "env": {
+                        "COCOINDEX_DATABASE_URL": config.cocoindex.database_url,
+                    },
+                }
+            }
+        }
+    else:  # filesystem
+        click.echo("Using filesystem MCP (no semantic search)")
+        return {
+            "mcpServers": {
+                f"filesystem-{repo_name}": {
+                    "command": "npx",
+                    "args": ["-y", "@anthropic-ai/mcp-filesystem", str(repo_path)],
+                }
+            }
+        }
+
+
+def _build_opencode_config(
+    repo_name: str,
+    bb_review_bin: str,
+    config,
+    template: str,
+    repo_path: Path,
+) -> dict:
+    """Build opencode.json content for OpenCode."""
+    if template == "local":
+        click.echo("Using local CocoIndex MCP server")
+        click.echo("Make sure you've indexed the repo: bb-review cocoindex index " + repo_name)
+        return {
             "$schema": "https://opencode.ai/config.json",
             "model": "openrouter/google/gemini-3-pro-preview",
             "permission": {"edit": "deny", "bash": "deny"},
@@ -250,10 +333,9 @@ def cocoindex_setup(ctx: click.Context, repo_name: str, force: bool, template: s
                 }
             },
         }
-        click.echo("Using local CocoIndex MCP server")
-        click.echo("Make sure you've indexed the repo: bb-review cocoindex index " + repo_name)
     else:  # filesystem
-        opencode_config = {
+        click.echo("Using filesystem MCP (no semantic search)")
+        return {
             "$schema": "https://opencode.ai/config.json",
             "model": "openrouter/google/gemini-3-pro-preview",
             "permission": {"edit": "deny", "bash": "deny"},
@@ -265,15 +347,6 @@ def cocoindex_setup(ctx: click.Context, repo_name: str, force: bool, template: s
                 }
             },
         }
-        click.echo("Using filesystem MCP (no semantic search)")
-
-    # Write config
-    target_file.write_text(json.dumps(opencode_config, indent=2) + "\n")
-    click.echo(f"Created: {target_file}")
-    click.echo(f"Template: {template}")
-
-    click.echo("\nNow run OpenCode in the repo:")
-    click.echo(f"  cd {repo_path} && opencode")
 
 
 @cocoindex.command("db")

@@ -203,6 +203,7 @@ class ClaudeCodeConfig(BaseModel):
     max_turns: int = 15
     binary_path: str = "claude"
     allowed_tools: list[str] = Field(default_factory=lambda: ["Read", "Grep", "Glob", "Bash"])
+    mcp_config: str | None = None  # Path to MCP config file (e.g. .mcp.json)
 
 
 class CocoIndexRepoConfig(BaseModel):

@@ -63,6 +63,11 @@ logger = logging.getLogger(__name__)
     help="Don't delete the review branch after completion",
 )
 @click.option(
+    "--mcp-config",
+    type=click.Path(exists=True, path_type=Path),
+    help="MCP servers config file (e.g. .mcp.json)",
+)
+@click.option(
     "--review-from",
     type=REVIEW_ID,
     help="Start reviewing from this RR (earlier patches applied as context only)",
@@ -84,6 +89,7 @@ def claude_cmd(
     chain_file: Path | None,
     base_commit: str | None,
     keep_branch: bool,
+    mcp_config: Path | None,
     review_from: int | None,
 ) -> None:
     """Analyze a review using Claude Code CLI.
@@ -126,6 +132,9 @@ def claude_cmd(
 
     allowed_tools = cc_config.allowed_tools
 
+    if mcp_config is None and cc_config.mcp_config:
+        mcp_config = Path(cc_config.mcp_config)
+
     click.echo(f"Analyzing review request #{review_id} with Claude Code...")
 
     def reviewer_fn(
@@ -148,6 +157,7 @@ def claude_cmd(
             binary_path,
             allowed_tools,
             at_reviewed_state,
+            mcp_config,
         )
 
     run_review_command(
@@ -185,6 +195,7 @@ def _run_claude_for_review(
     binary_path: str,
     allowed_tools: list[str] | None,
     at_reviewed_state: bool = True,
+    mcp_config: Path | None = None,
 ) -> str:
     """Run Claude Code analysis for a single review."""
     guidelines = load_guidelines(repo_path)
@@ -231,6 +242,7 @@ def _run_claude_for_review(
             binary_path=binary_path,
             allowed_tools=allowed_tools,
             at_reviewed_state=at_reviewed_state,
+            mcp_config=mcp_config,
         )
     except ClaudeCodeTimeoutError as e:
         raise click.ClickException(f"Claude Code timed out after {timeout}s") from e

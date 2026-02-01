@@ -192,6 +192,7 @@ def run_claude_review(
     binary_path: str = "claude",
     allowed_tools: list[str] | None = None,
     at_reviewed_state: bool = False,
+    mcp_config: Path | None = None,
 ) -> str:
     """Run Claude Code CLI and return the analysis.
 
@@ -205,6 +206,7 @@ def run_claude_review(
         binary_path: Path to the claude binary.
         allowed_tools: List of tools Claude is allowed to use.
         at_reviewed_state: If True, changes are staged - don't write patch file.
+        mcp_config: Path to MCP servers config file (e.g. .mcp.json).
 
     Returns:
         The analysis text from Claude Code.
@@ -240,6 +242,9 @@ def run_claude_review(
 
         if allowed_tools:
             cmd.extend(["--allowedTools", ",".join(allowed_tools)])
+
+        if mcp_config:
+            cmd.extend(["--mcp-config", str(mcp_config)])
 
         logger.info(f"Running Claude Code in {repo_path}")
         print(f"  Command: {' '.join(cmd)}", file=sys.stderr)

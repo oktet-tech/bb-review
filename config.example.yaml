@@ -98,6 +98,7 @@ claude_code:
     - Grep
     - Glob
     - Bash
+  # mcp_config: .mcp.json  # MCP servers config (generate with: bb-review cocoindex setup --tool claude <repo>)
 
 # Reviews database - stores analysis history for tracking and export
 # Enables: bb-review db list/show/export/stats commands
