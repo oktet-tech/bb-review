@@ -89,7 +89,7 @@ opencode:
 # Use with: bb-review claude <review_id>
 claude_code:
   enabled: false  # Set to true to enable Claude Code integration
-  # model: "sonnet"  # Override model (optional): sonnet, opus, haiku
+  model: "claude-sonnet-4-5-20250514"  # Default model (sonnet 4.5)
   timeout: 600  # Timeout in seconds
   max_turns: 15  # Max agentic turns per review
   binary_path: "claude"  # Path to claude binary (or just "claude" if in PATH)
