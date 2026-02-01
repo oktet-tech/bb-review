@@ -1,5 +1,14 @@
 """Review approaches for BB Review."""
 
+from .claude_code import (
+    ClaudeCodeError,
+    ClaudeCodeNotFoundError,
+    ClaudeCodeTimeoutError,
+    check_claude_available,
+    find_claude_binary,
+    run_claude_review,
+)
+from .claude_code import build_review_prompt as build_claude_review_prompt
 from .llm import (
     SYSTEM_PROMPT,
     Analyzer,
@@ -52,4 +61,12 @@ __all__ = [
     "parse_opencode_output",
     "run_opencode_agent",
     "run_opencode_review",
+    # Claude Code reviewer
+    "ClaudeCodeError",
+    "ClaudeCodeNotFoundError",
+    "ClaudeCodeTimeoutError",
+    "build_claude_review_prompt",
+    "check_claude_available",
+    "find_claude_binary",
+    "run_claude_review",
 ]
