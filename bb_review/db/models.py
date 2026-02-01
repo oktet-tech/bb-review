@@ -19,6 +19,7 @@ class AnalysisMethod(str, Enum):
 
     LLM = "llm"
     OPENCODE = "opencode"
+    CLAUDE_CODE = "claude_code"
 
 
 @dataclass
