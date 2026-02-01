@@ -80,6 +80,7 @@ def get_config(ctx: click.Context) -> Config:
 # Import and register subcommands
 from . import (
     analyze,  # noqa: E402, F401
+    claude_code,  # noqa: E402, F401
     cocoindex,  # noqa: E402, F401
     db,  # noqa: E402, F401
     interactive,  # noqa: E402, F401
