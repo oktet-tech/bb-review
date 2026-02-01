@@ -7,7 +7,7 @@ Big Brother AI-powered code review system for Review Board.
 BB Review integrates with Review Board to provide automated AI code reviews. When a designated bot user is added as a reviewer, the system analyzes the diff and posts inline comments.
 
 **Key Features:**
-- Multiple analysis modes: direct LLM analysis or OpenCode agent with full codebase context
+- Multiple analysis modes: direct LLM, OpenCode agent, or Claude Code CLI with full codebase context
 - Semantic code search via CocoIndex (optional, uses local embeddings - no API needed)
 - Reviews database for analysis history, tracking, and export
 - Review/edit/submit workflow for human oversight
@@ -25,6 +25,7 @@ BB Review integrates with Review Board to provide automated AI code reviews. Whe
 - An LLM API key (Anthropic, OpenRouter, or OpenAI)
 - (Optional) Docker for PostgreSQL+pgvector (CocoIndex semantic search)
 - (Optional) [OpenCode](https://opencode.ai) for enhanced analysis mode
+- (Optional) [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI for agentic analysis mode
 
 ### Step 1: Install uv
 
@@ -171,12 +172,13 @@ uv run bb-review submit review_42738.json --publish
 
 ### Analysis Commands
 
-Both `analyze` (direct LLM) and `opencode` (OpenCode agent) work similarly:
+All three analysis modes (`analyze`, `opencode`, `claude`) work similarly:
 
 ```bash
 # Run analysis, save to auto-generated file (review_{id}.json)
 uv run bb-review analyze 42738 -O
 uv run bb-review opencode 42738 -O
+uv run bb-review claude 42738 -O
 
 # Save to custom file
 uv run bb-review analyze 42738 -o my_review.json
@@ -186,6 +188,49 @@ uv run bb-review analyze 42738 --dry-run
 
 # Fake review - run everything but use mock LLM responses (for testing)
 uv run bb-review analyze 42738 --fake-review -O
+```
+
+### Claude Code CLI
+
+The `claude` command uses Claude Code in non-interactive (`-p`) mode with agentic
+tool use. Claude can read files, run grep/glob, and execute commands in the repo
+to understand context before reporting issues.
+
+```bash
+# Basic review (resolves dependency chain automatically)
+uv run bb-review claude 42738 -O
+
+# Override model (sonnet, opus, haiku)
+uv run bb-review claude 42738 -m opus -O
+
+# Increase timeout and agentic turns for complex reviews
+uv run bb-review claude 42738 --timeout 900 --max-turns 25 -O
+
+# Fallback mode if patch doesn't apply cleanly
+uv run bb-review claude 42738 --fallback -O
+
+# Accept Review Board URL instead of numeric ID
+uv run bb-review claude https://rb.example.com/r/42738/ -O
+
+# Dry run / fake review for testing
+uv run bb-review claude 42738 --dry-run
+uv run bb-review claude 42738 --fake-review -O
+```
+
+Configure defaults in `config.yaml`:
+
+```yaml
+claude_code:
+  enabled: true
+  # model: "sonnet"       # Default model override
+  timeout: 600            # Seconds
+  max_turns: 15           # Max agentic tool-use rounds
+  binary_path: "claude"   # Path to claude binary
+  allowed_tools:          # Tools Claude Code may use during review
+    - Read
+    - Grep
+    - Glob
+    - Bash
 ```
 
 ### Patch Series (Chain Review)
@@ -419,7 +464,7 @@ uv run bb-review repos mcp-setup net-drv-ts
    - Fetches the diff from Review Board
    - Checks out the base/target commit in the local repo
    - Loads per-repo guidelines from `.ai-review.yaml`
-   - Analyzes the changes using an LLM (direct or via OpenCode)
+   - Analyzes the changes using an LLM (direct, OpenCode, or Claude Code)
    - Posts inline comments back to Review Board
 
 ## Troubleshooting
@@ -454,8 +499,9 @@ tail -f ~/.bb_review/mcp-myrepo.log
 uv run bb-review -v analyze <review-id> --dry-run
 
 # Dump raw LLM response
-uv run bb-review analyze <review-id> --dry-run --dump-response /tmp/llm.txt
-uv run bb-review opencode <review-id> --dry-run --dump-response /tmp/opencode.txt
+uv run bb-review analyze <review-id> --dump-response /tmp/llm.txt -O
+uv run bb-review opencode <review-id> --dump-response /tmp/opencode.txt -O
+uv run bb-review claude <review-id> --dump-response /tmp/claude.txt -O
 ```
 
 ## License
