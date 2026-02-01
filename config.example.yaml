@@ -85,6 +85,20 @@ opencode:
   timeout: 300  # Timeout in seconds
   binary_path: "opencode"  # Path to opencode binary (or just "opencode" if in PATH)
 
+# Claude Code CLI settings (alternative review mode)
+# Use with: bb-review claude <review_id>
+claude_code:
+  enabled: false  # Set to true to enable Claude Code integration
+  # model: "sonnet"  # Override model (optional): sonnet, opus, haiku
+  timeout: 600  # Timeout in seconds
+  max_turns: 15  # Max agentic turns per review
+  binary_path: "claude"  # Path to claude binary (or just "claude" if in PATH)
+  allowed_tools:  # Tools Claude Code is allowed to use during review
+    - Read
+    - Grep
+    - Glob
+    - Bash
+
 # Reviews database - stores analysis history for tracking and export
 # Enables: bb-review db list/show/export/stats commands
 review_db:

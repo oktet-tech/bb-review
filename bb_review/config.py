@@ -194,6 +194,17 @@ class OpenCodeConfig(BaseModel):
     binary_path: str = "opencode"  # Path to the opencode binary
 
 
+class ClaudeCodeConfig(BaseModel):
+    """Claude Code CLI configuration for AI-powered review."""
+
+    enabled: bool = False
+    model: str | None = None  # e.g. "sonnet", "opus"
+    timeout: int = 600
+    max_turns: int = 15
+    binary_path: str = "claude"
+    allowed_tools: list[str] = Field(default_factory=lambda: ["Read", "Grep", "Glob", "Bash"])
+
+
 class CocoIndexRepoConfig(BaseModel):
     """Per-repository CocoIndex configuration."""
 
@@ -284,6 +295,7 @@ class Config(BaseModel):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     defaults: DefaultsConfig = Field(default_factory=DefaultsConfig)
     opencode: OpenCodeConfig = Field(default_factory=OpenCodeConfig)
+    claude_code: ClaudeCodeConfig = Field(default_factory=ClaudeCodeConfig)
     cocoindex: CocoIndexConfig = Field(default_factory=CocoIndexConfig)
     review_db: ReviewDBConfig = Field(default_factory=ReviewDBConfig)
 
