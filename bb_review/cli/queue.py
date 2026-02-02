@@ -246,7 +246,11 @@ def process(
     repo_manager = RepoManager(config.get_all_repos())
     review_db = ReviewDatabase(config.review_db.resolved_path)
 
+    # Map CLI method name to DB analysis_method
+    analysis_method = "claude_code" if method == "claude" else method
+
     succeeded = 0
+    skipped = 0
     failed = 0
 
     for item in items:
@@ -254,6 +258,15 @@ def process(
         click.echo(f"Processing r/{rr_id} (diff {item.diff_revision})...")
 
         try:
+            # Skip if a real (non-fake) analysis already exists for this method
+            if review_db.has_real_analysis(rr_id, item.diff_revision, analysis_method):
+                existing = review_db.get_analysis_by_rr(rr_id, item.diff_revision)
+                analysis_id = existing.id if existing else None
+                queue_db.mark_done(rr_id, analysis_id)
+                click.echo(f"  Skipped: already analyzed (analysis_id={analysis_id})")
+                skipped += 1
+                continue
+
             queue_db.mark_in_progress(rr_id)
 
             if method == "llm":
@@ -291,7 +304,7 @@ def process(
             click.echo(f"  FAILED: {e}", err=True)
             failed += 1
 
-    click.echo(f"\nDone: {succeeded} succeeded, {failed} failed")
+    click.echo(f"\nDone: {succeeded} succeeded, {skipped} skipped, {failed} failed")
 
 
 def _process_item_llm(
