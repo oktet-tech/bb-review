@@ -404,6 +404,25 @@ class ReviewDatabase:
             analysis.comments = [self._row_to_comment(c) for c in comments]
             return analysis
 
+    def has_real_analysis(
+        self,
+        review_request_id: int,
+        diff_revision: int,
+        analysis_method: str,
+    ) -> bool:
+        """Check if a non-fake analysis exists for the given RR, diff, and method."""
+        with self._connection() as conn:
+            row = conn.execute(
+                """
+                SELECT 1 FROM analyses
+                WHERE review_request_id = ? AND diff_revision = ?
+                  AND analysis_method = ? AND fake = 0
+                LIMIT 1
+                """,
+                (review_request_id, diff_revision, analysis_method),
+            ).fetchone()
+            return row is not None
+
     def list_analyses(
         self,
         review_request_id: int | None = None,
