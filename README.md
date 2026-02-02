@@ -404,6 +404,46 @@ review_db:
   path: "~/.bb_review/reviews.db"
 ```
 
+### Review Queue (Triage Workflow)
+
+Human-triaged review workflow: sync review requests from Review Board into a
+local queue, triage them, then batch-process selected items.
+
+```bash
+# 1. Populate the queue from Review Board
+uv run bb-review queue sync                        # Last 10 days, all pending RRs
+uv run bb-review queue sync --days 30              # Look further back
+uv run bb-review queue sync --repo te-dev          # Only one repository
+uv run bb-review queue sync --submitter alice       # Only one author
+uv run bb-review queue sync --bot-only             # Only RRs assigned to bot
+
+# 2. Browse and triage
+uv run bb-review queue list                        # All items
+uv run bb-review queue list --status todo          # New items needing triage
+uv run bb-review queue list --repo te-dev          # Filter by repo
+uv run bb-review queue show 42738                  # Details for one RR
+uv run bb-review queue stats                       # Counts by status
+
+# 3. Mark items for processing (or ignore)
+uv run bb-review queue set 42738 42739 --status next     # Queue for analysis
+uv run bb-review queue set 42740 --status ignore         # Skip this one
+
+# 4. Process queued items
+uv run bb-review queue process                     # Analyze up to 5 'next' items
+uv run bb-review queue process --count 10          # Process more at once
+uv run bb-review queue process --dry-run           # Preview without running
+uv run bb-review queue process --fake-review       # Mock analysis for testing
+uv run bb-review queue process --model opus        # Override LLM model
+uv run bb-review queue process --submit            # Auto-submit to RB after analysis
+
+# 5. Re-triage after new diffs
+uv run bb-review queue sync                        # New diff versions reset to 'todo'
+uv run bb-review queue list --status todo          # See what needs attention
+```
+
+Queue states: `todo` -> `next` -> `in_progress` -> `done`/`failed`.
+Items can also be set to `ignore`. Failed items can be retried via `set --status next`.
+
 ## Per-Repository Configuration
 
 Create `.ai-review.yaml` in your repository root to customize review behavior:
