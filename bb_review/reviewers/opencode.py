@@ -148,7 +148,9 @@ For general observations that don't apply to a specific line, omit the Line fiel
 
 After listing all issues, provide a brief summary of the overall code quality.
 
-Be concise but thorough. Do not suggest changes outside the scope of the review."""
+Be concise but thorough. Do not suggest changes outside the scope of the review.
+Output ONLY the structured review (### Issue blocks and summary). \
+Do not include introductory text, thinking, or narration of your process."""
 
     return prompt
 
