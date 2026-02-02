@@ -286,6 +286,7 @@ class QueueDatabase:
         status: QueueStatus | None = None,
         repository: str | None = None,
         limit: int = 50,
+        exclude_statuses: list[QueueStatus] | None = None,
     ) -> list[QueueItem]:
         """List queue items with optional filters."""
         conditions = []
@@ -294,6 +295,10 @@ class QueueDatabase:
         if status is not None:
             conditions.append("status = ?")
             params.append(status.value)
+        if exclude_statuses:
+            placeholders = ", ".join("?" for _ in exclude_statuses)
+            conditions.append(f"status NOT IN ({placeholders})")
+            params.extend(s.value for s in exclude_statuses)
         if repository is not None:
             conditions.append("repository = ?")
             params.append(repository)
@@ -311,6 +316,19 @@ class QueueDatabase:
                 params + [limit],
             ).fetchall()
             return [self._row_to_item(r) for r in rows]
+
+    def delete_item(self, review_request_id: int) -> bool:
+        """Delete a queue item by review request ID.
+
+        Returns:
+            True if the item was deleted, False if not found.
+        """
+        with self._connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM review_queue WHERE review_request_id = ?",
+                (review_request_id,),
+            )
+            return cursor.rowcount > 0
 
     def get_stats(self) -> dict[str, int]:
         """Get count of items by status."""
