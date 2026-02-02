@@ -131,7 +131,7 @@ def opencode_cmd(
         repo_config,
         at_reviewed_state: bool,
     ) -> str:
-        return _run_opencode_for_review(
+        return run_opencode_for_review(
             rr_id,
             summary,
             raw_diff,
@@ -166,7 +166,7 @@ def opencode_cmd(
     )
 
 
-def _run_opencode_for_review(
+def run_opencode_for_review(
     review_id: int,
     summary: str,
     raw_diff: str,
