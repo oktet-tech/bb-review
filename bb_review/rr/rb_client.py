@@ -1,7 +1,7 @@
 """Review Board API client with Kerberos support via curl."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import logging
 from pathlib import Path
@@ -584,6 +584,45 @@ class ReviewBoardClient:
             "path": repo.get("path", ""),
             "tool": repo.get("tool", ""),
         }
+
+    def get_recent_reviews(
+        self,
+        days: int = 10,
+        limit: int = 200,
+        repository: str | None = None,
+        from_user: str | None = None,
+    ) -> list[PendingReview]:
+        """Fetch recently-updated pending review requests from RB.
+
+        Args:
+            days: How far back to look (via last-updated-from).
+            limit: Max results to return.
+            repository: Filter by repository name (RB repo ID or name).
+            from_user: Filter by submitter username.
+        """
+        cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00")
+        params: dict[str, str] = {
+            "status": "pending",
+            "last-updated-from": cutoff,
+            "max-results": str(limit),
+        }
+        if repository:
+            params["repository"] = repository
+        if from_user:
+            params["from-user"] = from_user
+
+        logger.debug(f"Fetching recent reviews: days={days}, limit={limit}")
+        result = self._api_get("/api/review-requests/", params)
+        review_requests = result.get("review_requests", [])
+
+        pending = []
+        for rr in review_requests:
+            pr = self._to_pending_review(rr)
+            if pr:
+                pending.append(pr)
+
+        logger.info(f"Fetched {len(pending)} recent reviews")
+        return pending
 
     def get_review_request_info(self, review_request_id: int) -> ReviewRequestInfo:
         """Get essential review request info including depends_on for chain resolution.
