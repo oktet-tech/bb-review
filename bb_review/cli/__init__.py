@@ -86,6 +86,7 @@ from . import (
     interactive,  # noqa: E402, F401
     opencode,  # noqa: E402, F401
     poll,  # noqa: E402, F401
+    queue,  # noqa: E402, F401
     repos,  # noqa: E402, F401
     submit,  # noqa: E402, F401
     utils,  # noqa: E402, F401

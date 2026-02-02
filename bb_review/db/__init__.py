@@ -10,6 +10,8 @@ from .models import (
     StoredChain,
     StoredComment,
 )
+from .queue_db import QueueDatabase
+from .queue_models import QueueItem, QueueStatus
 from .review_db import ReviewDatabase
 
 
@@ -18,6 +20,7 @@ from .review_db import ReviewDatabase
 __all__ = [
     # Database
     "ReviewDatabase",
+    "QueueDatabase",
     # Models
     "StoredAnalysis",
     "StoredComment",
@@ -26,6 +29,8 @@ __all__ = [
     "AnalysisStatus",
     "AnalysisMethod",
     "DBStats",
+    "QueueItem",
+    "QueueStatus",
     # Export functions
     "export_to_json",
     "export_to_markdown",
