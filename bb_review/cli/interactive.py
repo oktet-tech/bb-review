@@ -6,7 +6,6 @@ import sys
 import click
 
 from ..db import ReviewDatabase
-from ..ui import ExportApp
 from . import get_config, main
 
 
@@ -59,7 +58,13 @@ def _restore_console_logging(handlers: list[logging.StreamHandler]) -> None:
 @click.option("--chain", "chain_id", help="Filter by chain ID")
 @click.option("--limit", "-n", default=50, type=int, help="Maximum number of results")
 @click.option("--output", "-o", type=click.Path(), help="Output file path for export")
-@click.option("--queue", is_flag=True, default=False, help="Open queue triage view instead")
+@click.option("--queue", is_flag=True, default=False, help="Start on queue tab (backward compat)")
+@click.option(
+    "--tab",
+    type=click.Choice(["queue", "reviews"]),
+    default=None,
+    help="Which tab to start on (default: queue)",
+)
 @click.option(
     "--queue-status",
     type=click.Choice(["all", "active", "todo", "next", "ignore", "in_progress", "done", "failed"]),
@@ -76,44 +81,60 @@ def interactive(
     limit: int,
     output: str | None,
     queue: bool,
+    tab: str | None,
     queue_status: str | None,
 ) -> None:
     """Interactive review management with TUI.
 
-    Opens a TUI to browse and manage stored analyses:
-    - Select analyses with Space, batch export with P
-    - Press Enter on a row for actions: Export, Delete, Mark as...
-    - Pick individual comments to include in export
-    - Edit comments before export
+    Opens a unified TUI with tabbed Queue and Reviews panes.
+    Use Tab to switch between panes, L to toggle the log panel.
 
-    Use --queue to open the queue triage view instead.
+    Queue pane:
+    - S to sync from Review Board, R to process next items
+    - Space to select, N/I/F/D to set status, X for action picker
+
+    Reviews pane:
+    - Space to select, Enter to open, X for actions, P to export
 
     Examples:
-        bb-review interactive                    # Browse draft analyses
-        bb-review interactive --rr 42738        # Filter by specific RR
+        bb-review interactive                    # Unified TUI, queue tab
+        bb-review interactive --tab reviews      # Start on reviews tab
+        bb-review interactive --queue            # Same as --tab queue
+        bb-review interactive --rr 42738        # Filter reviews by RR
         bb-review interactive --repo te-dev     # Filter by repository
-        bb-review interactive --status submitted # Browse submitted analyses
-        bb-review interactive --status all      # Browse all analyses
-        bb-review interactive -o review.json    # Specify export output file
-        bb-review interactive --queue            # Queue triage (excludes done/ignore)
-        bb-review interactive --queue --queue-status all   # All queue items
-        bb-review interactive --queue --queue-status todo  # Only todo items
+        bb-review interactive --status all      # Show all analysis statuses
     """
-    if queue:
-        _run_queue_tui(ctx, repository, queue_status, limit)
-    else:
-        _run_export_tui(ctx, review_request_id, repository, status, chain_id, limit, output)
+    # Resolve initial tab: --queue flag is alias for --tab queue
+    initial_tab = tab or ("queue" if queue else "queue")
+
+    _run_unified_tui(
+        ctx,
+        review_request_id=review_request_id,
+        repository=repository,
+        status=status,
+        chain_id=chain_id,
+        limit=limit,
+        output=output,
+        queue_status=queue_status,
+        initial_tab=initial_tab,
+    )
 
 
-def _run_queue_tui(
+def _run_unified_tui(
     ctx: click.Context,
+    *,
+    review_request_id: int | None,
     repository: str | None,
-    queue_status: str | None,
+    status: str | None,
+    chain_id: str | None,
     limit: int,
+    output: str | None,
+    queue_status: str | None,
+    initial_tab: str,
 ) -> None:
-    """Launch the queue triage TUI."""
+    """Launch the unified TUI."""
     from ..db import QueueDatabase, QueueStatus
-    from ..ui import QueueApp
+    from ..ui import UnifiedApp
 
     config = get_config(ctx)
 
@@ -121,54 +142,25 @@ def _run_queue_tui(
         click.echo("Error: Reviews database is not enabled.", err=True)
         sys.exit(1)
 
+    # -- Queue data --
     queue_db = QueueDatabase(config.review_db.resolved_path)
 
-    status_filter = None
-    exclude_statuses = None
+    q_status_filter = None
+    q_exclude_statuses = None
     if queue_status == "active":
-        exclude_statuses = [QueueStatus.DONE, QueueStatus.IGNORE]
+        q_exclude_statuses = [QueueStatus.DONE, QueueStatus.IGNORE]
     elif queue_status and queue_status != "all":
-        status_filter = QueueStatus(queue_status)
+        q_status_filter = QueueStatus(queue_status)
 
-    items = queue_db.list_items(
-        status=status_filter,
+    queue_items = queue_db.list_items(
+        status=q_status_filter,
         repository=repository,
         limit=limit,
-        exclude_statuses=exclude_statuses,
+        exclude_statuses=q_exclude_statuses,
     )
 
-    if not items:
-        click.echo("No queue items found matching the filter.")
-        return
-
-    handlers = _suppress_console_logging()
-
-    app = QueueApp(
-        items=items,
-        queue_db=queue_db,
-        filter_status=status_filter,
-        exclude_statuses=exclude_statuses,
-        filter_repo=repository,
-        filter_limit=limit,
-    )
-    app.run()
-
-    _restore_console_logging(handlers)
-
-
-def _run_export_tui(
-    ctx: click.Context,
-    review_request_id: int | None,
-    repository: str | None,
-    status: str | None,
-    chain_id: str | None,
-    limit: int,
-    output: str | None,
-) -> None:
-    """Launch the export/analysis TUI."""
-    review_db = get_review_db(ctx)
-
-    # Convert "all" to None for no status filter
+    # -- Reviews data --
+    review_db = ReviewDatabase(config.review_db.resolved_path)
     status_filter = None if status == "all" else status
 
     analyses = review_db.list_analyses(
@@ -179,23 +171,26 @@ def _run_export_tui(
         limit=limit,
     )
 
-    if not analyses:
-        click.echo("No analyses found matching the filter.")
-        return
-
+    # -- Launch --
     handlers = _suppress_console_logging()
 
-    config = get_config(ctx)
-    app = ExportApp(
+    app = UnifiedApp(
+        queue_items=queue_items,
+        queue_db=queue_db,
+        queue_filter_status=q_status_filter,
+        queue_exclude_statuses=q_exclude_statuses,
+        queue_filter_repo=repository,
+        queue_filter_limit=limit,
         analyses=analyses,
-        db=review_db,
+        review_db=review_db,
         config=config,
         output_path=output,
-        filter_rr_id=review_request_id,
-        filter_repo=repository,
-        filter_status=status_filter,
-        filter_chain_id=chain_id,
-        filter_limit=limit,
+        review_filter_rr_id=review_request_id,
+        review_filter_repo=repository,
+        review_filter_status=status_filter,
+        review_filter_chain_id=chain_id,
+        review_filter_limit=limit,
+        initial_tab=initial_tab,
     )
     app.run()
 
