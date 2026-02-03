@@ -375,6 +375,24 @@ class TestHasNonFakeAnalysis:
         assert queue_db_with_analyses.has_non_fake_analysis(42738, 2) is False
 
 
+class TestDeleteItem:
+    def test_delete_existing(self, queue_db: QueueDatabase):
+        queue_db.upsert(review_request_id=42738, diff_revision=1)
+        assert queue_db.delete_item(42738) is True
+        assert queue_db.get(42738) is None
+
+    def test_delete_not_found(self, queue_db: QueueDatabase):
+        assert queue_db.delete_item(99999) is False
+
+    def test_delete_only_target(self, queue_db: QueueDatabase):
+        queue_db.upsert(review_request_id=42738, diff_revision=1)
+        queue_db.upsert(review_request_id=42739, diff_revision=1)
+        queue_db.delete_item(42738)
+
+        assert queue_db.get(42738) is None
+        assert queue_db.get(42739) is not None
+
+
 class TestGet:
     def test_get_existing(self, queue_db: QueueDatabase):
         queue_db.upsert(review_request_id=42738, diff_revision=1, repository="test")

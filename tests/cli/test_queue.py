@@ -157,6 +157,26 @@ class TestQueueShow:
         assert "not found" in result.output
 
 
+class TestInteractiveQueue:
+    def test_interactive_queue_no_items(self, runner: CliRunner, config_with_db: Path):
+        result = runner.invoke(main, ["--config", str(config_with_db), "interactive", "--queue"])
+        assert result.exit_code == 0
+        assert "No queue items found" in result.output
+
+    def test_interactive_queue_status_filter(self, runner: CliRunner, config_with_db: Path):
+        result = runner.invoke(
+            main, ["--config", str(config_with_db), "interactive", "--queue", "--queue-status", "todo"]
+        )
+        assert result.exit_code == 0
+        assert "No queue items found" in result.output
+
+    def test_interactive_queue_invalid_status(self, runner: CliRunner, config_with_db: Path):
+        result = runner.invoke(
+            main, ["--config", str(config_with_db), "interactive", "--queue", "--queue-status", "bogus"]
+        )
+        assert result.exit_code != 0
+
+
 class TestQueueProcess:
     def test_process_dry_run(self, runner: CliRunner, populated_queue: Path):
         result = runner.invoke(main, ["--config", str(populated_queue), "queue", "process", "--dry-run"])
