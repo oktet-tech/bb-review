@@ -31,7 +31,19 @@ def setup_logging(level: str, log_file: Path | None = None) -> None:
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 
 
-@click.group(context_settings=CONTEXT_SETTINGS)
+class MainGroup(click.Group):
+    """Click group that catches auth errors and shows clean messages."""
+
+    def invoke(self, ctx: click.Context) -> None:
+        from ..rr.rb_client import AuthenticationError
+
+        try:
+            return super().invoke(ctx)
+        except AuthenticationError as e:
+            raise click.ClickException(str(e)) from e
+
+
+@click.group(cls=MainGroup, context_settings=CONTEXT_SETTINGS)
 @click.option(
     "--config",
     "-c",
