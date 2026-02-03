@@ -22,15 +22,15 @@ Keep the first line under 72 characters. Add a blank line and detailed descripti
 
 ## Project Overview
 
-BB Review is a CLI tool that provides AI-powered code reviews for Review Board (RB). It fetches diffs from Review Board, analyzes them using an LLM, and posts review comments back.
+BB Review is a Python CLI tool that provides AI-powered code reviews for Review Board (RB). It fetches diffs from RB, analyzes them using LLMs (Anthropic, OpenRouter, OpenAI), and posts review comments back. It supports direct LLM analysis, OpenCode agent-based analysis, interactive TUI editing, daemon polling, and semantic code search via CocoIndex.
 
 ## Architecture
 
 ```text
-┌─────────────────┐     ┌──────────────┐     ┌─────────────┐
-│  Review Board   │────▶│  bb_review   │────▶│  LLM API    │
-│  (RB Server)    │◀────│  CLI Tool    │◀────│ (OpenRouter)│
-└─────────────────┘     └──────────────┘     └─────────────┘
+┌─────────────────┐     ┌──────────────┐     ┌──────────────────┐
+│  Review Board   │────▶│  bb_review   │────▶│  LLM API         │
+│  (RB Server)    │◀────│  CLI Tool    │◀────│ (Anthropic/OR/OAI│
+└─────────────────┘     └──────────────┘     └──────────────────┘
                               │
                               ├─────────────────┐
                               ▼                 ▼
@@ -50,22 +50,56 @@ BB Review is a CLI tool that provides AI-powered code reviews for Review Board (
 
 ### Core Modules (`bb_review/`)
 
-| File | Purpose |
-|------|---------|
-| `cli.py` | Click-based CLI commands (`analyze`, `opencode`, `poll`, `repos`, `cocoindex`, `submit`, `db`) |
-| `rb_client.py` | Review Board API client using `curl` for Kerberos auth |
-| `analyzer.py` | LLM integration (OpenRouter/Anthropic/OpenAI), prompt building, response parsing |
-| `commenter.py` | Formats and posts review comments to RB |
-| `repo_manager.py` | Git repository management (clone, fetch, checkout with patch application) |
+| Module | Purpose |
+|--------|---------|
+| `config.py` | Pydantic config models, YAML loading, environment variable resolution (`${VAR}` syntax) |
+| `models.py` | Core data models (ReviewResult, ReviewComment, ChainReviewResult, RepoConfig) |
 | `guidelines.py` | Loads `.ai-review.yaml` from repos for per-repo customization |
-| `config.py` | Pydantic config models, YAML loading, environment variable resolution |
-| `models.py` | Data models (ReviewResult, ReviewComment, RepoConfig, etc.) |
 | `crypto.py` | Password encryption/decryption using Fernet |
 | `poller.py` | Polling daemon, state database (SQLite), review tracking |
-| `db/` | Reviews database module (analysis history, export, tracking) |
-| `opencode_runner.py` | OpenCode agent integration, prompt building, output parsing |
-| `mcp_server.py` | FastMCP server for semantic code search via CocoIndex |
-| `cocoindex_indexer.py` | Repository indexing with local sentence-transformers embeddings |
+
+### CLI (`bb_review/cli/`)
+
+| File | Purpose |
+|------|---------|
+| `analyze.py` | `analyze` command - direct LLM review |
+| `opencode.py` | `opencode` command - OpenCode agent review |
+| `submit.py` | `submit` command - post review to RB |
+| `interactive.py` | `interactive` command - Textual TUI for editing reviews |
+| `repos.py` | `repos` command - repository sync and management |
+| `poll.py` | `poll` command - daemon polling mode |
+| `db.py` | `db` command - reviews database operations |
+| `cocoindex.py` | `cocoindex` command - semantic search management |
+| `utils.py` | Shared CLI helpers, config lazy-loading via `get_config(ctx)` |
+
+### Reviewers (`bb_review/reviewers/`)
+
+| File | Purpose |
+|------|---------|
+| `llm.py` | Direct LLM analysis - prompt building, response parsing |
+| `opencode.py` | OpenCode agent integration, prompt building, output parsing |
+| `providers.py` | LLM provider factory (`AnthropicProvider`, `OpenRouterProvider`, `OpenAIProvider`) |
+
+### Review Board (`bb_review/rr/`)
+
+| File | Purpose |
+|------|---------|
+| `rb_client.py` | RB API client using `curl` subprocess for Kerberos auth |
+| `rb_commenter.py` | Formats and posts review comments to RB |
+| `chain.py` | Patch series dependency resolution |
+
+### Other Subpackages
+
+| Module | Purpose |
+|--------|---------|
+| `git/manager.py` | Git repository management (clone, fetch, checkout, patch application) |
+| `db/review_db.py` | SQLite reviews database backend |
+| `db/models.py` | Database models (StoredAnalysis, StoredComment, StoredChain) |
+| `db/export.py` | Export to JSON or Markdown |
+| `indexing/indexer.py` | CocoIndex repository indexing with local sentence-transformers |
+| `indexing/mcp.py` | FastMCP server for semantic code search |
+| `ui/export_app.py` | Textual-based interactive TUI app |
+| `ui/screens/` | TUI screens (analysis list, comment picker, action picker) |
 
 ### Configuration Files
 
@@ -99,7 +133,7 @@ BB Review is a CLI tool that provides AI-powered code reviews for Review Board (
 2. RB requires separate form-based login (CSRF token + POST to `/account/login/`)
 3. Session cookies are stored in a temp file and reused
 
-The `rb_client.py` uses `subprocess.run` with `curl` because:
+The `rr/rb_client.py` uses `subprocess.run` with `curl` because:
 - Python `requests` with `requests-kerberos` didn't work reliably
 - Apache strips `Authorization` headers before they reach RB
 - Form-based login mimics browser behavior
@@ -115,7 +149,7 @@ bb-review encrypt-password  # Uses api_token as encryption key
 ### Analysis Modes
 
 1. **Direct Analysis** (`analyze` command):
-   - Uses `analyzer.py` to build prompts and call LLM
+   - Uses `reviewers/llm.py` to build prompts and call LLM
    - Returns structured JSON with inline comments
    - Good for quick reviews
 
@@ -127,7 +161,7 @@ bb-review encrypt-password  # Uses api_token as encryption key
 
 ### Prompt Structure
 
-1. **System Prompt** (`SYSTEM_PROMPT` in `analyzer.py`):
+1. **System Prompt** (`SYSTEM_PROMPT` in `reviewers/llm.py`):
    - Generic code reviewer instructions
    - JSON output schema
 
@@ -159,12 +193,12 @@ CocoIndex provides semantic code search for OpenCode agents:
 
 ### Components
 
-1. **Indexer** (`cocoindex_indexer.py`):
+1. **Indexer** (`indexing/indexer.py`):
    - Chunks code files
    - Generates embeddings locally
    - Stores in PostgreSQL
 
-2. **MCP Server** (`mcp_server.py`):
+2. **MCP Server** (`indexing/mcp.py`):
    - FastMCP-based server
    - Provides `codebase_search` and `codebase_status` tools
    - Runs as stdio MCP server for OpenCode
@@ -296,7 +330,7 @@ bb-review analyze {review_id} --dry-run --dump-response /tmp/llm.txt
    - Verify prompt format
 
 4. **Wrong diff content**:
-   - Verify URL format in `rb_client.py:_fetch_raw_diff`
+   - Verify URL format in `rr/rb_client.py:_fetch_raw_diff`
    - Check diff revision number
 
 5. **CocoIndex issues**:

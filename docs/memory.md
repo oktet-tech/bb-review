@@ -33,3 +33,29 @@ Before picking new work, `queue process` resets any items stuck in `in_progress`
 ### analysis_id retrieved after save (not returned from analyze)
 
 Rather than modifying the existing `process_review()`/`run_analysis()` flow to return a DB ID, the queue process queries `review_db.get_analysis_by_rr()` after the analysis is saved. This keeps the analyze code untouched.
+
+## Queue TUI Screen (Feb 2026)
+
+### QueueListScreen owns the DB handle directly
+
+The screen performs mutations (status changes, deletes) without dismissing itself. This avoids the dismiss/re-push cycle that ExportApp uses and makes shortcuts feel instant. The screen calls `app.refresh_items()` to re-query, then repopulates the table in-place.
+
+### Shortcuts act on selection or cursor
+
+Keyboard shortcuts (n/i/f/d) apply to all selected items if a selection exists, otherwise to the current cursor item. This matches common TUI conventions (e.g., mutt) and avoids requiring explicit selection for single-item operations.
+
+### Action picker modal reuses the same callback pattern
+
+QueueActionPickerScreen dismisses with `(action_key, rr_ids)` tuples. The list screen handles the result in `_on_action_picked` without going through the app. This keeps the flow contained within the screen since QueueApp is intentionally minimal.
+
+### --queue flag on interactive, not a separate command
+
+Queue triage is launched via `bb-review interactive --queue` rather than a separate top-level command. This keeps the CLI surface small and groups all TUI modes under one command. The `--queue-status` option filters queue items (separate from `--status` which filters analyses).
+
+### Prune only removes prunable statuses
+
+`sync --prune` only deletes items with status todo/next/ignore. Items that are in_progress, done, or failed are kept because they represent active or completed work that should remain visible regardless of RB state.
+
+### delete_item is a hard delete, not a soft status
+
+Queue items are fully removed from the DB rather than marked with a "deleted" status. The queue is a working list, not an audit log -- removed items have no value. This keeps the table clean and list queries fast.
