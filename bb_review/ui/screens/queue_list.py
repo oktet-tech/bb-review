@@ -139,9 +139,7 @@ class QueueListScreen(Screen):
 
         for item in self.items:
             icon = STATUS_ICONS.get(item.status.value, "?")
-            summary = (item.summary or "")[:50]
-            if item.summary and len(item.summary) > 50:
-                summary += "..."
+            summary = item.summary or ""
 
             # Dim styling for ignore/done
             if item.status in DIM_STATUSES:
