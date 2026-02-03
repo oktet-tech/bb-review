@@ -22,7 +22,7 @@ VALID_TRANSITIONS: dict[QueueStatus, set[QueueStatus]] = {
     QueueStatus.NEXT: {QueueStatus.IN_PROGRESS, QueueStatus.IGNORE, QueueStatus.TODO},
     QueueStatus.IGNORE: {QueueStatus.NEXT},
     QueueStatus.IN_PROGRESS: {QueueStatus.DONE, QueueStatus.FAILED},
-    QueueStatus.FAILED: {QueueStatus.NEXT},
+    QueueStatus.FAILED: {QueueStatus.NEXT, QueueStatus.IGNORE},
     QueueStatus.DONE: {QueueStatus.TODO},
 }
 
