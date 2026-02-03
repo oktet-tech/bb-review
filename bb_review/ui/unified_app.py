@@ -37,6 +37,7 @@ class UnifiedApp(App):
     TITLE = "BB Review Interactive"
 
     BINDINGS = [
+        Binding("question_mark", "command_palette", "Commands"),
         Binding("ctrl+t", "switch_tab", "Switch Tab", show=False),
         Binding("1", "show_queue", "Queue", show=False),
         Binding("2", "show_reviews", "Reviews", show=False),
