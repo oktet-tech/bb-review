@@ -1,8 +1,7 @@
 """Interactive TUI components for bb_review."""
 
-from .export_app import ExportApp
 from .models import ExportableAnalysis, SelectableComment
-from .queue_app import QueueApp
+from .unified_app import UnifiedApp
 
 
-__all__ = ["ExportApp", "ExportableAnalysis", "QueueApp", "SelectableComment"]
+__all__ = ["ExportableAnalysis", "SelectableComment", "UnifiedApp"]
