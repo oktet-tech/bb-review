@@ -15,6 +15,10 @@ from ..models import PendingReview
 logger = logging.getLogger(__name__)
 
 
+class AuthenticationError(RuntimeError):
+    """Raised when authentication to Review Board fails."""
+
+
 @dataclass
 class DiffInfo:
     """Information about a diff."""
@@ -180,6 +184,11 @@ class ReviewBoardClient:
         """Initialize Kerberos session without RB login."""
         status, body = self._curl(f"{self.url}/api/")
         logger.debug(f"Kerberos init: status={status}")
+        if status == 401:
+            raise AuthenticationError(
+                "Kerberos authentication failed (HTTP 401). "
+                "Your ticket may be expired or missing -- run `kinit` to obtain a new one."
+            )
 
     def _rb_login(self) -> None:
         """Login to Review Board using form-based login (like browser).
@@ -195,6 +204,11 @@ class ReviewBoardClient:
             accept="text/html",
         )
 
+        if status == 401 and self.use_kerberos:
+            raise AuthenticationError(
+                "Kerberos authentication failed (HTTP 401). "
+                "Your ticket may be expired or missing -- run `kinit` to obtain a new one."
+            )
         if status != 200:
             raise RuntimeError(f"Failed to get login page: HTTP {status}")
 
