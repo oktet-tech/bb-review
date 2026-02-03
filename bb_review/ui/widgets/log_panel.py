@@ -10,7 +10,7 @@ class LogPanel(Container):
 
     DEFAULT_CSS = """
     LogPanel {
-        height: auto;
+        height: 12;
         max-height: 40%;
         display: none;
         border-top: solid $primary;
@@ -30,8 +30,6 @@ class LogPanel(Container):
 
     LogPanel RichLog {
         height: 1fr;
-        min-height: 5;
-        max-height: 20;
     }
     """
 
