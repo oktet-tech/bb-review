@@ -37,7 +37,9 @@ class UnifiedApp(App):
     TITLE = "BB Review Interactive"
 
     BINDINGS = [
-        Binding("tab", "switch_tab", "Switch Tab"),
+        Binding("ctrl+t", "switch_tab", "Switch Tab", show=False),
+        Binding("1", "show_queue", "Queue", show=False),
+        Binding("2", "show_reviews", "Reviews", show=False),
         Binding("l", "toggle_log", "Log"),
         Binding("c", "clear_log", "Clear Log", show=False),
         Binding("q", "quit_app", "Quit"),
@@ -105,8 +107,8 @@ class UnifiedApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
         yield Tabs(
-            Tab("Queue", id=TAB_QUEUE),
-            Tab("Reviews", id=TAB_REVIEWS),
+            Tab("[1] Queue", id=TAB_QUEUE),
+            Tab("[2] Reviews", id=TAB_REVIEWS),
         )
         with Vertical(id="main-content"):
             with ContentSwitcher(initial=self._initial_tab):
@@ -155,6 +157,12 @@ class UnifiedApp(App):
             tabs.active = TAB_REVIEWS
         else:
             tabs.active = TAB_QUEUE
+
+    def action_show_queue(self) -> None:
+        self.query_one(Tabs).active = TAB_QUEUE
+
+    def action_show_reviews(self) -> None:
+        self.query_one(Tabs).active = TAB_REVIEWS
 
     def _focus_active_pane(self) -> None:
         switcher = self.query_one(ContentSwitcher)
