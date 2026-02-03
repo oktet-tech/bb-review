@@ -217,9 +217,10 @@ class QueueListScreen(Screen):
 
     def _refresh(self) -> None:
         """Re-query items and repopulate table."""
-        # Ask the app to refresh items (it holds the filter params)
         if hasattr(self.app, "refresh_items"):
             self.items = self.app.refresh_items()
+        visible_ids = {item.review_request_id for item in self.items}
+        self.selected &= visible_ids
         self._populate_table()
         self._update_status()
 
