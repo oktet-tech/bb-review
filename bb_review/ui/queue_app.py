@@ -31,6 +31,7 @@ class QueueApp(App):
         items: list[QueueItem],
         queue_db: QueueDatabase,
         filter_status: QueueStatus | None = None,
+        exclude_statuses: list[QueueStatus] | None = None,
         filter_repo: str | None = None,
         filter_limit: int = 50,
     ):
@@ -38,6 +39,7 @@ class QueueApp(App):
         self.initial_items = items
         self.queue_db = queue_db
         self._filter_status = filter_status
+        self._exclude_statuses = exclude_statuses
         self._filter_repo = filter_repo
         self._filter_limit = filter_limit
 
@@ -45,6 +47,7 @@ class QueueApp(App):
         """Re-query queue items with stored filters."""
         return self.queue_db.list_items(
             status=self._filter_status,
+            exclude_statuses=self._exclude_statuses,
             repository=self._filter_repo,
             limit=self._filter_limit,
         )

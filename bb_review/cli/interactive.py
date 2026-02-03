@@ -147,6 +147,7 @@ def _run_queue_tui(
         items=items,
         queue_db=queue_db,
         filter_status=status_filter,
+        exclude_statuses=exclude_statuses,
         filter_repo=repository,
         filter_limit=limit,
     )
