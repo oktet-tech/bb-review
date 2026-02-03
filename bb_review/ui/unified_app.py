@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.widgets import ContentSwitcher, Footer, Header, Tab, Tabs
-from textual.work import work
 
 from bb_review.db.models import AnalysisListItem
 from bb_review.db.queue_models import QueueItem, QueueStatus

@@ -158,17 +158,23 @@ class TestQueueShow:
 
 
 class TestInteractiveQueue:
-    def test_interactive_queue_no_items(self, runner: CliRunner, config_with_db: Path):
-        result = runner.invoke(main, ["--config", str(config_with_db), "interactive", "--queue"])
-        assert result.exit_code == 0
-        assert "No queue items found" in result.output
+    def test_interactive_queue_launches_unified(self, runner: CliRunner, config_with_db: Path):
+        """Unified TUI launches even with empty queue (user can sync or switch tabs)."""
+        from unittest.mock import patch
+
+        with patch("bb_review.ui.unified_app.UnifiedApp.run"):
+            result = runner.invoke(main, ["--config", str(config_with_db), "interactive", "--queue"])
+            assert result.exit_code == 0
 
     def test_interactive_queue_status_filter(self, runner: CliRunner, config_with_db: Path):
-        result = runner.invoke(
-            main, ["--config", str(config_with_db), "interactive", "--queue", "--queue-status", "todo"]
-        )
-        assert result.exit_code == 0
-        assert "No queue items found" in result.output
+        from unittest.mock import patch
+
+        with patch("bb_review.ui.unified_app.UnifiedApp.run"):
+            result = runner.invoke(
+                main,
+                ["--config", str(config_with_db), "interactive", "--queue", "--queue-status", "todo"],
+            )
+            assert result.exit_code == 0
 
     def test_interactive_queue_invalid_status(self, runner: CliRunner, config_with_db: Path):
         result = runner.invoke(

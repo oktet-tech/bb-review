@@ -88,8 +88,8 @@ class ReviewsPane(Container):
     }
     """
 
-    def __init__(self, analyses: list[AnalysisListItem]) -> None:
-        super().__init__()
+    def __init__(self, analyses: list[AnalysisListItem], *, id: str | None = None) -> None:
+        super().__init__(id=id)
         self.analyses = analyses
         self.selected: set[int] = set()
 

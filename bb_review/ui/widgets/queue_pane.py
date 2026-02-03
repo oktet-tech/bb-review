@@ -96,8 +96,10 @@ class QueuePane(Container):
         self,
         items: list[QueueItem],
         queue_db: QueueDatabase,
+        *,
+        id: str | None = None,
     ) -> None:
-        super().__init__()
+        super().__init__(id=id)
         self.items = items
         self.queue_db = queue_db
         self.selected: set[int] = set()
