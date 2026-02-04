@@ -267,6 +267,7 @@ class SubmitOptionsScreen(ModalScreen[str | None]):
     BINDINGS = [
         Binding("s", "submit_draft", "Submit (draft)", show=False),
         Binding("p", "publish", "Publish", show=False),
+        Binding("!", "ship_it", "Ship It + Publish", show=False),
         Binding("enter", "select", "Select", priority=True),
         Binding("escape", "cancel", "Cancel"),
     ]
@@ -309,6 +310,7 @@ class SubmitOptionsScreen(ModalScreen[str | None]):
             yield OptionList(
                 Option("\\[S] Submit as draft (only visible to you)", id="draft"),
                 Option("\\[P] Publish (visible to everyone)", id="publish"),
+                Option("\\[!] Ship It + Publish (approve)", id="ship_it"),
                 None,  # Separator
                 Option("\\[Esc] Cancel", id="cancel"),
                 id="options-list",
@@ -333,7 +335,7 @@ class SubmitOptionsScreen(ModalScreen[str | None]):
 
     def _select_option(self, option_id: str) -> None:
         """Process the selected option."""
-        if option_id in ("draft", "publish"):
+        if option_id in ("draft", "publish", "ship_it"):
             self.dismiss(option_id)
         elif option_id == "cancel":
             self.dismiss(None)
@@ -345,6 +347,10 @@ class SubmitOptionsScreen(ModalScreen[str | None]):
     def action_publish(self) -> None:
         """Publish (visible to everyone)."""
         self.dismiss("publish")
+
+    def action_ship_it(self) -> None:
+        """Ship It + Publish (approve the review)."""
+        self.dismiss("ship_it")
 
     def action_cancel(self) -> None:
         """Cancel submission."""

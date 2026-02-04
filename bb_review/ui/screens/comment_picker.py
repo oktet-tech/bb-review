@@ -599,9 +599,8 @@ class CommentPickerScreen(Screen):
             # Cancelled
             return
 
-        # Return result with submit mode (draft or publish)
-        publish = option == "publish"
-        self.dismiss(("submit", analyses, publish))
+        # Pass the option string through (draft, publish, or ship_it)
+        self.dismiss(("submit", analyses, option))
 
     def action_back(self) -> None:
         """Go back to analysis selection."""

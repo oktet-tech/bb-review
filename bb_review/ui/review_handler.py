@@ -115,12 +115,14 @@ class ReviewHandler:
             self._notify_refresh()
             return
 
-        # Submit action: ("submit", analyses, publish_flag)
+        # Submit action: ("submit", analyses, option_str)
         if isinstance(result, tuple) and len(result) >= 2 and result[0] == "submit":
             analyses = result[1]
-            publish = result[2] if len(result) > 2 else False
+            option = result[2] if len(result) > 2 else "draft"
             if analyses:
-                self._submit_from_comment_picker(analyses[0], publish=publish)
+                publish = option in ("publish", "ship_it")
+                force_ship_it = option == "ship_it"
+                self._submit_from_comment_picker(analyses[0], publish=publish, force_ship_it=force_ship_it)
             return
 
         self._do_export(result)
@@ -256,10 +258,13 @@ class ReviewHandler:
         if option is None or analysis_id is None:
             return
 
-        publish = option == "publish"
-        self._do_submit_analysis(analysis_id, publish=publish)
+        publish = option in ("publish", "ship_it")
+        force_ship_it = option == "ship_it"
+        self._do_submit_analysis(analysis_id, publish=publish, force_ship_it=force_ship_it)
 
-    def _do_submit_analysis(self, analysis_id: int, publish: bool = False) -> None:
+    def _do_submit_analysis(
+        self, analysis_id: int, publish: bool = False, force_ship_it: bool = False
+    ) -> None:
         analysis = self.db.get_analysis(analysis_id)
         if not analysis:
             self.app.notify(f"Analysis #{analysis_id} not found", severity="error")
@@ -320,7 +325,7 @@ class ReviewHandler:
             )
             rb_client.connect()
 
-            ship_it = len(inline_comments) == 0 and not analysis.has_critical_issues
+            ship_it = force_ship_it or (len(inline_comments) == 0 and not analysis.has_critical_issues)
             rb_client.post_review(
                 review_request_id=analysis.review_request_id,
                 body_top=body_top,
@@ -331,7 +336,7 @@ class ReviewHandler:
 
             self.db.mark_submitted(analysis_id)
 
-            mode = "published" if publish else "draft"
+            mode = "Ship It + published" if force_ship_it else ("published" if publish else "draft")
             self.app.notify(
                 f"Submitted review for RR #{analysis.review_request_id} as {mode}",
                 severity="information",
@@ -347,6 +352,7 @@ class ReviewHandler:
         self,
         exportable: ExportableAnalysis,
         publish: bool = False,
+        force_ship_it: bool = False,
     ) -> None:
         """Submit an analysis with selected/edited comments from comment picker."""
         if not self.config:
@@ -396,7 +402,7 @@ class ReviewHandler:
             )
             rb_client.connect()
 
-            ship_it = len(inline_comments) == 0 and not analysis.has_critical_issues
+            ship_it = force_ship_it or (len(inline_comments) == 0 and not analysis.has_critical_issues)
             rb_client.post_review(
                 review_request_id=analysis.review_request_id,
                 body_top=body_top,
@@ -407,7 +413,7 @@ class ReviewHandler:
 
             self.db.mark_submitted(analysis.id)
 
-            mode = "published" if publish else "draft"
+            mode = "Ship It + published" if force_ship_it else ("published" if publish else "draft")
             self.app.notify(
                 f"Submitted review for RR #{analysis.review_request_id} as {mode} "
                 f"({len(inline_comments)} comments)",
