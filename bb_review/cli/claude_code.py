@@ -14,7 +14,11 @@ from ..reviewers import (
     extract_changed_files,
     filter_diff_by_paths,
 )
-from ..reviewers.claude_code import build_review_prompt, run_claude_review
+from ..reviewers.claude_code import (
+    build_review_prompt,
+    build_series_review_prompt,
+    run_claude_review,
+)
 from . import get_config, main
 from ._review_runner import run_review_command
 from .utils import REVIEW_ID
@@ -73,6 +77,11 @@ logger = logging.getLogger(__name__)
     help="Start reviewing from this RR (earlier patches applied as context only)",
 )
 @click.option("--verbose", "-V", is_flag=True, help="Detailed multi-paragraph explanations")
+@click.option(
+    "--series",
+    is_flag=True,
+    help="Review entire patch series as one unit (implies --chain)",
+)
 @click.pass_context
 def claude_cmd(
     ctx: click.Context,
@@ -93,6 +102,7 @@ def claude_cmd(
     mcp_config: Path | None,
     review_from: int | None,
     verbose: bool,
+    series: bool,
 ) -> None:
     """Analyze a review using Claude Code CLI.
 
@@ -163,6 +173,21 @@ def claude_cmd(
             verbose=verbose,
         )
 
+    def series_reviewer(reviews, base_ref, repo_path, repo_config) -> str:
+        return run_claude_for_series(
+            reviews,
+            base_ref,
+            repo_path,
+            repo_config,
+            model=model,
+            timeout=timeout,
+            max_turns=max_turns,
+            binary_path=binary_path,
+            allowed_tools=allowed_tools,
+            mcp_config=mcp_config,
+            verbose=verbose,
+        )
+
     run_review_command(
         config=config,
         review_id=review_id,
@@ -183,6 +208,8 @@ def claude_cmd(
         review_from=review_from,
         default_model=cc_config.model,
         analysis_method="claude_code",
+        series=series,
+        series_reviewer_fn=series_reviewer if series else None,
     )
 
 
@@ -247,6 +274,65 @@ def run_claude_for_review(
             binary_path=binary_path,
             allowed_tools=allowed_tools,
             at_reviewed_state=at_reviewed_state,
+            mcp_config=mcp_config,
+        )
+    except ClaudeCodeTimeoutError as e:
+        raise click.ClickException(f"Claude Code timed out after {timeout}s") from e
+    except ClaudeCodeError as e:
+        raise click.ClickException(str(e)) from e
+
+
+def run_claude_for_series(
+    reviews: list,
+    base_ref: str,
+    repo_path: Path,
+    repo_config,
+    model: str | None,
+    timeout: int,
+    max_turns: int,
+    binary_path: str,
+    allowed_tools: list[str] | None,
+    mcp_config: Path | None = None,
+    verbose: bool = False,
+) -> str:
+    """Run Claude Code analysis for an entire patch series."""
+    guidelines = load_guidelines(repo_path)
+
+    warnings = validate_guidelines(guidelines)
+    for warning in warnings:
+        click.echo(f"    Warning: {warning}", err=True)
+
+    guidelines_context = ""
+    if guidelines.context:
+        guidelines_context = guidelines.context
+    if guidelines.custom_rules:
+        if guidelines_context:
+            guidelines_context += "\n\nCustom rules:\n"
+        guidelines_context += "\n".join(f"- {rule}" for rule in guidelines.custom_rules)
+
+    focus_areas = [f.value for f in guidelines.focus]
+    prompt = build_series_review_prompt(
+        repo_name=repo_config.name,
+        reviews=reviews,
+        base_ref=base_ref,
+        guidelines_context=guidelines_context,
+        focus_areas=focus_areas,
+        verbose=verbose,
+    )
+
+    click.echo("    Running Claude Code series analysis...")
+
+    try:
+        return run_claude_review(
+            repo_path=repo_path,
+            patch_content="",
+            prompt=prompt,
+            model=model,
+            timeout=timeout,
+            max_turns=max_turns,
+            binary_path=binary_path,
+            allowed_tools=allowed_tools,
+            at_reviewed_state=True,
             mcp_config=mcp_config,
         )
     except ClaudeCodeTimeoutError as e:

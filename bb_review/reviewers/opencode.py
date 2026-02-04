@@ -170,6 +170,104 @@ Explain the root cause in detail, not just the symptom."""
     return prompt
 
 
+def build_series_review_prompt(
+    repo_name: str,
+    reviews: list,
+    base_ref: str,
+    guidelines_context: str,
+    focus_areas: list[str],
+    verbose: bool = False,
+) -> str:
+    """Build a prompt for reviewing an entire patch series as one unit.
+
+    Args:
+        repo_name: Name of the repository.
+        reviews: List of ChainedReview objects in the series.
+        base_ref: Git ref for the base (before all patches).
+        guidelines_context: Context from .ai-review.yaml.
+        focus_areas: List of areas to focus on (bugs, security, etc.).
+        verbose: If True, request detailed multi-paragraph explanations.
+
+    Returns:
+        Formatted prompt string.
+    """
+    focus_str = ", ".join(focus_areas) if focus_areas else "bugs, security, performance"
+
+    patches_list = []
+    for r in reviews:
+        entry = f"- r/{r.review_request_id}: {r.summary}"
+        if r.description:
+            # Indent description under the patch entry
+            desc_lines = r.description.strip().split("\n")
+            entry += "\n" + "\n".join(f"  {line}" for line in desc_lines[:5])
+        patches_list.append(entry)
+    patches_text = "\n".join(patches_list)
+
+    prompt = f"""You are reviewing a patch series ({len(reviews)} commits) applied to repository {repo_name}.
+
+All patches have been applied as commits on top of {base_ref}.
+
+Patches in order:
+{patches_text}
+
+To review effectively:
+1. Run `git log --oneline {base_ref}..HEAD` to see the commit history
+2. Run `git diff {base_ref}..HEAD` to see the full combined diff
+3. For per-patch diffs, use `git log -p {base_ref}..HEAD`
+4. Read the changed files directly for full context and correct line numbers
+5. Line numbers in your findings must match the actual file line numbers
+"""
+
+    if guidelines_context:
+        prompt += f"""
+Guidelines:
+{guidelines_context}
+"""
+
+    prompt += f"""
+Focus areas: {focus_str}
+
+Review this as a cohesive patch series. Look for:
+- Bugs and logic errors within and across patches
+- Security vulnerabilities
+- Performance issues
+- Cross-patch interactions and consistency
+- Architectural coherence of the series as a whole
+
+For each issue found, use this format:
+
+### Issue: <brief title>
+- **File:** `path/to/file.c`
+- **Line:** <actual line number in the file>
+- **Severity:** low/medium/high/critical
+- **Type:** bug/security/performance/style/architecture
+- **Comment:** <description of the issue>
+- **Suggestion:** <optional suggested fix>
+
+For general observations that don't apply to a specific line, omit the Line field.
+
+After listing all issues, provide a brief summary of the overall series quality.
+
+Do not suggest changes outside the scope of the review.
+Output ONLY the structured review (### Issue blocks and summary). \
+Do not include introductory text, thinking, or narration of your process."""
+
+    if verbose:
+        prompt += """
+
+Write thorough, multi-paragraph explanations in each Comment field. \
+Include step-by-step reasoning, concrete examples, memory layouts, \
+and control flow analysis where relevant. \
+Explain the root cause in detail, not just the symptom."""
+    else:
+        prompt = prompt.replace(
+            "Do not suggest changes",
+            "Be concise but thorough. Do not suggest changes",
+        )
+
+    return prompt
+
+
 def run_opencode_review(
     repo_path: Path,
     patch_content: str,

@@ -17,6 +17,7 @@ from ..reviewers import (
     run_opencode_agent,
     run_opencode_review,
 )
+from ..reviewers.opencode import build_series_review_prompt
 from . import get_config, main
 from ._review_runner import (
     run_review_command,
@@ -71,6 +72,11 @@ logger = logging.getLogger(__name__)
     help="Start reviewing from this RR (earlier patches applied as context only)",
 )
 @click.option("--verbose", "-V", is_flag=True, help="Detailed multi-paragraph explanations")
+@click.option(
+    "--series",
+    is_flag=True,
+    help="Review entire patch series as one unit (implies --chain)",
+)
 @click.pass_context
 def opencode_cmd(
     ctx: click.Context,
@@ -89,6 +95,7 @@ def opencode_cmd(
     keep_branch: bool,
     review_from: int | None,
     verbose: bool,
+    series: bool,
 ) -> None:
     """Analyze a review using OpenCode agent.
 
@@ -146,6 +153,18 @@ def opencode_cmd(
             verbose=verbose,
         )
 
+    def series_reviewer(reviews, base_ref, repo_path, repo_config) -> str:
+        return run_opencode_for_series(
+            reviews,
+            base_ref,
+            repo_path,
+            repo_config,
+            model=model,
+            timeout=timeout,
+            binary_path=binary_path,
+            verbose=verbose,
+        )
+
     run_review_command(
         config=config,
         review_id=review_id,
@@ -166,6 +185,8 @@ def opencode_cmd(
         review_from=review_from,
         default_model=config.opencode.model,
         analysis_method="opencode",
+        series=series,
+        series_reviewer_fn=series_reviewer if series else None,
     )
 
 
@@ -279,3 +300,57 @@ def _run_api_review(
                 tmp_file.unlink()
             except Exception:
                 pass
+
+
+def run_opencode_for_series(
+    reviews: list,
+    base_ref: str,
+    repo_path: Path,
+    repo_config,
+    model: str | None,
+    timeout: int,
+    binary_path: str | None,
+    verbose: bool = False,
+) -> str:
+    """Run OpenCode analysis for an entire patch series."""
+    guidelines = load_guidelines(repo_path)
+
+    warnings = validate_guidelines(guidelines)
+    for warning in warnings:
+        click.echo(f"    Warning: {warning}", err=True)
+
+    guidelines_context = ""
+    if guidelines.context:
+        guidelines_context = guidelines.context
+    if guidelines.custom_rules:
+        if guidelines_context:
+            guidelines_context += "\n\nCustom rules:\n"
+        guidelines_context += "\n".join(f"- {rule}" for rule in guidelines.custom_rules)
+
+    focus_areas = [f.value for f in guidelines.focus]
+    prompt = build_series_review_prompt(
+        repo_name=repo_config.name,
+        reviews=reviews,
+        base_ref=base_ref,
+        guidelines_context=guidelines_context,
+        focus_areas=focus_areas,
+        verbose=verbose,
+    )
+
+    click.echo("    Running OpenCode series analysis...")
+
+    try:
+        return run_opencode_review(
+            repo_path=repo_path,
+            patch_content="",
+            prompt=prompt,
+            review_id=reviews[-1].review_request_id,
+            model=model,
+            timeout=timeout,
+            binary_path=binary_path,
+            at_reviewed_state=True,
+        )
+    except OpenCodeTimeoutError as e:
+        raise click.ClickException(f"OpenCode timed out after {timeout}s") from e
+    except OpenCodeError as e:
+        raise click.ClickException(str(e)) from e
