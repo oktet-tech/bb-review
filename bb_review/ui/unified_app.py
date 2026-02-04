@@ -451,21 +451,23 @@ class UnifiedApp(App):
     @work(thread=True, exclusive=True, group="submit")
     def run_submit(
         self,
-        review_request_id: int,
-        body_top: str,
-        inline_comments: list[dict],
-        ship_it: bool,
+        submissions: list[dict],
         publish: bool,
         force_ship_it: bool,
-        analysis_id: int,
     ) -> None:
-        """Background worker: post a review to Review Board."""
+        """Background worker: post one or more reviews to Review Board.
+
+        Each entry in submissions must have keys: review_request_id,
+        body_top, inline_comments, ship_it, analysis_id.
+        """
         if self._config is None or self._review_db is None:
             self.call_from_thread(self.notify, "Config not available", severity="error")
             return
 
         self.call_from_thread(self.query_one(LogPanel).show)
-        self.call_from_thread(self._log, f"Submitting review for RR #{review_request_id}...")
+        total = len(submissions)
+        label = f"Submitting {total} review(s)..." if total > 1 else "Submitting review..."
+        self.call_from_thread(self._log, label)
 
         try:
             from bb_review.rr import ReviewBoardClient
@@ -480,25 +482,51 @@ class UnifiedApp(App):
             )
             rb_client.connect()
             self.call_from_thread(self._log, "Connected to Review Board")
-
-            rb_client.post_review(
-                review_request_id=review_request_id,
-                body_top=body_top,
-                comments=inline_comments,
-                ship_it=ship_it,
-                publish=publish,
-            )
-
-            self._review_db.mark_submitted(analysis_id)
-
-            mode = "Ship It + published" if force_ship_it else ("published" if publish else "draft")
-            msg = f"Submitted review for RR #{review_request_id} as {mode} ({len(inline_comments)} comments)"
-            self.call_from_thread(self._log, msg)
-            self.call_from_thread(self.notify, msg, severity="information")
-
         except Exception as e:
-            logger.exception("Failed to submit review")
+            logger.exception("Failed to connect to ReviewBoard")
             self.call_from_thread(self._log, f"Submit FAILED: {e}")
             self.call_from_thread(self.notify, f"Submit failed: {e}", severity="error")
+            return
+
+        mode = "Ship It + published" if force_ship_it else ("published" if publish else "draft")
+        succeeded = 0
+        failed = 0
+
+        for sub in submissions:
+            rr_id = sub["review_request_id"]
+            inline_comments = sub["inline_comments"]
+            try:
+                rb_client.post_review(
+                    review_request_id=rr_id,
+                    body_top=sub["body_top"],
+                    comments=inline_comments,
+                    ship_it=sub["ship_it"],
+                    publish=publish,
+                )
+                self._review_db.mark_submitted(sub["analysis_id"])
+                succeeded += 1
+                self.call_from_thread(
+                    self._log,
+                    f"  RR #{rr_id}: {mode} ({len(inline_comments)} comments)",
+                )
+            except Exception as e:
+                logger.exception(f"Failed to submit review for RR #{rr_id}")
+                failed += 1
+                self.call_from_thread(self._log, f"  RR #{rr_id} FAILED: {e}")
+
+        if total == 1:
+            if succeeded:
+                self.call_from_thread(
+                    self.notify,
+                    f"Submitted RR #{submissions[0]['review_request_id']} as {mode}",
+                    severity="information",
+                )
+            else:
+                self.call_from_thread(self.notify, "Submit failed", severity="error")
+        else:
+            summary = f"Done: {succeeded} submitted, {failed} failed"
+            self.call_from_thread(self._log, summary)
+            severity = "information" if failed == 0 else "warning"
+            self.call_from_thread(self.notify, summary, severity=severity)
 
         self.call_from_thread(self.refresh_reviews_pane)

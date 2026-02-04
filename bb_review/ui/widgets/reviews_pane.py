@@ -18,7 +18,7 @@ from bb_review.db.models import AnalysisListItem
 class ReviewsAction:
     """Describes what the user wants to do with one or more analyses."""
 
-    type: Literal["batch_export", "single_action", "batch_action", "open_analysis"]
+    type: Literal["batch_export", "batch_submit", "single_action", "batch_action", "open_analysis"]
     ids: list[int] | None = None
     analysis_id: int | None = None
 
@@ -43,6 +43,7 @@ class ReviewsPane(Container):
         Binding("enter", "open_analysis", "Open", priority=True),
         Binding("x", "show_actions", "Actions"),
         Binding("p", "proceed", "Export Selected"),
+        Binding("ctrl+s", "submit_selected", "Submit", priority=True),
     ]
 
     DEFAULT_CSS = """
@@ -229,6 +230,18 @@ class ReviewsPane(Container):
                 self.post_message(
                     self.ActionRequested(ReviewsAction(type="single_action", analysis_id=analysis_id))
                 )
+
+    def action_submit_selected(self) -> None:
+        if self.selected:
+            ids = list(self.selected)
+        else:
+            table = self.query_one("#reviews-table", DataTable)
+            if table.cursor_row is not None and table.row_count > 0:
+                ids = [self.analyses[table.cursor_row].id]
+            else:
+                self.app.notify("No analyses selected", severity="warning")
+                return
+        self.post_message(self.ActionRequested(ReviewsAction(type="batch_submit", ids=ids)))
 
     def action_proceed(self) -> None:
         if not self.selected:

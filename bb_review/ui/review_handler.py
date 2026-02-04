@@ -59,7 +59,7 @@ class ReviewHandler:
         self.output_path = output_path
         self._batch_action_ids: list[int] = []
         self._pending_delete_ids: list[int] = []
-        self._pending_submit_analysis_id: int | None = None
+        self._pending_submit_ids: list[int] = []
 
     # -- Public entry point --
 
@@ -73,6 +73,8 @@ class ReviewHandler:
 
         if action.type == "batch_export":
             self._start_batch_export(action.ids or [])
+        elif action.type == "batch_submit":
+            self._submit_analyses(action.ids or [])
         elif action.type == "open_analysis":
             if action.analysis_id:
                 self._start_batch_export([action.analysis_id])
@@ -237,38 +239,38 @@ class ReviewHandler:
         if not analysis_ids:
             return
 
-        if len(analysis_ids) > 1:
-            self.app.notify(
-                "Batch submission not supported. Please submit one at a time.",
-                severity="warning",
-            )
-            return
-
         if not self.config:
             self.app.notify("Config not available for submission", severity="error")
             return
 
-        self._pending_submit_analysis_id = analysis_ids[0]
+        self._pending_submit_ids = list(analysis_ids)
         self.app.push_screen(SubmitOptionsScreen(), callback=self._on_submit_option_chosen)
 
     def _on_submit_option_chosen(self, option: str | None) -> None:
-        analysis_id = self._pending_submit_analysis_id
-        self._pending_submit_analysis_id = None
+        ids = self._pending_submit_ids
+        self._pending_submit_ids = []
 
-        if option is None or analysis_id is None:
+        if option is None or not ids:
             return
 
         publish = option in ("publish", "ship_it")
         force_ship_it = option == "ship_it"
-        self._do_submit_analysis(analysis_id, publish=publish, force_ship_it=force_ship_it)
 
-    def _do_submit_analysis(
-        self, analysis_id: int, publish: bool = False, force_ship_it: bool = False
-    ) -> None:
+        submissions = []
+        for analysis_id in ids:
+            entry = self._prepare_submission(analysis_id, force_ship_it)
+            if entry:
+                submissions.append(entry)
+
+        if submissions:
+            self.app.run_submit(submissions, publish=publish, force_ship_it=force_ship_it)
+
+    def _prepare_submission(self, analysis_id: int, force_ship_it: bool) -> dict | None:
+        """Build submission payload from a stored analysis. Returns None on error."""
         analysis = self.db.get_analysis(analysis_id)
         if not analysis:
             self.app.notify(f"Analysis #{analysis_id} not found", severity="error")
-            return
+            return None
 
         from bb_review.models import ReviewComment, ReviewFocus, Severity
 
@@ -312,16 +314,13 @@ class ReviewHandler:
                 }
             )
 
-        ship_it = force_ship_it or (len(inline_comments) == 0 and not analysis.has_critical_issues)
-        self.app.run_submit(
-            review_request_id=analysis.review_request_id,
-            body_top=body_top,
-            inline_comments=inline_comments,
-            ship_it=ship_it,
-            publish=publish,
-            force_ship_it=force_ship_it,
-            analysis_id=analysis_id,
-        )
+        return {
+            "review_request_id": analysis.review_request_id,
+            "body_top": body_top,
+            "inline_comments": inline_comments,
+            "ship_it": force_ship_it or (len(inline_comments) == 0 and not analysis.has_critical_issues),
+            "analysis_id": analysis_id,
+        }
 
     def _submit_from_comment_picker(
         self,
@@ -366,13 +365,17 @@ class ReviewHandler:
 
         ship_it = force_ship_it or (len(inline_comments) == 0 and not analysis.has_critical_issues)
         self.app.run_submit(
-            review_request_id=analysis.review_request_id,
-            body_top=body_top,
-            inline_comments=inline_comments,
-            ship_it=ship_it,
+            [
+                {
+                    "review_request_id": analysis.review_request_id,
+                    "body_top": body_top,
+                    "inline_comments": inline_comments,
+                    "ship_it": ship_it,
+                    "analysis_id": analysis.id,
+                }
+            ],
             publish=publish,
             force_ship_it=force_ship_it,
-            analysis_id=analysis.id,
         )
 
     # -- Export --
