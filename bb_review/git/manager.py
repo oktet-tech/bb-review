@@ -383,6 +383,17 @@ class RepoManager:
 
         return "\n".join(result_lines)
 
+    def _reset_working_tree(self, repo: Repo, repo_name: str) -> None:
+        """Best-effort reset of dirty working tree left by a previous crash."""
+        try:
+            if not repo.is_dirty(untracked_files=True):
+                return
+            logger.warning(f"{repo_name}: dirty working tree detected, resetting")
+            repo.git.reset("--hard", "HEAD")
+            repo.git.clean("-fd")
+        except Exception as e:
+            logger.warning(f"{repo_name}: failed to reset working tree: {e}")
+
     @contextmanager
     def checkout_context(
         self,
@@ -414,8 +425,10 @@ class RepoManager:
 
         Raises:
             PatchApplyError: If patch fails to apply and require_patch is True.
+            RepoManagerError: If checkout fails.
         """
         repo = self.ensure_clone(repo_name)
+        self._reset_working_tree(repo, repo_name)
         original_ref = repo.head.commit.hexsha
         used_target = False
         patch_applied = False
@@ -425,7 +438,12 @@ class RepoManager:
             # Try to use target_commit if available and exists in repo
             if target_commit and self.commit_exists(repo_name, target_commit):
                 logger.info(f"Using target commit {target_commit[:12]} (actual reviewed commit)")
-                repo.git.checkout(target_commit)
+                try:
+                    repo.git.checkout(target_commit)
+                except GitCommandError as e:
+                    raise RepoManagerError(
+                        f"Failed to checkout {target_commit[:12]} in {repo_name}: {e}"
+                    ) from e
                 used_target = True
             else:
                 if target_commit:
@@ -643,6 +661,7 @@ class RepoManager:
             RepoManagerError: If branch creation fails.
         """
         repo = self.ensure_clone(repo_name)
+        self._reset_working_tree(repo, repo_name)
         original_ref = repo.head.commit.hexsha
 
         # Determine base ref

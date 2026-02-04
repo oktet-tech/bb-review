@@ -9,7 +9,7 @@ import sys
 
 import click
 
-from ..git import PatchApplyError, RepoManager
+from ..git import RepoManager, RepoManagerError
 from ..models import ReviewComment, ReviewFocus, ReviewResult, Severity
 from ..reviewers import extract_changed_files, parse_opencode_output
 from ..rr import (
@@ -575,7 +575,7 @@ def _run_single_review(
                     used_target,
                 )
 
-    except PatchApplyError as e:
+    except RepoManagerError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
@@ -655,112 +655,116 @@ def _run_chain_review(
     branch_name = generate_branch_name(review_id)
     output_files: list[Path] = []
 
-    with repo_manager.chain_context(
-        repo_config.name,
-        review_chain.base_commit,
-        branch_name,
-        keep_branch=keep_branch,
-    ) as repo_path:
-        click.echo(f"\nCreated branch: {branch_name}")
+    try:
+        with repo_manager.chain_context(
+            repo_config.name,
+            review_chain.base_commit,
+            branch_name,
+            keep_branch=keep_branch,
+        ) as repo_path:
+            click.echo(f"\nCreated branch: {branch_name}")
 
-        # Apply context-only patches
-        context_patches = [r for r in review_chain.reviews if not r.needs_review]
-        for review in context_patches:
-            rr_id = review.review_request_id
-            click.echo(f"\nApplying context patch r/{rr_id}...")
-            diff_info = rb_client.get_diff(rr_id, review.diff_revision)
-            if not repo_manager.apply_and_commit(
-                repo_config.name,
-                diff_info.raw_diff,
-                f"r/{rr_id}: {review.summary[:50]}",
-            ):
-                click.echo(f"  ERROR: Failed to apply context patch r/{rr_id}", err=True)
-                break
-            click.echo("  Applied and committed")
-
-        # Review pending patches
-        for i, review in enumerate(pending):
-            rr_id = review.review_request_id
-            click.echo(f"\nReviewing r/{rr_id} ({i + 1}/{len(pending)})...")
-            click.echo(f"  Summary: {review.summary[:60]}...")
-
-            diff_info = rb_client.get_diff(rr_id, review.diff_revision)
-
-            # Commit previous reviewed patch
-            if i > 0:
-                prev_review = pending[i - 1]
-                if not repo_manager.commit_staged(
+            # Apply context-only patches
+            context_patches = [r for r in review_chain.reviews if not r.needs_review]
+            for review in context_patches:
+                rr_id = review.review_request_id
+                click.echo(f"\nApplying context patch r/{rr_id}...")
+                diff_info = rb_client.get_diff(rr_id, review.diff_revision)
+                if not repo_manager.apply_and_commit(
                     repo_config.name,
-                    f"r/{prev_review.review_request_id}: {prev_review.summary[:50]}",
-                ):
-                    click.echo(
-                        f"  ERROR: Failed to commit patch for r/{prev_review.review_request_id}",
-                        err=True,
-                    )
-                    break
-
-            # Apply current patch
-            patch_applied = repo_manager.apply_patch(repo_config.name, diff_info.raw_diff)
-            if not patch_applied:
-                if fallback:
-                    click.echo(
-                        "  WARNING: Patch failed to apply, using fallback mode",
-                        err=True,
-                    )
-                else:
-                    click.echo(f"  ERROR: Failed to apply patch for r/{rr_id}", err=True)
-                    break
-
-            # Run review
-            if fake_review:
-                analysis = create_mock_review_output(rr_id)
-                click.echo("  [FAKE REVIEW] Using mock response")
-            else:
-                analysis = reviewer_fn(
-                    rr_id,
-                    review.full_summary,
                     diff_info.raw_diff,
-                    repo_path,
-                    repo_config,
-                    patch_applied,
-                )
+                    f"r/{rr_id}: {review.summary[:50]}",
+                ):
+                    click.echo(f"  ERROR: Failed to apply context patch r/{rr_id}", err=True)
+                    break
+                click.echo("  Applied and committed")
 
-            parsed = parse_opencode_output(analysis)
+            # Review pending patches
+            for i, review in enumerate(pending):
+                rr_id = review.review_request_id
+                click.echo(f"\nReviewing r/{rr_id} ({i + 1}/{len(pending)})...")
+                click.echo(f"  Summary: {review.summary[:60]}...")
 
-            output_data = build_submission_data(
-                review_id=rr_id,
-                analysis=analysis,
-                parsed=parsed,
-                model=model,
-                rr_summary=review.summary,
-                method_label=method_label,
-            )
+                diff_info = rb_client.get_diff(rr_id, review.diff_revision)
 
-            if auto_output:
-                output_path = Path(f"review_{rr_id}.json")
-                output_path.write_text(json.dumps(output_data, indent=2))
-                output_files.append(output_path)
-                click.echo(f"  Saved: {output_path}")
+                # Commit previous reviewed patch
+                if i > 0:
+                    prev_review = pending[i - 1]
+                    if not repo_manager.commit_staged(
+                        repo_config.name,
+                        f"r/{prev_review.review_request_id}: {prev_review.summary[:50]}",
+                    ):
+                        click.echo(
+                            f"  ERROR: Failed to commit patch for r/{prev_review.review_request_id}",
+                            err=True,
+                        )
+                        break
 
-            if config.review_db.enabled:
-                save_to_review_db(
-                    config=config,
+                # Apply current patch
+                patch_applied = repo_manager.apply_patch(repo_config.name, diff_info.raw_diff)
+                if not patch_applied:
+                    if fallback:
+                        click.echo(
+                            "  WARNING: Patch failed to apply, using fallback mode",
+                            err=True,
+                        )
+                    else:
+                        click.echo(f"  ERROR: Failed to apply patch for r/{rr_id}", err=True)
+                        break
+
+                # Run review
+                if fake_review:
+                    analysis = create_mock_review_output(rr_id)
+                    click.echo("  [FAKE REVIEW] Using mock response")
+                else:
+                    analysis = reviewer_fn(
+                        rr_id,
+                        review.full_summary,
+                        diff_info.raw_diff,
+                        repo_path,
+                        repo_config,
+                        patch_applied,
+                    )
+
+                parsed = parse_opencode_output(analysis)
+
+                output_data = build_submission_data(
                     review_id=rr_id,
-                    diff_revision=diff_info.diff_revision,
-                    repository=review_chain.repository,
+                    analysis=analysis,
                     parsed=parsed,
-                    model=model or default_model or "default",
-                    analysis_method=analysis_method,
+                    model=model,
                     rr_summary=review.summary,
-                    chain_id=branch_name if len(pending) > 1 else None,
-                    chain_position=i + 1 if len(pending) > 1 else None,
-                    fake=fake_review,
-                    body_top=output_data.get("body_top"),
+                    method_label=method_label,
                 )
 
-            if dump_response and i == len(pending) - 1:
-                dump_response.write_text(analysis)
-                click.echo(f"  Raw response saved to: {dump_response}")
+                if auto_output:
+                    output_path = Path(f"review_{rr_id}.json")
+                    output_path.write_text(json.dumps(output_data, indent=2))
+                    output_files.append(output_path)
+                    click.echo(f"  Saved: {output_path}")
+
+                if config.review_db.enabled:
+                    save_to_review_db(
+                        config=config,
+                        review_id=rr_id,
+                        diff_revision=diff_info.diff_revision,
+                        repository=review_chain.repository,
+                        parsed=parsed,
+                        model=model or default_model or "default",
+                        analysis_method=analysis_method,
+                        rr_summary=review.summary,
+                        chain_id=branch_name if len(pending) > 1 else None,
+                        chain_position=i + 1 if len(pending) > 1 else None,
+                        fake=fake_review,
+                        body_top=output_data.get("body_top"),
+                    )
+
+                if dump_response and i == len(pending) - 1:
+                    dump_response.write_text(analysis)
+                    click.echo(f"  Raw response saved to: {dump_response}")
+    except RepoManagerError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
 
     if keep_branch:
         click.echo(f"\nKept branch: {branch_name}")
