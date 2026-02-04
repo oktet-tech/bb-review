@@ -21,6 +21,7 @@ from ..reviewers.claude_code import (
 )
 from . import get_config, main
 from ._review_runner import run_review_command
+from ._session import ReviewSession
 from .utils import REVIEW_ID
 
 
@@ -188,15 +189,40 @@ def claude_cmd(
             verbose=verbose,
         )
 
-    run_review_command(
+    from ..git import RepoManager
+    from ..rr import ReviewBoardClient
+
+    rb_client = ReviewBoardClient(
+        url=config.reviewboard.url,
+        bot_username=config.reviewboard.bot_username,
+        api_token=config.reviewboard.api_token,
+        username=config.reviewboard.username,
+        password=config.reviewboard.get_password(),
+        use_kerberos=config.reviewboard.use_kerberos,
+    )
+    rb_client.connect()
+
+    repo_manager = RepoManager(config.get_all_repos())
+
+    session = ReviewSession(
         config=config,
-        review_id=review_id,
-        reviewer_fn=reviewer_fn,
+        rb_client=rb_client,
+        repo_manager=repo_manager,
+        repo_config=None,
         method_label="Claude Code",
+        analysis_method="claude_code",
         model=model,
+        default_model=cc_config.model,
+        fake_review=fake_review,
+        reviewer_fn=reviewer_fn,
+        series_reviewer_fn=series_reviewer if series else None,
+    )
+
+    run_review_command(
+        session=session,
+        review_id=review_id,
         timeout=timeout,
         dry_run=dry_run,
-        fake_review=fake_review,
         dump_response=dump_response,
         output=output,
         auto_output=auto_output,
@@ -206,10 +232,7 @@ def claude_cmd(
         base_commit=base_commit,
         keep_branch=keep_branch,
         review_from=review_from,
-        default_model=cc_config.model,
-        analysis_method="claude_code",
         series=series,
-        series_reviewer_fn=series_reviewer if series else None,
     )
 
 

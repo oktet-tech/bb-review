@@ -1,6 +1,5 @@
 """Shared review orchestration for agent-based reviewers (OpenCode, Claude Code)."""
 
-from collections.abc import Callable
 from datetime import datetime
 import json
 import logging
@@ -9,7 +8,7 @@ import sys
 
 import click
 
-from ..git import RepoManager, RepoManagerError
+from ..git import RepoManagerError
 from ..models import ReviewComment, ReviewFocus, ReviewResult, Severity
 from ..reviewers import extract_changed_files, parse_opencode_output
 from ..rr import (
@@ -21,18 +20,10 @@ from ..rr import (
     resolve_chain,
 )
 from ..rr.chain import ChainedReview
+from ._session import ReviewSession
 
 
 logger = logging.getLogger(__name__)
-
-
-# Type for the reviewer callback:
-# (rr_id, summary, raw_diff, repo_path, repo_config, at_reviewed_state) -> analysis_text
-ReviewerFn = Callable[[int, str, str, Path, object, bool], str]
-
-# Type for the series reviewer callback:
-# (reviews, base_ref, repo_path, repo_config) -> analysis_text
-SeriesReviewerFn = Callable[[list[ChainedReview], str, Path, object], str]
 
 
 def generate_branch_name(target_rr_id: int) -> str:
@@ -304,14 +295,10 @@ def save_to_review_db(
 
 
 def run_review_command(
-    config,
+    session: ReviewSession,
     review_id: int,
-    reviewer_fn: ReviewerFn,
-    method_label: str,
-    model: str | None,
     timeout: int,
     dry_run: bool,
-    fake_review: bool,
     dump_response: Path | None,
     output: Path | None,
     auto_output: bool,
@@ -321,22 +308,15 @@ def run_review_command(
     base_commit: str | None,
     keep_branch: bool,
     review_from: int | None,
-    default_model: str | None = None,
-    analysis_method: str = "opencode",
     series: bool = False,
-    series_reviewer_fn: SeriesReviewerFn | None = None,
 ) -> None:
     """Run the full review orchestration: chain resolution, checkout, review, save.
 
     Args:
-        config: Application config.
+        session: Shared review context (config, clients, callbacks, etc.).
         review_id: Target review request ID.
-        reviewer_fn: Callback that runs the actual review analysis.
-        method_label: Display label (e.g. "OpenCode", "Claude Code").
-        model: Model override from CLI.
         timeout: Timeout in seconds.
         dry_run: If True, show what would be done without running reviews.
-        fake_review: If True, use mock review output.
         dump_response: Path to dump raw response.
         output: Explicit output path.
         auto_output: Auto-generate output filenames.
@@ -346,10 +326,7 @@ def run_review_command(
         base_commit: Base commit override for chain_file.
         keep_branch: Keep the review branch after completion.
         review_from: Start reviewing from this RR ID.
-        default_model: Fallback model from config if CLI didn't override.
-        analysis_method: Method name for DB storage (e.g. "opencode", "claude_code").
         series: If True, review the entire chain as one unit.
-        series_reviewer_fn: Callback for series review (required when series=True).
     """
     # Validate series flag combinations
     if series:
@@ -357,21 +334,12 @@ def run_review_command(
             raise click.UsageError("--series requires --chain (cannot use with --no-chain)")
         if review_from is not None:
             raise click.UsageError("--series is incompatible with --review-from")
-        if series_reviewer_fn is None:
+        if session.series_reviewer_fn is None:
             raise click.UsageError("--series requires a series reviewer function")
 
     try:
-        rb_client = ReviewBoardClient(
-            url=config.reviewboard.url,
-            bot_username=config.reviewboard.bot_username,
-            api_token=config.reviewboard.api_token,
-            username=config.reviewboard.username,
-            password=config.reviewboard.get_password(),
-            use_kerberos=config.reviewboard.use_kerberos,
-        )
-        rb_client.connect()
-
-        repo_manager = RepoManager(config.get_all_repos())
+        rb_client = session.rb_client
+        repo_manager = session.repo_manager
 
         # Resolve chain
         if chain_file:
@@ -431,6 +399,8 @@ def run_review_command(
         click.echo(f"  To review: {len(pending)} patch(es)")
         click.echo(f"  Base commit: {review_chain.base_commit or 'default branch'}")
 
+        # Validate repo config matches chain (session.repo_config was set by caller,
+        # but verify it matches the resolved chain)
         repo_config = repo_manager.get_repo_by_rb_name(review_chain.repository)
         if repo_config is None:
             raise click.ClickException(
@@ -444,8 +414,8 @@ def run_review_command(
                 rb_client,
                 review_id,
                 pending,
-                model,
-                method_label,
+                session.model,
+                session.method_label,
                 keep_branch,
             )
             return
@@ -453,74 +423,36 @@ def run_review_command(
         # Series review: apply all patches, review once
         if series:
             _run_series_review(
-                review_id,
-                review_chain,
-                rb_client,
-                repo_manager,
-                repo_config,
-                config,
-                series_reviewer_fn,
-                method_label,
-                model,
-                dump_response,
-                output,
-                auto_output,
-                fake_review,
-                keep_branch,
-                default_model,
-                analysis_method,
+                session, review_id, review_chain, repo_config, dump_response, output, auto_output, keep_branch
             )
             return
 
         # Single review
         if len(pending) == 1:
             _run_single_review(
-                pending[0],
-                rb_client,
-                repo_manager,
-                repo_config,
-                config,
-                reviewer_fn,
-                method_label,
-                model,
-                timeout,
-                dump_response,
-                output,
-                auto_output,
-                fallback,
-                fake_review,
-                default_model,
-                analysis_method,
+                session, pending[0], repo_config, timeout, dump_response, output, auto_output, fallback
             )
             return
 
         # Chain review
         _run_chain_review(
+            session,
             review_id,
             review_chain,
             pending,
-            rb_client,
-            repo_manager,
             repo_config,
-            config,
-            reviewer_fn,
-            method_label,
-            model,
             timeout,
             dump_response,
             auto_output,
             fallback,
-            fake_review,
             keep_branch,
-            default_model,
-            analysis_method,
         )
 
     except ChainError as e:
         click.echo(f"Chain resolution error: {e}", err=True)
         sys.exit(1)
     except Exception as e:
-        logger.exception(f"Failed to analyze review with {method_label}")
+        logger.exception(f"Failed to analyze review with {session.method_label}")
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
@@ -559,26 +491,18 @@ def _run_dry(
 
 
 def _run_single_review(
+    session: ReviewSession,
     review,
-    rb_client,
-    repo_manager,
     repo_config,
-    config,
-    reviewer_fn: ReviewerFn,
-    method_label: str,
-    model: str | None,
     timeout: int,
     dump_response: Path | None,
     output: Path | None,
     auto_output: bool,
     fallback: bool,
-    fake_review: bool,
-    default_model: str | None,
-    analysis_method: str,
 ) -> None:
     """Run review for a single review request using checkout_context."""
     review_id = review.review_request_id
-    diff_info = rb_client.get_diff(review_id, review.diff_revision)
+    diff_info = session.rb_client.get_diff(review_id, review.diff_revision)
     raw_diff = diff_info.raw_diff
 
     click.echo(f"  Repository: {repo_config.name}")
@@ -587,7 +511,7 @@ def _run_single_review(
     click.echo(f"  Base commit: {review.base_commit_id or 'default branch'}")
 
     try:
-        with repo_manager.checkout_context(
+        with session.repo_manager.checkout_context(
             repo_config.name,
             base_commit=review.base_commit_id,
             branch=None,
@@ -598,13 +522,13 @@ def _run_single_review(
             if used_target:
                 click.echo("  Checked out to reviewed state")
             elif fallback and not used_target:
-                click.echo(f"  Using fallback: patch file will be passed to {method_label}")
+                click.echo(f"  Using fallback: patch file will be passed to {session.method_label}")
 
-            if fake_review:
+            if session.fake_review:
                 analysis = create_mock_review_output(review_id)
                 click.echo("  [FAKE REVIEW] Using mock response")
             else:
-                analysis = reviewer_fn(
+                analysis = session.reviewer_fn(
                     review_id,
                     review.full_summary,
                     raw_diff,
@@ -620,13 +544,13 @@ def _run_single_review(
     # Dump raw response
     if dump_response:
         dump_response.write_text(analysis)
-        click.echo(f"Raw {method_label} response saved to: {dump_response}")
+        click.echo(f"Raw {session.method_label} response saved to: {dump_response}")
 
     # Parse and display
     parsed = parse_opencode_output(analysis)
 
     click.echo("\n" + "=" * 60)
-    click.echo(f"{method_label} Analysis:")
+    click.echo(f"{session.method_label} Analysis:")
     click.echo("=" * 60)
     click.echo(analysis)
     click.echo("=" * 60)
@@ -636,9 +560,9 @@ def _run_single_review(
         review_id,
         analysis,
         parsed,
-        model,
+        session.model,
         rr_summary=review.summary,
-        method_label=method_label,
+        method_label=session.method_label,
     )
 
     # Save to file
@@ -654,47 +578,39 @@ def _run_single_review(
     click.echo(f"To submit: bb-review submit {output_file}")
 
     # Save to DB
-    if config.review_db.enabled:
+    if session.config.review_db.enabled:
         save_to_review_db(
-            config=config,
+            config=session.config,
             review_id=review_id,
             diff_revision=diff_info.diff_revision,
             repository=repo_config.name,
             parsed=parsed,
-            model=model or default_model or "default",
-            analysis_method=analysis_method,
+            model=session.model or session.default_model or "default",
+            analysis_method=session.analysis_method,
             rr_summary=review.summary,
-            fake=fake_review,
+            fake=session.fake_review,
             body_top=output_data.get("body_top"),
         )
 
 
 def _run_chain_review(
+    session: ReviewSession,
     review_id: int,
     review_chain: ReviewChain,
     pending: list,
-    rb_client,
-    repo_manager,
     repo_config,
-    config,
-    reviewer_fn: ReviewerFn,
-    method_label: str,
-    model: str | None,
     timeout: int,
     dump_response: Path | None,
     auto_output: bool,
     fallback: bool,
-    fake_review: bool,
     keep_branch: bool,
-    default_model: str | None,
-    analysis_method: str,
 ) -> None:
     """Run chain review for multiple pending patches."""
     branch_name = generate_branch_name(review_id)
     output_files: list[Path] = []
 
     try:
-        with repo_manager.chain_context(
+        with session.repo_manager.chain_context(
             repo_config.name,
             review_chain.base_commit,
             branch_name,
@@ -707,8 +623,8 @@ def _run_chain_review(
             for review in context_patches:
                 rr_id = review.review_request_id
                 click.echo(f"\nApplying context patch r/{rr_id}...")
-                diff_info = rb_client.get_diff(rr_id, review.diff_revision)
-                if not repo_manager.apply_and_commit(
+                diff_info = session.rb_client.get_diff(rr_id, review.diff_revision)
+                if not session.repo_manager.apply_and_commit(
                     repo_config.name,
                     diff_info.raw_diff,
                     f"r/{rr_id}: {review.summary[:50]}",
@@ -723,12 +639,12 @@ def _run_chain_review(
                 click.echo(f"\nReviewing r/{rr_id} ({i + 1}/{len(pending)})...")
                 click.echo(f"  Summary: {review.summary[:60]}...")
 
-                diff_info = rb_client.get_diff(rr_id, review.diff_revision)
+                diff_info = session.rb_client.get_diff(rr_id, review.diff_revision)
 
                 # Commit previous reviewed patch
                 if i > 0:
                     prev_review = pending[i - 1]
-                    if not repo_manager.commit_staged(
+                    if not session.repo_manager.commit_staged(
                         repo_config.name,
                         f"r/{prev_review.review_request_id}: {prev_review.summary[:50]}",
                     ):
@@ -739,7 +655,7 @@ def _run_chain_review(
                         break
 
                 # Apply current patch
-                patch_applied = repo_manager.apply_patch(repo_config.name, diff_info.raw_diff)
+                patch_applied = session.repo_manager.apply_patch(repo_config.name, diff_info.raw_diff)
                 if not patch_applied:
                     if fallback:
                         click.echo(
@@ -751,11 +667,11 @@ def _run_chain_review(
                         break
 
                 # Run review
-                if fake_review:
+                if session.fake_review:
                     analysis = create_mock_review_output(rr_id)
                     click.echo("  [FAKE REVIEW] Using mock response")
                 else:
-                    analysis = reviewer_fn(
+                    analysis = session.reviewer_fn(
                         rr_id,
                         review.full_summary,
                         diff_info.raw_diff,
@@ -770,9 +686,9 @@ def _run_chain_review(
                     review_id=rr_id,
                     analysis=analysis,
                     parsed=parsed,
-                    model=model,
+                    model=session.model,
                     rr_summary=review.summary,
-                    method_label=method_label,
+                    method_label=session.method_label,
                 )
 
                 if auto_output:
@@ -781,19 +697,19 @@ def _run_chain_review(
                     output_files.append(output_path)
                     click.echo(f"  Saved: {output_path}")
 
-                if config.review_db.enabled:
+                if session.config.review_db.enabled:
                     save_to_review_db(
-                        config=config,
+                        config=session.config,
                         review_id=rr_id,
                         diff_revision=diff_info.diff_revision,
                         repository=review_chain.repository,
                         parsed=parsed,
-                        model=model or default_model or "default",
-                        analysis_method=analysis_method,
+                        model=session.model or session.default_model or "default",
+                        analysis_method=session.analysis_method,
                         rr_summary=review.summary,
                         chain_id=branch_name if len(pending) > 1 else None,
                         chain_position=i + 1 if len(pending) > 1 else None,
-                        fake=fake_review,
+                        fake=session.fake_review,
                         body_top=output_data.get("body_top"),
                     )
 
@@ -821,29 +737,21 @@ def _run_chain_review(
 
 
 def _run_series_review(
+    session: ReviewSession,
     review_id: int,
     review_chain: ReviewChain,
-    rb_client,
-    repo_manager,
     repo_config,
-    config,
-    series_reviewer_fn: SeriesReviewerFn,
-    method_label: str,
-    model: str | None,
     dump_response: Path | None,
     output: Path | None,
     auto_output: bool,
-    fake_review: bool,
     keep_branch: bool,
-    default_model: str | None,
-    analysis_method: str,
 ) -> None:
     """Apply all patches as commits, then run a single review of the whole series."""
     branch_name = generate_branch_name(review_id)
     all_reviews = review_chain.reviews
 
     try:
-        with repo_manager.chain_context(
+        with session.repo_manager.chain_context(
             repo_config.name,
             review_chain.base_commit,
             branch_name,
@@ -855,8 +763,8 @@ def _run_series_review(
             for review in all_reviews:
                 rr_id = review.review_request_id
                 click.echo(f"  Applying r/{rr_id}: {review.summary[:60]}...")
-                diff_info = rb_client.get_diff(rr_id, review.diff_revision)
-                if not repo_manager.apply_and_commit(
+                diff_info = session.rb_client.get_diff(rr_id, review.diff_revision)
+                if not session.repo_manager.apply_and_commit(
                     repo_config.name,
                     diff_info.raw_diff,
                     f"r/{rr_id}: {review.summary[:50]}",
@@ -867,14 +775,16 @@ def _run_series_review(
             # Compute base_ref for git diff/log commands
             base_ref = review_chain.base_commit or f"origin/{repo_config.default_branch}"
 
-            click.echo(f"\nAll {len(all_reviews)} patches applied. Running {method_label} series review...")
+            click.echo(
+                f"\nAll {len(all_reviews)} patches applied. Running {session.method_label} series review..."
+            )
 
             # Run the series review
-            if fake_review:
+            if session.fake_review:
                 analysis = create_mock_review_output(review_id)
                 click.echo("  [FAKE REVIEW] Using mock response")
             else:
-                analysis = series_reviewer_fn(all_reviews, base_ref, repo_path, repo_config)
+                analysis = session.series_reviewer_fn(all_reviews, base_ref, repo_path, repo_config)
 
     except RepoManagerError as e:
         click.echo(f"Error: {e}", err=True)
@@ -886,13 +796,13 @@ def _run_series_review(
     # Dump raw response
     if dump_response:
         dump_response.write_text(analysis)
-        click.echo(f"Raw {method_label} response saved to: {dump_response}")
+        click.echo(f"Raw {session.method_label} response saved to: {dump_response}")
 
     # Parse and display
     parsed = parse_opencode_output(analysis)
 
     click.echo("\n" + "=" * 60)
-    click.echo(f"{method_label} Series Analysis:")
+    click.echo(f"{session.method_label} Series Analysis:")
     click.echo("=" * 60)
     click.echo(analysis)
     click.echo("=" * 60)
@@ -905,9 +815,9 @@ def _run_series_review(
         review_id=target_rr_id,
         analysis=analysis,
         parsed=parsed,
-        model=model,
+        model=session.model,
         rr_summary=target_rr.summary if target_rr else None,
-        method_label=method_label,
+        method_label=session.method_label,
     )
 
     # Save to file
@@ -921,17 +831,17 @@ def _run_series_review(
     click.echo(f"To submit: bb-review submit {output_file}")
 
     # Save to DB
-    if config.review_db.enabled:
+    if session.config.review_db.enabled:
         save_to_review_db(
-            config=config,
+            config=session.config,
             review_id=target_rr_id,
             diff_revision=target_rr.diff_revision if target_rr else 1,
             repository=review_chain.repository,
             parsed=parsed,
-            model=model or default_model or "default",
-            analysis_method=analysis_method,
+            model=session.model or session.default_model or "default",
+            analysis_method=session.analysis_method,
             rr_summary=target_rr.summary if target_rr else None,
             chain_id=branch_name,
-            fake=fake_review,
+            fake=session.fake_review,
             body_top=output_data.get("body_top"),
         )
