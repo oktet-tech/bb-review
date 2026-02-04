@@ -274,14 +274,27 @@ def run_claude_review(
             raise ClaudeCodeError("Claude Code returned empty output")
 
         # Unwrap JSON envelope - claude -p --output-format json returns
-        # {"result": "...", ...}
+        # {"type": "result", "subtype": "success", "result": "...", ...}
         try:
             envelope = json.loads(output)
+            subtype = envelope.get("subtype", "")
             text = envelope.get("result", "")
-            if not text:
-                raise ClaudeCodeError(f'Claude Code JSON response has no "result" field: {output[:200]}')
-            logger.info(f"Claude Code analysis complete ({len(text)} chars)")
-            return text
+
+            if text:
+                if subtype == "error_max_turns":
+                    num_turns = envelope.get("num_turns", "?")
+                    logger.warning(f"Claude Code hit max turns ({num_turns}) but produced output, using it")
+                logger.info(f"Claude Code analysis complete ({len(text)} chars)")
+                return text
+
+            # No result text
+            if subtype == "error_max_turns":
+                num_turns = envelope.get("num_turns", "?")
+                raise ClaudeCodeError(
+                    f"Claude Code hit max turns limit ({num_turns} turns) "
+                    f"without producing a review. Try increasing --max-turns."
+                )
+            raise ClaudeCodeError(f'Claude Code JSON response has no "result" field: {output[:200]}')
         except json.JSONDecodeError as e:
             raise ClaudeCodeError(f"Failed to parse Claude Code JSON output: {e}") from e
 
