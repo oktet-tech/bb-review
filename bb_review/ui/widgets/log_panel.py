@@ -13,6 +13,7 @@ class LogPanel(Container):
         height: 12;
         max-height: 40%;
         display: none;
+        dock: bottom;
         border-top: solid $primary;
     }
 

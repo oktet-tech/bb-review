@@ -41,8 +41,8 @@ class UnifiedApp(App):
         Binding("ctrl+t", "switch_tab", "Switch Tab", show=False),
         Binding("1", "show_queue", "Queue", show=False),
         Binding("2", "show_reviews", "Reviews", show=False),
-        Binding("l", "toggle_log", "Log"),
-        Binding("c", "clear_log", "Clear Log", show=False),
+        Binding("l", "toggle_log", "Log", priority=True),
+        Binding("c", "clear_log", "Clear Log", priority=True, show=False),
         Binding("q", "quit_app", "Quit"),
         Binding("escape", "quit_app", "Quit", show=False),
     ]
