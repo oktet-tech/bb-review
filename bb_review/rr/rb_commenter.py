@@ -2,8 +2,9 @@
 
 import logging
 
+import click
+
 from ..models import ReviewComment, ReviewResult, Severity
-from ..reviewers import Analyzer
 from .rb_client import ReviewBoardClient
 
 
@@ -16,18 +17,15 @@ class Commenter:
     def __init__(
         self,
         rb_client: ReviewBoardClient,
-        analyzer: Analyzer,
         auto_ship_it: bool = False,
     ):
         """Initialize the commenter.
 
         Args:
             rb_client: Review Board client.
-            analyzer: Analyzer for formatting comments.
             auto_ship_it: Whether to auto "Ship It" when no issues found.
         """
         self.rb_client = rb_client
-        self.analyzer = analyzer
         self.auto_ship_it = auto_ship_it
 
     def post_review(
@@ -47,7 +45,7 @@ class Commenter:
         review_request_id = result.review_request_id
 
         # Format the summary
-        body_top = self.analyzer.format_review_summary(result)
+        body_top = ReviewFormatter.format_review_summary(result)
 
         # Determine ship_it status
         ship_it = False
@@ -58,7 +56,7 @@ class Commenter:
         # Format comments for posting
         comments = []
         for comment in result.comments:
-            formatted_text = self.analyzer.format_comment_text(comment)
+            formatted_text = ReviewFormatter.format_comment_text(comment)
             comments.append(
                 {
                     "file_path": comment.file_path,
@@ -96,33 +94,26 @@ class Commenter:
         comments: list[dict],
         ship_it: bool,
     ) -> None:
-        """Print what would be posted in a dry run.
+        """Print what would be posted in a dry run."""
+        click.echo("\n" + "=" * 60)
+        click.echo(f"DRY RUN - Review for request #{review_request_id}")
+        click.echo("=" * 60)
 
-        Args:
-            review_request_id: Review request ID.
-            body_top: Review summary.
-            comments: Formatted comments.
-            ship_it: Ship it status.
-        """
-        print("\n" + "=" * 60)
-        print(f"DRY RUN - Review for request #{review_request_id}")
-        print("=" * 60)
+        click.echo(f"\nShip It: {'Yes' if ship_it else 'No'}")
 
-        print(f"\nShip It: {'Yes' if ship_it else 'No'}")
-
-        print("\n--- Review Summary ---")
-        print(body_top)
+        click.echo("\n--- Review Summary ---")
+        click.echo(body_top)
 
         if comments:
-            print("\n--- Inline Comments ---")
+            click.echo("\n--- Inline Comments ---")
             for i, comment in enumerate(comments, 1):
-                print(f"\n[{i}] {comment['file_path']}:{comment['line_number']}")
-                print("-" * 40)
-                print(comment["text"])
+                click.echo(f"\n[{i}] {comment['file_path']}:{comment['line_number']}")
+                click.echo("-" * 40)
+                click.echo(comment["text"])
         else:
-            print("\n(No inline comments)")
+            click.echo("\n(No inline comments)")
 
-        print("\n" + "=" * 60)
+        click.echo("\n" + "=" * 60)
 
     def format_cli_output(self, result: ReviewResult) -> str:
         """Format review result for CLI output.
@@ -180,6 +171,52 @@ class Commenter:
 
 class ReviewFormatter:
     """Utility class for formatting review content."""
+
+    @staticmethod
+    def format_comment_text(comment: ReviewComment) -> str:
+        """Format a review comment for posting to Review Board."""
+        severity_labels = {
+            Severity.LOW: "[INFO]",
+            Severity.MEDIUM: "[WARNING]",
+            Severity.HIGH: "[HIGH]",
+            Severity.CRITICAL: "[CRITICAL]",
+        }
+
+        label = severity_labels.get(comment.severity, "[--]")
+        severity = comment.severity.value.upper()
+        issue_type = comment.issue_type.value
+        parts = [
+            f"{label} **{severity}** ({issue_type})",
+            "",
+            comment.message,
+        ]
+
+        if comment.suggestion:
+            parts.extend(["", "**Suggestion:**", comment.suggestion])
+
+        return "\n".join(parts)
+
+    @staticmethod
+    def format_review_summary(result: ReviewResult) -> str:
+        """Format the overall review summary for posting to Review Board."""
+        if not result.comments:
+            return f"**AI Review Complete**\n\n{result.summary}\n\nNo issues found."
+
+        severity_counts: dict[Severity, int] = {}
+        for c in result.comments:
+            severity_counts[c.severity] = severity_counts.get(c.severity, 0) + 1
+
+        parts = ["**AI Review Complete**", "", result.summary, "", "**Issue Summary:**"]
+
+        for severity in [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW]:
+            count = severity_counts.get(severity, 0)
+            if count:
+                parts.append(f"- {severity.value.capitalize()}: {count}")
+
+        if result.has_critical_issues:
+            parts.extend(["", "**Critical issues found. Please address before merging.**"])
+
+        return "\n".join(parts)
 
     @staticmethod
     def format_as_markdown(result: ReviewResult) -> str:

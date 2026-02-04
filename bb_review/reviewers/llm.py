@@ -276,65 +276,6 @@ class Analyzer:
             has_critical_issues=data.get("has_critical_issues", False),
         )
 
-    def format_comment_text(self, comment: ReviewComment) -> str:
-        """Format a review comment for posting.
-
-        Args:
-            comment: The review comment.
-
-        Returns:
-            Formatted comment text.
-        """
-        severity_emoji = {
-            Severity.LOW: "ℹ️",
-            Severity.MEDIUM: "⚠️",
-            Severity.HIGH: "🔴",
-            Severity.CRITICAL: "🚨",
-        }
-
-        emoji = severity_emoji.get(comment.severity, "•")
-        severity = comment.severity.value.upper()
-        issue_type = comment.issue_type.value
-        parts = [
-            f"{emoji} **{severity}** ({issue_type})",
-            "",
-            comment.message,
-        ]
-
-        if comment.suggestion:
-            parts.extend(["", "**Suggestion:**", comment.suggestion])
-
-        return "\n".join(parts)
-
-    def format_review_summary(self, result: ReviewResult) -> str:
-        """Format the overall review summary.
-
-        Args:
-            result: The review result.
-
-        Returns:
-            Formatted summary text.
-        """
-        if not result.comments:
-            return f"**AI Review Complete**\n\n{result.summary}\n\nNo issues found."
-
-        # Count issues by severity
-        severity_counts = {}
-        for c in result.comments:
-            severity_counts[c.severity] = severity_counts.get(c.severity, 0) + 1
-
-        parts = ["**AI Review Complete**", "", result.summary, "", "**Issue Summary:**"]
-
-        for severity in [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW]:
-            count = severity_counts.get(severity, 0)
-            if count:
-                parts.append(f"- {severity.value.capitalize()}: {count}")
-
-        if result.has_critical_issues:
-            parts.extend(["", "⚠️ **Critical issues found. Please address before merging.**"])
-
-        return "\n".join(parts)
-
 
 def extract_changed_files(diff: str) -> list[dict[str, Any]]:
     """Extract changed file information from a diff.

@@ -190,14 +190,13 @@ class TestAnalyzerIntegration:
         assert result.diff_revision == 5
 
 
-class TestAnalyzerCommentFormatting:
-    """Tests for comment formatting methods."""
+class TestReviewFormatterMethods:
+    """Tests for ReviewFormatter formatting methods (moved from Analyzer)."""
 
     def test_format_comment_text(self):
         """Format review comment for posting."""
         from bb_review.models import ReviewComment
-
-        analyzer = Analyzer(api_key="test", model="test", provider="anthropic")
+        from bb_review.rr.rb_commenter import ReviewFormatter
 
         comment = ReviewComment(
             file_path="test.c",
@@ -208,7 +207,7 @@ class TestAnalyzerCommentFormatting:
             suggestion="Fix it like this",
         )
 
-        formatted = analyzer.format_comment_text(comment)
+        formatted = ReviewFormatter.format_comment_text(comment)
 
         assert "HIGH" in formatted
         assert "bugs" in formatted
@@ -218,8 +217,7 @@ class TestAnalyzerCommentFormatting:
     def test_format_review_summary_no_issues(self):
         """Format summary when no issues found."""
         from bb_review.models import ReviewResult
-
-        analyzer = Analyzer(api_key="test", model="test", provider="anthropic")
+        from bb_review.rr.rb_commenter import ReviewFormatter
 
         result = ReviewResult(
             review_request_id=1,
@@ -228,7 +226,7 @@ class TestAnalyzerCommentFormatting:
             summary="Code looks good",
         )
 
-        formatted = analyzer.format_review_summary(result)
+        formatted = ReviewFormatter.format_review_summary(result)
 
         assert "No issues found" in formatted
         assert "Code looks good" in formatted
@@ -236,8 +234,7 @@ class TestAnalyzerCommentFormatting:
     def test_format_review_summary_with_issues(self):
         """Format summary when issues found."""
         from bb_review.models import ReviewComment, ReviewResult
-
-        analyzer = Analyzer(api_key="test", model="test", provider="anthropic")
+        from bb_review.rr.rb_commenter import ReviewFormatter
 
         result = ReviewResult(
             review_request_id=1,
@@ -261,7 +258,7 @@ class TestAnalyzerCommentFormatting:
             summary="Found issues",
         )
 
-        formatted = analyzer.format_review_summary(result)
+        formatted = ReviewFormatter.format_review_summary(result)
 
         assert "High: 1" in formatted
         assert "Medium: 1" in formatted
@@ -269,8 +266,7 @@ class TestAnalyzerCommentFormatting:
     def test_format_review_summary_critical(self):
         """Format summary with critical issues warning."""
         from bb_review.models import ReviewComment, ReviewResult
-
-        analyzer = Analyzer(api_key="test", model="test", provider="anthropic")
+        from bb_review.rr.rb_commenter import ReviewFormatter
 
         result = ReviewResult(
             review_request_id=1,
@@ -288,7 +284,7 @@ class TestAnalyzerCommentFormatting:
             has_critical_issues=True,
         )
 
-        formatted = analyzer.format_review_summary(result)
+        formatted = ReviewFormatter.format_review_summary(result)
 
         assert "Critical" in formatted
         assert "Please address before merging" in formatted

@@ -61,7 +61,6 @@ def poll_once(ctx: click.Context) -> None:
 
         commenter = Commenter(
             rb_client=rb_client,
-            analyzer=analyzer,
             auto_ship_it=config.defaults.auto_ship_it,
         )
 
@@ -135,7 +134,6 @@ def poll_daemon(ctx: click.Context) -> None:
 
         commenter = Commenter(
             rb_client=rb_client,
-            analyzer=analyzer,
             auto_ship_it=config.defaults.auto_ship_it,
         )
 
