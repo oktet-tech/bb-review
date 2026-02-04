@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from bb_review.rr.rb_client import ReviewRequestInfo
+
 
 @dataclass
 class MockDiffInfo:
@@ -26,6 +28,7 @@ class MockRBClient:
         reviews: dict[int, dict] | None = None,
         diffs: dict[int, MockDiffInfo] | None = None,
         repositories: dict[int, dict] | None = None,
+        review_request_infos: dict[int, ReviewRequestInfo] | None = None,
     ):
         """Initialize the mock client.
 
@@ -33,10 +36,12 @@ class MockRBClient:
             reviews: Mapping of review_id to review request data.
             diffs: Mapping of review_id to diff info.
             repositories: Mapping of review_id to repository info.
+            review_request_infos: Mapping of review_id to ReviewRequestInfo.
         """
         self.reviews = reviews or {}
         self.diffs = diffs or {}
         self.repositories = repositories or {}
+        self.review_request_infos = review_request_infos or {}
         self.posted_reviews: list[dict[str, Any]] = []
         self._connected = False
 
@@ -86,6 +91,28 @@ class MockRBClient:
             "path": "/path/to/repo",
             "tool": "Git",
         }
+
+    def get_review_request_info(self, review_request_id: int) -> ReviewRequestInfo:
+        """Get mock ReviewRequestInfo.
+
+        Args:
+            review_request_id: Review ID.
+
+        Returns:
+            ReviewRequestInfo instance.
+        """
+        if review_request_id in self.review_request_infos:
+            return self.review_request_infos[review_request_id]
+
+        return ReviewRequestInfo(
+            id=review_request_id,
+            summary=f"Test review #{review_request_id}",
+            status="pending",
+            repository_name="test-repo",
+            depends_on=[],
+            base_commit_id="abc123",
+            diff_revision=1,
+        )
 
     def get_diff(self, review_request_id: int, diff_revision: int | None = None) -> MockDiffInfo:
         """Get mock diff info.
