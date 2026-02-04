@@ -228,9 +228,9 @@ class Analyzer:
         Returns:
             Parsed ReviewResult.
         """
-        # Try to extract JSON from the response
-        json_match = re.search(r"\{[\s\S]*\}", response_text)
-        if not json_match:
+        # Extract the outermost balanced JSON object from the response
+        json_str = _extract_json_object(response_text)
+        if json_str is None:
             logger.warning("Could not find JSON in response")
             logger.debug(f"Raw LLM response:\n{response_text[:2000]}")
             return ReviewResult(
@@ -241,7 +241,7 @@ class Analyzer:
             )
 
         try:
-            data = json.loads(json_match.group())
+            data = json.loads(json_str)
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse JSON: {e}")
             return ReviewResult(
@@ -275,6 +275,43 @@ class Analyzer:
             summary=data.get("summary", "Review completed"),
             has_critical_issues=data.get("has_critical_issues", False),
         )
+
+
+def _extract_json_object(text: str) -> str | None:
+    """Extract the first top-level JSON object from text using brace balancing.
+
+    The greedy regex r'{[\\s\\S]*}' over-matches when the LLM wraps its answer
+    in markdown or appends trailing text. A balanced-brace scan is correct for
+    any valid JSON nesting.
+    """
+    start = text.find("{")
+    if start == -1:
+        return None
+
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_string:
+            escape = True
+            continue
+        if ch == '"' and not escape:
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+
+    return None
 
 
 def extract_changed_files(diff: str) -> list[dict[str, Any]]:

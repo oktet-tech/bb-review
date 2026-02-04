@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import json
 import logging
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 from typing import Any
@@ -92,7 +93,9 @@ class ReviewBoardClient:
         logger.debug(f"Connecting to Review Board at {self.url}")
 
         # Create a temp cookie file for this session
-        self._cookie_file = Path(tempfile.mktemp(suffix=".cookies", prefix="rb_"))
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".cookies", prefix="rb_")
+        tmp.close()
+        self._cookie_file = Path(tmp.name)
 
         if self.use_kerberos:
             logger.info("Using Kerberos authentication for Apache layer")
@@ -214,8 +217,6 @@ class ReviewBoardClient:
             raise RuntimeError(f"Failed to get login page: HTTP {status}")
 
         # Extract CSRF token from form
-        import re
-
         csrf_match = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', body)
         if not csrf_match:
             raise RuntimeError("Could not find CSRF token in login page")
@@ -676,8 +677,6 @@ class ReviewBoardClient:
                     depends_on_ids.append(dep["id"])
                 # Otherwise extract from href URL
                 elif "href" in dep:
-                    import re
-
                     match = re.search(r"/review-requests/(\d+)/", dep["href"])
                     if match:
                         depends_on_ids.append(int(match.group(1)))
