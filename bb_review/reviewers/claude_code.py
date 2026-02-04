@@ -171,9 +171,15 @@ For each issue found, use this format:
 
 For general observations that don't apply to a specific line, omit the Line field.
 
-After listing all issues, provide a brief summary of the overall code quality.
-
 Do not suggest changes outside the scope of the review.
+
+After all ### Issue blocks, end with a standalone summary separated by ---:
+
+---
+
+**Summary:** <1-2 sentence overview of the code quality>
+
+Do NOT put **Summary:** inside any ### Issue block.
 Output ONLY the structured review (### Issue blocks and summary). \
 Do not include introductory text, thinking, or narration of your process."""
 
@@ -269,9 +275,15 @@ For each issue found, use this format:
 
 For general observations that don't apply to a specific line, omit the Line field.
 
-After listing all issues, provide a brief summary of the overall series quality.
-
 Do not suggest changes outside the scope of the review.
+
+After all ### Issue blocks, end with a standalone summary separated by ---:
+
+---
+
+**Summary:** <1-2 sentence overview of the series quality>
+
+Do NOT put **Summary:** inside any ### Issue block.
 Output ONLY the structured review (### Issue blocks and summary). \
 Do not include introductory text, thinking, or narration of your process."""
 
