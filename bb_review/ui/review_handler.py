@@ -312,41 +312,16 @@ class ReviewHandler:
                 }
             )
 
-        try:
-            from bb_review.rr import ReviewBoardClient
-
-            rb_client = ReviewBoardClient(
-                url=self.config.reviewboard.url,
-                bot_username=self.config.reviewboard.bot_username,
-                api_token=self.config.reviewboard.api_token,
-                username=self.config.reviewboard.username,
-                password=self.config.reviewboard.get_password(),
-                use_kerberos=self.config.reviewboard.use_kerberos,
-            )
-            rb_client.connect()
-
-            ship_it = force_ship_it or (len(inline_comments) == 0 and not analysis.has_critical_issues)
-            rb_client.post_review(
-                review_request_id=analysis.review_request_id,
-                body_top=body_top,
-                comments=inline_comments,
-                ship_it=ship_it,
-                publish=publish,
-            )
-
-            self.db.mark_submitted(analysis_id)
-
-            mode = "Ship It + published" if force_ship_it else ("published" if publish else "draft")
-            self.app.notify(
-                f"Submitted review for RR #{analysis.review_request_id} as {mode}",
-                severity="information",
-            )
-
-        except Exception as e:
-            logger.exception("Failed to submit review")
-            self.app.notify(f"Submit failed: {e}", severity="error")
-
-        self._notify_refresh()
+        ship_it = force_ship_it or (len(inline_comments) == 0 and not analysis.has_critical_issues)
+        self.app.run_submit(
+            review_request_id=analysis.review_request_id,
+            body_top=body_top,
+            inline_comments=inline_comments,
+            ship_it=ship_it,
+            publish=publish,
+            force_ship_it=force_ship_it,
+            analysis_id=analysis_id,
+        )
 
     def _submit_from_comment_picker(
         self,
@@ -389,42 +364,16 @@ class ReviewHandler:
                 }
             )
 
-        try:
-            from bb_review.rr import ReviewBoardClient
-
-            rb_client = ReviewBoardClient(
-                url=self.config.reviewboard.url,
-                bot_username=self.config.reviewboard.bot_username,
-                api_token=self.config.reviewboard.api_token,
-                username=self.config.reviewboard.username,
-                password=self.config.reviewboard.get_password(),
-                use_kerberos=self.config.reviewboard.use_kerberos,
-            )
-            rb_client.connect()
-
-            ship_it = force_ship_it or (len(inline_comments) == 0 and not analysis.has_critical_issues)
-            rb_client.post_review(
-                review_request_id=analysis.review_request_id,
-                body_top=body_top,
-                comments=inline_comments,
-                ship_it=ship_it,
-                publish=publish,
-            )
-
-            self.db.mark_submitted(analysis.id)
-
-            mode = "Ship It + published" if force_ship_it else ("published" if publish else "draft")
-            self.app.notify(
-                f"Submitted review for RR #{analysis.review_request_id} as {mode} "
-                f"({len(inline_comments)} comments)",
-                severity="information",
-            )
-
-        except Exception as e:
-            logger.exception("Failed to submit review")
-            self.app.notify(f"Submit failed: {e}", severity="error")
-
-        self._notify_refresh()
+        ship_it = force_ship_it or (len(inline_comments) == 0 and not analysis.has_critical_issues)
+        self.app.run_submit(
+            review_request_id=analysis.review_request_id,
+            body_top=body_top,
+            inline_comments=inline_comments,
+            ship_it=ship_it,
+            publish=publish,
+            force_ship_it=force_ship_it,
+            analysis_id=analysis.id,
+        )
 
     # -- Export --
 

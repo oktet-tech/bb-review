@@ -447,3 +447,58 @@ class UnifiedApp(App):
         # Refresh both panes
         self.call_from_thread(self._refresh_queue_pane)
         self.call_from_thread(self.refresh_reviews_pane)
+
+    @work(thread=True, exclusive=True, group="submit")
+    def run_submit(
+        self,
+        review_request_id: int,
+        body_top: str,
+        inline_comments: list[dict],
+        ship_it: bool,
+        publish: bool,
+        force_ship_it: bool,
+        analysis_id: int,
+    ) -> None:
+        """Background worker: post a review to Review Board."""
+        if self._config is None or self._review_db is None:
+            self.call_from_thread(self.notify, "Config not available", severity="error")
+            return
+
+        self.call_from_thread(self.query_one(LogPanel).show)
+        self.call_from_thread(self._log, f"Submitting review for RR #{review_request_id}...")
+
+        try:
+            from bb_review.rr import ReviewBoardClient
+
+            rb_client = ReviewBoardClient(
+                url=self._config.reviewboard.url,
+                bot_username=self._config.reviewboard.bot_username,
+                api_token=self._config.reviewboard.api_token,
+                username=self._config.reviewboard.username,
+                password=self._config.reviewboard.get_password(),
+                use_kerberos=self._config.reviewboard.use_kerberos,
+            )
+            rb_client.connect()
+            self.call_from_thread(self._log, "Connected to Review Board")
+
+            rb_client.post_review(
+                review_request_id=review_request_id,
+                body_top=body_top,
+                comments=inline_comments,
+                ship_it=ship_it,
+                publish=publish,
+            )
+
+            self._review_db.mark_submitted(analysis_id)
+
+            mode = "Ship It + published" if force_ship_it else ("published" if publish else "draft")
+            msg = f"Submitted review for RR #{review_request_id} as {mode} ({len(inline_comments)} comments)"
+            self.call_from_thread(self._log, msg)
+            self.call_from_thread(self.notify, msg, severity="information")
+
+        except Exception as e:
+            logger.exception("Failed to submit review")
+            self.call_from_thread(self._log, f"Submit FAILED: {e}")
+            self.call_from_thread(self.notify, f"Submit failed: {e}", severity="error")
+
+        self.call_from_thread(self.refresh_reviews_pane)
