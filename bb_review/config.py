@@ -212,6 +212,21 @@ class CocoIndexRepoConfig(BaseModel):
     enabled: bool = False
 
 
+class QueueConfig(BaseModel):
+    """Queue processing defaults."""
+
+    method: str = "opencode"  # llm, opencode, or claude
+    count: int = 5  # items to process per run
+
+    @field_validator("method")
+    @classmethod
+    def validate_method(cls, v: str) -> str:
+        valid = ("llm", "opencode", "claude")
+        if v not in valid:
+            raise ValueError(f"method must be one of: {valid}")
+        return v
+
+
 class ReviewDBConfig(BaseModel):
     """Reviews database configuration for storing analysis history."""
 
@@ -298,6 +313,7 @@ class Config(BaseModel):
     opencode: OpenCodeConfig = Field(default_factory=OpenCodeConfig)
     claude_code: ClaudeCodeConfig = Field(default_factory=ClaudeCodeConfig)
     cocoindex: CocoIndexConfig = Field(default_factory=CocoIndexConfig)
+    queue: QueueConfig = Field(default_factory=QueueConfig)
     review_db: ReviewDBConfig = Field(default_factory=ReviewDBConfig)
 
     def get_repo_by_name(self, name: str) -> RepoConfig | None:

@@ -319,7 +319,7 @@ class UnifiedApp(App):
             if reset_count > 0:
                 self.call_from_thread(self._log, f"Reset {reset_count} stale in_progress item(s)")
 
-            items = queue_db.pick_next(5)
+            items = queue_db.pick_next(config.queue.count)
             if not items:
                 self.call_from_thread(self._log, "No items with status=next to process.")
                 self.call_from_thread(self.notify, "No items with status=next", severity="information")
@@ -344,9 +344,9 @@ class UnifiedApp(App):
             repo_manager = RepoManager(config.get_all_repos())
             review_db = ReviewDatabase(config.review_db.resolved_path)
 
-            # Default to opencode method
-            method = "opencode"
-            analysis_method = method
+            method = config.queue.method
+            # Map CLI method name to DB analysis_method
+            analysis_method = "claude_code" if method == "claude" else method
 
             succeeded = 0
             failed = 0
@@ -368,22 +368,34 @@ class UnifiedApp(App):
 
                     queue_db.mark_in_progress(rr_id)
 
-                    # Use the CLI process functions
-                    from bb_review.cli.queue import _process_item_agent
+                    from bb_review.cli.queue import _process_item_agent, _process_item_llm
 
-                    _process_item_agent(
-                        item,
-                        method,
-                        config,
-                        rb_client,
-                        repo_manager,
-                        review_db,
-                        queue_db,
-                        model_name=None,
-                        fake_review=False,
-                        submit=False,
-                        fallback=True,
-                    )
+                    if method == "llm":
+                        _process_item_llm(
+                            item,
+                            config,
+                            rb_client,
+                            repo_manager,
+                            review_db,
+                            queue_db,
+                            model_name=None,
+                            fake_review=False,
+                            submit=False,
+                        )
+                    else:
+                        _process_item_agent(
+                            item,
+                            method,
+                            config,
+                            rb_client,
+                            repo_manager,
+                            review_db,
+                            queue_db,
+                            model_name=None,
+                            fake_review=False,
+                            submit=False,
+                            fallback=True,
+                        )
 
                     succeeded += 1
                     self.call_from_thread(self._log, f"  r/{rr_id}: done")

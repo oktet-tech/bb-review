@@ -100,6 +100,11 @@ claude_code:
     - Bash
   # mcp_config: .mcp.json  # MCP servers config (generate with: bb-review cocoindex setup --tool claude <repo>)
 
+# Queue processing defaults
+queue:
+  method: "opencode"  # llm, opencode, or claude
+  count: 5  # items to process per run
+
 # Reviews database - stores analysis history for tracking and export
 # Enables: bb-review db list/show/export/stats commands
 review_db:

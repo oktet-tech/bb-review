@@ -158,12 +158,12 @@ def set_status(ctx: click.Context, rr_ids: tuple[int, ...], status: str) -> None
 
 
 @queue.command()
-@click.option("--count", default=5, help="Number of items to process.")
+@click.option("--count", default=None, type=int, help="Number of items to process (default: from config).")
 @click.option(
     "--method",
-    default="opencode",
+    default=None,
     type=click.Choice(["llm", "opencode", "claude"]),
-    help="Analysis method (default: opencode).",
+    help="Analysis method (default: from config).",
 )
 @click.option("--model", "model_name", help="Override model from config.")
 @click.option("--dry-run", is_flag=True, help="Show what would be processed without doing it.")
@@ -177,8 +177,8 @@ def set_status(ctx: click.Context, rr_ids: tuple[int, ...], status: str) -> None
 @click.pass_context
 def process(
     ctx: click.Context,
-    count: int,
-    method: str,
+    count: int | None,
+    method: str | None,
     model_name: str | None,
     dry_run: bool,
     fake_review: bool,
@@ -192,6 +192,10 @@ def process(
     """
     config = get_config(ctx)
     queue_db = _get_queue_db(config)
+
+    # Resolve from config defaults
+    method = method or config.queue.method
+    count = count or config.queue.count
 
     # Crash recovery: reset stale in_progress items
     reset_count = queue_db.reset_stale_in_progress()
