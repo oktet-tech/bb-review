@@ -150,6 +150,7 @@ class UnifiedApp(App):
     def on_tabs_tab_activated(self, event: Tabs.TabActivated) -> None:
         switcher = self.query_one(ContentSwitcher)
         switcher.current = event.tab.id
+        self._refresh_active_pane(event.tab.id)
         self._focus_active_pane()
 
     def action_switch_tab(self) -> None:
@@ -188,6 +189,13 @@ class UnifiedApp(App):
 
     def action_quit_app(self) -> None:
         self.exit()
+
+    def _refresh_active_pane(self, tab_id: str | None = None) -> None:
+        """Re-read DB data for the pane being switched to."""
+        if tab_id == TAB_QUEUE:
+            self._refresh_queue_pane()
+        elif tab_id == TAB_REVIEWS:
+            self.refresh_reviews_pane()
 
     # -- Data refresh helpers (called by panes and handler) --
 
