@@ -85,6 +85,7 @@ class ReviewBoardClient:
         self.bot_username = bot_username
         self._cookie_file: Path | None = None
         self._connected = False
+        self._filediff_cache: dict[int, list[dict]] = {}
 
     def connect(self) -> None:
         """Establish connection to Review Board."""
@@ -512,6 +513,10 @@ class ReviewBoardClient:
         review = result.get("review", result)
         review_id = review["id"]
 
+        # Pre-warm filediff cache to avoid N+1 API calls
+        if comments:
+            self._warm_filediff_cache(review_request_id)
+
         # Add comments
         for comment in comments:
             self._add_diff_comment(review_request_id, review_id, comment)
@@ -553,31 +558,39 @@ class ReviewBoardClient:
         except Exception as e:
             logger.error(f"Failed to add comment: {e}")
 
-    def _find_filediff_id(self, review_request_id: int, file_path: str) -> int | None:
-        """Find the filediff ID for a given file path."""
+    def _warm_filediff_cache(self, review_request_id: int) -> None:
+        """Fetch filediff list once and cache it to avoid repeated API calls."""
+        if review_request_id in self._filediff_cache:
+            return
         try:
             result = self._api_get(f"/api/review-requests/{review_request_id}/diffs/")
             diffs = result.get("diffs", [])
             if not diffs:
-                return None
-
-            latest_revision = diffs[-1]["revision"]
-            files_result = self._api_get(
-                f"/api/review-requests/{review_request_id}/diffs/{latest_revision}/files/"
-            )
-
-            for f in files_result.get("files", []):
-                dest = f.get("dest_file", "")
-                source = f.get("source_file", "")
-
-                if dest == file_path or source == file_path:
-                    return f["id"]
-                if dest.endswith(file_path) or file_path.endswith(dest):
-                    return f["id"]
-
-            return None
+                self._filediff_cache[review_request_id] = []
+                return
+            rev = diffs[-1]["revision"]
+            files_result = self._api_get(f"/api/review-requests/{review_request_id}/diffs/{rev}/files/")
+            self._filediff_cache[review_request_id] = files_result.get("files", [])
         except Exception:
-            return None
+            self._filediff_cache[review_request_id] = []
+
+    def _find_filediff_id(self, review_request_id: int, file_path: str) -> int | None:
+        """Find the filediff ID for a given file path (uses cache if available)."""
+        files = self._filediff_cache.get(review_request_id)
+        if files is None:
+            self._warm_filediff_cache(review_request_id)
+            files = self._filediff_cache.get(review_request_id, [])
+
+        for f in files:
+            dest = f.get("dest_file", "")
+            source = f.get("source_file", "")
+
+            if dest == file_path or source == file_path:
+                return f["id"]
+            if dest.endswith(file_path) or file_path.endswith(dest):
+                return f["id"]
+
+        return None
 
     def get_repository_info(self, review_request_id: int) -> dict[str, Any]:
         """Get repository information for a review request."""
