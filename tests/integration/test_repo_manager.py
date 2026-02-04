@@ -223,3 +223,150 @@ class TestRepoManagerFileContent:
         """Return None for missing file."""
         context = repo_manager.get_file_context("test-repo", "nonexistent.c", 1, 5, 2)
         assert context is None
+
+
+class TestChainContext:
+    """Tests for chain_context context manager."""
+
+    def test_creates_branch_and_yields_path(
+        self, repo_manager: RepoManager, temp_git_repo: tuple[Path, Repo]
+    ):
+        repo_path, git_repo = temp_git_repo
+        original_commit = git_repo.head.commit.hexsha
+
+        with repo_manager.chain_context("test-repo", original_commit, "test-branch") as path:
+            assert path == repo_path
+            # Branch should exist
+            branch_names = [b.name for b in git_repo.branches]
+            assert "test-branch" in branch_names
+
+    def test_branch_deleted_on_exit(self, repo_manager: RepoManager, temp_git_repo: tuple[Path, Repo]):
+        repo_path, git_repo = temp_git_repo
+        original_commit = git_repo.head.commit.hexsha
+
+        with repo_manager.chain_context("test-repo", original_commit, "ephemeral-branch"):
+            pass
+
+        branch_names = [b.name for b in git_repo.branches]
+        assert "ephemeral-branch" not in branch_names
+
+    def test_keep_branch_persists(self, repo_manager: RepoManager, temp_git_repo: tuple[Path, Repo]):
+        repo_path, git_repo = temp_git_repo
+        original_commit = git_repo.head.commit.hexsha
+
+        with repo_manager.chain_context("test-repo", original_commit, "keep-me", keep_branch=True):
+            pass
+
+        branch_names = [b.name for b in git_repo.branches]
+        assert "keep-me" in branch_names
+
+    def test_branch_cleaned_on_exception(self, repo_manager: RepoManager, temp_git_repo: tuple[Path, Repo]):
+        repo_path, git_repo = temp_git_repo
+        original_commit = git_repo.head.commit.hexsha
+
+        with pytest.raises(RuntimeError):
+            with repo_manager.chain_context("test-repo", original_commit, "boom-branch"):
+                raise RuntimeError("something went wrong")
+
+        branch_names = [b.name for b in git_repo.branches]
+        assert "boom-branch" not in branch_names
+
+    def test_restores_original_ref(self, repo_manager: RepoManager, temp_git_repo: tuple[Path, Repo]):
+        repo_path, git_repo = temp_git_repo
+        original_commit = git_repo.head.commit.hexsha
+
+        with repo_manager.chain_context("test-repo", original_commit, "restore-branch"):
+            pass
+
+        current = repo_manager.get_current_commit("test-repo")
+        assert current == original_commit
+
+
+class TestApplyAndCommit:
+    """Tests for apply_and_commit."""
+
+    def test_applies_and_commits(
+        self, repo_manager: RepoManager, temp_git_repo_with_files: tuple[Path, Repo]
+    ):
+        repo_path, git_repo = temp_git_repo_with_files
+        original_count = len(list(git_repo.iter_commits()))
+
+        # Modify a tracked file, generate patch, then reset.
+        # GitPython's git.diff strips trailing newline; add it back since
+        # `git apply` requires the patch to end with a newline.
+        main_c = repo_path / "src" / "main.c"
+        original_content = main_c.read_text()
+        main_c.write_text(original_content + "// patched\n")
+        git_repo.index.add(["src/main.c"])
+        patch = git_repo.git.diff("--cached", "--no-color") + "\n"
+        git_repo.git.reset("--hard", "HEAD")
+
+        result = repo_manager.apply_and_commit("test-repo", patch, "Test commit")
+
+        assert result is True
+        new_count = len(list(git_repo.iter_commits()))
+        assert new_count == original_count + 1
+
+    def test_bad_patch_returns_false(self, repo_manager: RepoManager, temp_git_repo: tuple[Path, Repo]):
+        result = repo_manager.apply_and_commit("test-repo", "garbage", "Bad commit")
+        assert result is False
+
+
+class TestCommitStaged:
+    """Tests for commit_staged."""
+
+    def test_commits_staged_changes(self, repo_manager: RepoManager, temp_git_repo: tuple[Path, Repo]):
+        repo_path, git_repo = temp_git_repo
+        # Stage a new file
+        new_file = repo_path / "staged.txt"
+        new_file.write_text("staged content\n")
+        git_repo.index.add(["staged.txt"])
+
+        result = repo_manager.commit_staged("test-repo", "Commit staged")
+
+        assert result is True
+        assert git_repo.head.commit.message.startswith("Commit staged")
+
+    def test_nothing_staged_returns_false(self, repo_manager: RepoManager, temp_git_repo: tuple[Path, Repo]):
+        result = repo_manager.commit_staged("test-repo", "Empty commit")
+        assert result is False
+
+
+class TestDeleteBranch:
+    """Tests for delete_branch."""
+
+    def test_deletes_branch(self, repo_manager: RepoManager, temp_git_repo: tuple[Path, Repo]):
+        repo_path, git_repo = temp_git_repo
+        # Create a branch to delete
+        git_repo.create_head("doomed-branch")
+
+        repo_manager.delete_branch("test-repo", "doomed-branch")
+
+        branch_names = [b.name for b in git_repo.branches]
+        assert "doomed-branch" not in branch_names
+
+    def test_nonexistent_branch_no_crash(self, repo_manager: RepoManager, temp_git_repo: tuple[Path, Repo]):
+        # Should log warning but not raise
+        repo_manager.delete_branch("test-repo", "no-such-branch")
+
+
+class TestResetWorkingTree:
+    """Tests for _reset_working_tree."""
+
+    def test_dirty_repo_cleaned(self, repo_manager: RepoManager, temp_git_repo: tuple[Path, Repo]):
+        repo_path, git_repo = temp_git_repo
+        # Dirty the repo
+        (repo_path / "README.md").write_text("modified\n")
+        (repo_path / "untracked.txt").write_text("junk\n")
+        assert git_repo.is_dirty(untracked_files=True)
+
+        repo_manager._reset_working_tree(git_repo, "test-repo")
+
+        assert not git_repo.is_dirty(untracked_files=True)
+
+    def test_clean_repo_noop(self, repo_manager: RepoManager, temp_git_repo: tuple[Path, Repo]):
+        _, git_repo = temp_git_repo
+        assert not git_repo.is_dirty(untracked_files=True)
+
+        # Should not raise
+        repo_manager._reset_working_tree(git_repo, "test-repo")
