@@ -51,6 +51,7 @@ repositories:
   #   local_path: "/path/to/local/clone"
   #   remote_url: "git@github.com:org/myproject.git"
   #   default_branch: "main"
+  #   review_method: "claude"  # Per-repo override: llm, opencode, or claude
   #   # Optional: Per-repo CocoIndex settings
   #   cocoindex:
   #     enabled: true  # Enable semantic indexing for this repo

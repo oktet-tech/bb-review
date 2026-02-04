@@ -193,8 +193,11 @@ def process(
     config = get_config(ctx)
     queue_db = _get_queue_db(config)
 
-    # Resolve from config defaults
-    method = method or config.queue.method
+    # If user explicitly passed --method, it overrides everything (including per-repo).
+    # Otherwise resolve per-item from config (per-repo > queue.method).
+    method_explicit = method is not None
+    if not method_explicit:
+        method = config.queue.method
     count = count or config.queue.count
 
     # Crash recovery: reset stale in_progress items
@@ -211,27 +214,38 @@ def process(
 
     if dry_run:
         for item in items:
+            item_method = method if method_explicit else config.get_review_method(item.repository)
             click.echo(
                 f"  [DRY RUN] Would process r/{item.review_request_id} "
-                f"(diff {item.diff_revision}, repo: {item.repository})"
+                f"(diff {item.diff_revision}, repo: {item.repository}, method: {item_method})"
             )
         return
 
-    # Check binary availability for agent methods before starting the loop
-    if method == "opencode" and not fake_review:
-        from ..reviewers import check_opencode_available
+    # Check binary availability for agent methods before starting the loop.
+    # When per-item resolution is active we may need multiple binaries -- check all
+    # methods that could appear.
+    if not fake_review:
+        methods_needed: set[str] = set()
+        if method_explicit:
+            methods_needed.add(method)
+        else:
+            for item in items:
+                methods_needed.add(config.get_review_method(item.repository))
 
-        available, msg = check_opencode_available(config.opencode.binary_path)
-        if not available:
-            click.echo(f"Error: {msg}", err=True)
-            sys.exit(1)
-    elif method == "claude" and not fake_review:
-        from ..reviewers import check_claude_available
+        if "opencode" in methods_needed:
+            from ..reviewers import check_opencode_available
 
-        available, msg = check_claude_available(config.claude_code.binary_path)
-        if not available:
-            click.echo(f"Error: {msg}", err=True)
-            sys.exit(1)
+            available, msg = check_opencode_available(config.opencode.binary_path)
+            if not available:
+                click.echo(f"Error: {msg}", err=True)
+                sys.exit(1)
+        if "claude" in methods_needed:
+            from ..reviewers import check_claude_available
+
+            available, msg = check_claude_available(config.claude_code.binary_path)
+            if not available:
+                click.echo(f"Error: {msg}", err=True)
+                sys.exit(1)
 
     from ..db import ReviewDatabase
     from ..git import RepoManager
@@ -250,16 +264,18 @@ def process(
     repo_manager = RepoManager(config.get_all_repos())
     review_db = ReviewDatabase(config.review_db.resolved_path)
 
-    # Map CLI method name to DB analysis_method
-    analysis_method = "claude_code" if method == "claude" else method
-
     succeeded = 0
     skipped = 0
     failed = 0
 
     for item in items:
         rr_id = item.review_request_id
-        click.echo(f"Processing r/{rr_id} (diff {item.diff_revision})...")
+
+        # Resolve method for this item
+        item_method = method if method_explicit else config.get_review_method(item.repository)
+        analysis_method = "claude_code" if item_method == "claude" else item_method
+
+        click.echo(f"Processing r/{rr_id} (diff {item.diff_revision}, method={item_method})...")
 
         try:
             # Skip if a real (non-fake) analysis already exists for this method
@@ -273,7 +289,7 @@ def process(
 
             queue_db.mark_in_progress(rr_id)
 
-            if method == "llm":
+            if item_method == "llm":
                 _process_item_llm(
                     item,
                     config,
@@ -288,7 +304,7 @@ def process(
             else:
                 _process_item_agent(
                     item,
-                    method,
+                    item_method,
                     config,
                     rb_client,
                     repo_manager,

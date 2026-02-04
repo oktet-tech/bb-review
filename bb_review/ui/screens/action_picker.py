@@ -1,4 +1,4 @@
-"""Action picker screen for selecting an action on an analysis."""
+"""Action picker screens for selecting actions and processing options."""
 
 from dataclasses import dataclass
 from enum import Enum
@@ -354,4 +354,109 @@ class SubmitOptionsScreen(ModalScreen[str | None]):
 
     def action_cancel(self) -> None:
         """Cancel submission."""
+        self.dismiss(None)
+
+
+# Method labels/IDs used by ProcessOptionsScreen
+REVIEW_METHODS = [
+    ("llm", "LLM (direct)"),
+    ("opencode", "OpenCode agent"),
+    ("claude", "Claude Code agent"),
+]
+
+
+class ProcessOptionsScreen(ModalScreen[str | None]):
+    """Modal screen for choosing the review processing method."""
+
+    BINDINGS = [
+        Binding("l", "pick_llm", "LLM", show=False),
+        Binding("o", "pick_opencode", "OpenCode", show=False),
+        Binding("c", "pick_claude", "Claude", show=False),
+        Binding("enter", "select", "Select", priority=True),
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    CSS = """
+    ProcessOptionsScreen {
+        align: center middle;
+    }
+
+    #dialog {
+        width: 55;
+        height: auto;
+        border: thick $primary;
+        background: $surface;
+        padding: 1 2;
+    }
+
+    #title {
+        text-style: bold;
+        text-align: center;
+        width: 100%;
+        padding-bottom: 1;
+    }
+
+    OptionList {
+        height: auto;
+        max-height: 10;
+        background: $surface;
+    }
+
+    OptionList:focus {
+        border: tall $primary;
+    }
+    """
+
+    def __init__(self, default_method: str = "opencode", name: str | None = None):
+        super().__init__(name=name)
+        self._default_method = default_method
+
+    def compose(self) -> ComposeResult:
+        with Container(id="dialog"):
+            yield Label("Processing Method", id="title")
+            yield OptionList(
+                Option("\\[L] LLM (direct)", id="llm"),
+                Option("\\[O] OpenCode agent", id="opencode"),
+                Option("\\[C] Claude Code agent", id="claude"),
+                None,  # Separator
+                Option("\\[Esc] Cancel", id="cancel"),
+                id="method-list",
+            )
+        yield Footer()
+
+    def on_mount(self) -> None:
+        option_list = self.query_one("#method-list", OptionList)
+        option_list.focus()
+        # Pre-select the default method
+        for idx, (method_id, _) in enumerate(REVIEW_METHODS):
+            if method_id == self._default_method:
+                option_list.highlighted = idx
+                break
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self._select_option(str(event.option_id))
+
+    def action_select(self) -> None:
+        option_list = self.query_one("#method-list", OptionList)
+        if option_list.highlighted is not None:
+            option = option_list.get_option_at_index(option_list.highlighted)
+            if option.id:
+                self._select_option(str(option.id))
+
+    def _select_option(self, option_id: str) -> None:
+        if option_id in ("llm", "opencode", "claude"):
+            self.dismiss(option_id)
+        elif option_id == "cancel":
+            self.dismiss(None)
+
+    def action_pick_llm(self) -> None:
+        self.dismiss("llm")
+
+    def action_pick_opencode(self) -> None:
+        self.dismiss("opencode")
+
+    def action_pick_claude(self) -> None:
+        self.dismiss("claude")
+
+    def action_cancel(self) -> None:
         self.dismiss(None)

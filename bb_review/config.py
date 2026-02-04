@@ -96,6 +96,17 @@ class RepositoryConfig(BaseModel):
     default_branch: str = "main"
     type: str | None = None  # e.g., "te-test-suite" for OpenCode MCP setup
     cocoindex: Optional["CocoIndexRepoConfig"] = None  # Per-repo CocoIndex settings
+    review_method: str | None = None  # Per-repo override: llm, opencode, claude
+
+    @field_validator("review_method")
+    @classmethod
+    def validate_review_method(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        valid = ("llm", "opencode", "claude")
+        if v not in valid:
+            raise ValueError(f"review_method must be one of: {valid}")
+        return v
 
     def to_repo_config(self) -> RepoConfig:
         """Convert to RepoConfig dataclass."""
@@ -340,6 +351,14 @@ class Config(BaseModel):
             if repo.name == name:
                 return repo
         return None
+
+    def get_review_method(self, rb_repo_name: str | None) -> str:
+        """Resolve method: per-repo override > queue.method default."""
+        if rb_repo_name:
+            for repo in self.repositories:
+                if repo.rb_repo_name == rb_repo_name and repo.review_method:
+                    return repo.review_method
+        return self.queue.method
 
     def get_cocoindex_enabled_repos(self) -> list[RepositoryConfig]:
         """Get all repositories with CocoIndex enabled."""

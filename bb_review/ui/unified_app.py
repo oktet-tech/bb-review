@@ -236,7 +236,14 @@ class UnifiedApp(App):
         self._run_sync()
 
     def on_queue_pane_process_requested(self, event: QueuePane.ProcessRequested) -> None:
-        self._run_process()
+        from .screens.action_picker import ProcessOptionsScreen
+
+        default = self._config.queue.method if self._config else "opencode"
+        self.push_screen(ProcessOptionsScreen(default_method=default), self._on_method_picked)
+
+    def _on_method_picked(self, method: str | None) -> None:
+        if method is not None:
+            self._run_process(method)
 
     def on_reviews_pane_action_requested(self, event: ReviewsPane.ActionRequested) -> None:
         if self._review_handler is None:
@@ -309,14 +316,19 @@ class UnifiedApp(App):
             pass
 
     @work(thread=True, exclusive=True, group="process")
-    def _run_process(self) -> None:
-        """Background worker: process next queue items."""
+    def _run_process(self, chosen_method: str) -> None:
+        """Background worker: process next queue items.
+
+        Args:
+            chosen_method: method picked in the modal (used as batch default).
+                Per-repo overrides from config still take precedence.
+        """
         if self._queue_db is None or self._config is None:
             self.call_from_thread(self.notify, "Config or queue DB not available", severity="error")
             return
 
         self.call_from_thread(self.query_one(LogPanel).show)
-        self.call_from_thread(self._log, "Starting process...")
+        self.call_from_thread(self._log, f"Starting process (method={chosen_method})...")
 
         config = self._config
         queue_db = self._queue_db
@@ -352,16 +364,25 @@ class UnifiedApp(App):
             repo_manager = RepoManager(config.get_all_repos())
             review_db = ReviewDatabase(config.review_db.resolved_path)
 
-            method = config.queue.method
-            # Map CLI method name to DB analysis_method
-            analysis_method = "claude_code" if method == "claude" else method
-
             succeeded = 0
             failed = 0
 
             for item in items:
                 rr_id = item.review_request_id
-                self.call_from_thread(self._log, f"Processing r/{rr_id} (diff {item.diff_revision})...")
+
+                # Per-repo override takes precedence over modal pick
+                method = chosen_method
+                for repo in config.repositories:
+                    if repo.rb_repo_name == item.repository and repo.review_method:
+                        method = repo.review_method
+                        break
+
+                analysis_method = "claude_code" if method == "claude" else method
+
+                self.call_from_thread(
+                    self._log,
+                    f"Processing r/{rr_id} (diff {item.diff_revision}, method={method})...",
+                )
 
                 try:
                     if review_db.has_real_analysis(rr_id, item.diff_revision, analysis_method):
