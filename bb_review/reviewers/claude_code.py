@@ -91,6 +91,7 @@ def build_review_prompt(
     focus_areas: list[str],
     at_reviewed_state: bool = False,
     changed_files: list[str] | None = None,
+    verbose: bool = False,
 ) -> str:
     """Build the review prompt for Claude Code.
 
@@ -102,6 +103,7 @@ def build_review_prompt(
         focus_areas: List of areas to focus on (bugs, security, etc.).
         at_reviewed_state: If True, repo is at reviewed state (files staged).
         changed_files: List of files changed in the review.
+        verbose: If True, request detailed multi-paragraph explanations.
 
     Returns:
         Formatted prompt string.
@@ -171,9 +173,22 @@ For general observations that don't apply to a specific line, omit the Line fiel
 
 After listing all issues, provide a brief summary of the overall code quality.
 
-Be concise but thorough. Do not suggest changes outside the scope of the review.
+Do not suggest changes outside the scope of the review.
 Output ONLY the structured review (### Issue blocks and summary). \
 Do not include introductory text, thinking, or narration of your process."""
+
+    if verbose:
+        prompt += """
+
+Write thorough, multi-paragraph explanations in each Comment field. \
+Include step-by-step reasoning, concrete examples, memory layouts, \
+and control flow analysis where relevant. \
+Explain the root cause in detail, not just the symptom."""
+    else:
+        prompt = prompt.replace(
+            "Do not suggest changes",
+            "Be concise but thorough. Do not suggest changes",
+        )
 
     return prompt
 

@@ -87,6 +87,7 @@ def create_mock_review(review_id: int, diff_revision: int) -> ReviewResult:
     type=REVIEW_ID,
     help="Start reviewing from this RR (earlier patches applied as context only)",
 )
+@click.option("--verbose", "-V", is_flag=True, help="Detailed multi-paragraph explanations")
 @click.pass_context
 def analyze(
     ctx: click.Context,
@@ -103,6 +104,7 @@ def analyze(
     keep_branch: bool,
     fallback: bool,
     review_from: int | None,
+    verbose: bool,
 ) -> None:
     """Analyze a review request using LLM.
 
@@ -348,6 +350,7 @@ def analyze(
                         analyzer,
                         config,
                         patch_applied=patch_applied,
+                        verbose=verbose,
                     )
 
                 chain_result.add_review(result)
@@ -448,12 +451,14 @@ def run_analysis(
     analyzer: Analyzer,
     config: Config,
     patch_applied: bool = True,
+    verbose: bool = False,
 ) -> ReviewResult:
     """Run LLM analysis on a single review.
 
     Args:
         patch_applied: If True, the patch is staged in git and we can get file context.
             If False (fallback mode), only the diff is available.
+        verbose: If True, request detailed multi-paragraph explanations.
     """
     # Load guidelines
     guidelines = load_guidelines(repo_path)
@@ -495,6 +500,7 @@ def run_analysis(
         file_contexts=file_contexts,
         review_request_id=review_id,
         diff_revision=diff_info.diff_revision,
+        verbose=verbose,
     )
 
 

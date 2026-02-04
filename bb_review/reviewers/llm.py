@@ -99,6 +99,7 @@ class Analyzer:
         file_contexts: dict[str, str] | None = None,
         review_request_id: int = 0,
         diff_revision: int = 0,
+        verbose: bool = False,
     ) -> ReviewResult:
         """Analyze a diff and return review comments.
 
@@ -108,11 +109,16 @@ class Analyzer:
             file_contexts: Optional dict mapping file paths to surrounding context.
             review_request_id: Review request ID for the result.
             diff_revision: Diff revision number.
+            verbose: If True, request detailed multi-paragraph explanations.
 
         Returns:
             ReviewResult with comments.
         """
-        prompt = self._build_prompt(diff, guidelines, file_contexts)
+        prompt = self._build_prompt(diff, guidelines, file_contexts, verbose=verbose)
+
+        # Bump max_tokens for verbose mode to allow longer explanations
+        if verbose:
+            self.llm.max_tokens = self.max_tokens * 2
 
         logger.info(f"Analyzing diff ({len(diff)} chars) with {self.provider_name}/{self.model}")
         logger.debug(f"Prompt length: {len(prompt)} chars")
@@ -146,6 +152,7 @@ class Analyzer:
         diff: str,
         guidelines: ReviewGuidelines,
         file_contexts: dict[str, str] | None = None,
+        verbose: bool = False,
     ) -> str:
         """Build the prompt for the LLM.
 
@@ -153,6 +160,7 @@ class Analyzer:
             diff: The raw diff content.
             guidelines: Review guidelines.
             file_contexts: Optional file context.
+            verbose: If True, request detailed multi-paragraph explanations.
 
         Returns:
             Formatted prompt string.
@@ -193,11 +201,19 @@ class Analyzer:
         parts.append(f"\n## Diff to Review\n```diff\n{diff}\n```")
 
         # Final instruction
-        parts.append(
+        instruction = (
             "\n## Instructions\n"
             "Analyze the diff above and provide your review as JSON. "
             "Remember to only include substantive issues and be specific with line numbers."
         )
+        if verbose:
+            instruction += (
+                "\n\nWrite thorough, multi-paragraph explanations for each issue. "
+                "Include step-by-step reasoning, concrete examples, memory layouts, "
+                "and control flow analysis where relevant. "
+                "Explain the root cause in detail, not just the symptom."
+            )
+        parts.append(instruction)
 
         return "\n".join(parts)
 

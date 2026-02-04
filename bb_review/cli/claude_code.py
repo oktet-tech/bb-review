@@ -72,6 +72,7 @@ logger = logging.getLogger(__name__)
     type=REVIEW_ID,
     help="Start reviewing from this RR (earlier patches applied as context only)",
 )
+@click.option("--verbose", "-V", is_flag=True, help="Detailed multi-paragraph explanations")
 @click.pass_context
 def claude_cmd(
     ctx: click.Context,
@@ -91,6 +92,7 @@ def claude_cmd(
     keep_branch: bool,
     mcp_config: Path | None,
     review_from: int | None,
+    verbose: bool,
 ) -> None:
     """Analyze a review using Claude Code CLI.
 
@@ -158,6 +160,7 @@ def claude_cmd(
             allowed_tools,
             at_reviewed_state,
             mcp_config,
+            verbose=verbose,
         )
 
     run_review_command(
@@ -196,6 +199,7 @@ def run_claude_for_review(
     allowed_tools: list[str] | None,
     at_reviewed_state: bool = True,
     mcp_config: Path | None = None,
+    verbose: bool = False,
 ) -> str:
     """Run Claude Code analysis for a single review."""
     guidelines = load_guidelines(repo_path)
@@ -227,6 +231,7 @@ def run_claude_for_review(
         focus_areas=focus_areas,
         at_reviewed_state=at_reviewed_state,
         changed_files=changed_files,
+        verbose=verbose,
     )
 
     click.echo(f"    Running Claude Code analysis ({len(raw_diff)} chars diff)...")
