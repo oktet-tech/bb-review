@@ -126,6 +126,89 @@ class TestBuildSubmissionData:
         data = build_submission_data(1, "raw", parsed, None)
         assert data["metadata"]["model"] == "default"
 
+    def test_general_issue_with_file_path_no_line(self):
+        """Issue with file_path but no line_number -> general issue with file shown."""
+        parsed = self._make_parsed(
+            issues=[
+                ParsedIssue(
+                    title="Architecture concern",
+                    file_path="src/core.c",
+                    severity="medium",
+                    comment="This module is too coupled",
+                ),
+            ]
+        )
+        data = build_submission_data(1, "raw", parsed, "gpt-4")
+        # No inline comment (missing line_number)
+        assert len(data["comments"]) == 0
+        # File path shown in body
+        assert "`src/core.c`" in data["body_top"]
+        assert "Architecture concern" in data["body_top"]
+
+    def test_general_issue_with_severity(self):
+        """General issue (no file) includes severity in body."""
+        parsed = self._make_parsed(
+            issues=[
+                ParsedIssue(
+                    title="Design flaw",
+                    severity="high",
+                    comment="Bad pattern",
+                ),
+            ]
+        )
+        data = build_submission_data(1, "raw", parsed, "gpt-4")
+        assert "high" in data["body_top"]
+
+    def test_general_issue_with_suggestion(self):
+        """General issue with suggestion includes it in body."""
+        parsed = self._make_parsed(
+            issues=[
+                ParsedIssue(
+                    title="Improvement",
+                    comment="Could be better",
+                    suggestion="Use pattern X instead",
+                ),
+            ]
+        )
+        data = build_submission_data(1, "raw", parsed, "gpt-4")
+        assert "Use pattern X instead" in data["body_top"]
+
+    def test_mixed_inline_and_general_issues(self):
+        """Mix of inline and general issues: inline -> comments, general -> body."""
+        parsed = self._make_parsed(
+            issues=[
+                ParsedIssue(
+                    title="Inline bug",
+                    file_path="a.c",
+                    line_number=10,
+                    comment="null deref",
+                ),
+                ParsedIssue(
+                    title="General note",
+                    file_path="b.c",
+                    comment="consider refactoring",
+                ),
+            ]
+        )
+        data = build_submission_data(1, "raw", parsed, "gpt-4")
+        assert len(data["comments"]) == 1
+        assert data["comments"][0]["file_path"] == "a.c"
+        assert "General note" in data["body_top"]
+        assert "`b.c`" in data["body_top"]
+
+    def test_parsed_issues_in_output(self):
+        """All parsed issues (inline + general) appear in parsed_issues list."""
+        parsed = self._make_parsed(
+            issues=[
+                ParsedIssue(title="A", file_path="x.c", line_number=1),
+                ParsedIssue(title="B", file_path="y.c"),
+            ]
+        )
+        data = build_submission_data(1, "raw", parsed, "gpt-4")
+        assert len(data["parsed_issues"]) == 2
+        titles = {i["title"] for i in data["parsed_issues"]}
+        assert titles == {"A", "B"}
+
 
 class TestSaveToReviewDB:
     @staticmethod
