@@ -17,7 +17,8 @@
       "Bash(task lint:*)",
       "Bash(task format:*)",
       "Bash(uv run:*)",
-      "Bash(analyze...\" before the actual review. Add explicit instruction to\noutput only structured review blocks, no preamble.\nEOF\n\\)\")"
+      "Bash(analyze...\" before the actual review. Add explicit instruction to\noutput only structured review blocks, no preamble.\nEOF\n\\)\")",
+      "Bash(tree:*)"
     ]
   }
 }
