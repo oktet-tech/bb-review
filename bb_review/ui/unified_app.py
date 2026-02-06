@@ -19,6 +19,7 @@ from .review_handler import ReviewHandler
 from .widgets.log_panel import LogPanel
 from .widgets.queue_pane import QueuePane
 from .widgets.reviews_pane import ReviewsPane
+from .widgets.work_pane import WorkPane
 
 
 if TYPE_CHECKING:
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 TAB_QUEUE = "tab-queue"
 TAB_REVIEWS = "tab-reviews"
+TAB_WORK = "tab-work"
 
 
 class UnifiedApp(App):
@@ -41,6 +43,7 @@ class UnifiedApp(App):
         Binding("ctrl+t", "switch_tab", "Switch Tab", show=False),
         Binding("1", "show_queue", "Queue", show=False),
         Binding("2", "show_reviews", "Reviews", show=False),
+        Binding("3", "show_work", "Work", show=False),
         Binding("l", "toggle_log", "Log", priority=True),
         Binding("c", "clear_log", "Clear Log", priority=True, show=False),
         Binding("q", "quit_app", "Quit"),
@@ -102,7 +105,8 @@ class UnifiedApp(App):
         self._r_filter_chain_id = review_filter_chain_id
         self._r_filter_limit = review_filter_limit
 
-        self._initial_tab = TAB_QUEUE if initial_tab == "queue" else TAB_REVIEWS
+        tab_map = {"queue": TAB_QUEUE, "reviews": TAB_REVIEWS, "work": TAB_WORK}
+        self._initial_tab = tab_map.get(initial_tab, TAB_QUEUE)
         self._review_handler: ReviewHandler | None = None
 
     def compose(self) -> ComposeResult:
@@ -110,6 +114,7 @@ class UnifiedApp(App):
         yield Tabs(
             Tab("[1] Queue", id=TAB_QUEUE),
             Tab("[2] Reviews", id=TAB_REVIEWS),
+            Tab("[3] Work", id=TAB_WORK),
         )
         with Vertical(id="main-content"):
             with ContentSwitcher(initial=self._initial_tab):
@@ -126,6 +131,7 @@ class UnifiedApp(App):
                     yield ReviewsPane(self._analyses, id=TAB_REVIEWS)
                 else:
                     yield Vertical(id=TAB_REVIEWS)
+                yield WorkPane(id=TAB_WORK)
             yield LogPanel()
         yield Footer()
 
@@ -155,9 +161,11 @@ class UnifiedApp(App):
 
     def action_switch_tab(self) -> None:
         tabs = self.query_one(Tabs)
-        if tabs.active == TAB_QUEUE:
-            tabs.active = TAB_REVIEWS
-        else:
+        order = [TAB_QUEUE, TAB_REVIEWS, TAB_WORK]
+        try:
+            idx = order.index(tabs.active)
+            tabs.active = order[(idx + 1) % len(order)]
+        except ValueError:
             tabs.active = TAB_QUEUE
 
     def action_show_queue(self) -> None:
@@ -166,6 +174,9 @@ class UnifiedApp(App):
     def action_show_reviews(self) -> None:
         self.query_one(Tabs).active = TAB_REVIEWS
 
+    def action_show_work(self) -> None:
+        self.query_one(Tabs).active = TAB_WORK
+
     def _focus_active_pane(self) -> None:
         switcher = self.query_one(ContentSwitcher)
         if switcher.current == TAB_QUEUE:
@@ -173,9 +184,14 @@ class UnifiedApp(App):
                 self.query_one(QueuePane).focus_table()
             except Exception:
                 pass
-        else:
+        elif switcher.current == TAB_REVIEWS:
             try:
                 self.query_one(ReviewsPane).focus_table()
+            except Exception:
+                pass
+        elif switcher.current == TAB_WORK:
+            try:
+                self.query_one(WorkPane).focus_table()
             except Exception:
                 pass
 
@@ -196,6 +212,8 @@ class UnifiedApp(App):
             self._refresh_queue_pane()
         elif tab_id == TAB_REVIEWS:
             self.refresh_reviews_pane()
+        elif tab_id == TAB_WORK:
+            self._refresh_work_pane()
 
     # -- Data refresh helpers (called by panes and handler) --
 
@@ -250,6 +268,16 @@ class UnifiedApp(App):
             self.notify("Review database not configured", severity="error")
             return
         self._review_handler.handle_action(event.action, self._analyses)
+
+    def on_work_pane_triage_requested(self, event: WorkPane.TriageRequested) -> None:
+        self.notify("Use 'bb-review triage <rr-id>' from the CLI", severity="information")
+
+    def _refresh_work_pane(self) -> None:
+        """Refresh the work pane by scanning for plan files."""
+        try:
+            self.query_one(WorkPane)._scan_plan_files()
+        except Exception:
+            pass
 
     # -- Background workers --
 

@@ -61,7 +61,7 @@ def _restore_console_logging(handlers: list[logging.StreamHandler]) -> None:
 @click.option("--queue", is_flag=True, default=False, help="Start on queue tab (backward compat)")
 @click.option(
     "--tab",
-    type=click.Choice(["queue", "reviews"]),
+    type=click.Choice(["queue", "reviews", "work"]),
     default=None,
     help="Which tab to start on (default: queue)",
 )
