@@ -792,11 +792,16 @@ def _run_series_review(
         ) as repo_path:
             click.echo(f"\nCreated branch: {branch_name}")
 
-            # Apply all patches as commits
+            # Apply all patches as commits, tracking which RR owns each file
+            file_to_rr: dict[str, int] = {}
             for review in all_reviews:
                 rr_id = review.review_request_id
                 click.echo(f"  Applying r/{rr_id}: {review.summary[:60]}...")
                 diff_info = session.rb_client.get_diff(rr_id, review.diff_revision)
+                for f in diff_info.files:
+                    path = f.get("dest_file") or f.get("source_file", "")
+                    if path:
+                        file_to_rr[path] = rr_id
                 if not session.repo_manager.apply_and_commit(
                     repo_config.name,
                     diff_info.raw_diff,
@@ -840,41 +845,69 @@ def _run_series_review(
     click.echo(analysis)
     click.echo("=" * 60)
 
-    # Build output for the target review (tip of chain)
+    # Split issues across RRs so each comment goes to the RR that owns its filediff
     target_rr = review_chain.target_review
     target_rr_id = target_rr.review_request_id if target_rr else review_id
+    issues_by_rr = _split_issues_by_rr(parsed.issues, file_to_rr, target_rr_id)
 
-    output_data = build_submission_data(
-        review_id=target_rr_id,
-        analysis=analysis,
-        parsed=parsed,
-        model=session.model,
-        rr_summary=target_rr.summary if target_rr else None,
-        method_label=session.method_label,
-    )
+    reviews_by_id = {r.review_request_id: r for r in all_reviews}
+    output_files: list[Path] = []
 
-    # Save to file
-    if output:
-        output_file = output
-    else:
-        output_file = Path(f"review_{target_rr_id}.json")
+    # Ensure tip RR always gets an entry (for body_top even if no issues)
+    if target_rr_id not in issues_by_rr:
+        issues_by_rr[target_rr_id] = []
 
-    output_file.write_text(json.dumps(output_data, indent=2))
-    click.echo(f"\nSeries review saved to: {output_file}")
-    click.echo(f"To submit: bb-review submit {output_file}")
+    for rr_id, rr_issues in sorted(issues_by_rr.items()):
+        is_tip = rr_id == target_rr_id
+        rr = reviews_by_id.get(rr_id)
 
-    # Save to DB
-    if session.config.review_db.enabled:
-        save_to_review_db(
-            config=session.config,
-            review_id=target_rr_id,
-            diff_revision=target_rr.diff_revision if target_rr else 1,
-            repository=review_chain.repository,
-            parsed=parsed,
-            model=session.model or session.default_model or "default",
-            analysis_method=session.analysis_method,
-            rr_summary=target_rr.summary if target_rr else None,
-            chain_id=branch_name,
-            fake=session.fake_review,
-            body_top=output_data.get("body_top"),
+        # Tip RR gets full parsed content; non-tip RRs get a cross-reference body
+        rr_parsed = ParsedReview(
+            issues=rr_issues,
+            unparsed_text=parsed.unparsed_text if is_tip else "",
+            summary=parsed.summary if is_tip else "",
         )
+        if is_tip:
+            method_label = session.method_label
+        else:
+            method_label = f"{session.method_label} -- see r/{target_rr_id} for full summary"
+
+        output_data = build_submission_data(
+            review_id=rr_id,
+            analysis=analysis if is_tip else "",
+            parsed=rr_parsed,
+            model=session.model,
+            rr_summary=rr.summary if rr else None,
+            method_label=method_label,
+        )
+
+        if output and is_tip:
+            output_file = output
+        else:
+            output_file = Path(f"review_{rr_id}.json")
+
+        output_file.write_text(json.dumps(output_data, indent=2))
+        output_files.append(output_file)
+
+        # Save to DB
+        if session.config.review_db.enabled:
+            save_to_review_db(
+                config=session.config,
+                review_id=rr_id,
+                diff_revision=rr.diff_revision if rr else 1,
+                repository=review_chain.repository,
+                parsed=rr_parsed,
+                model=session.model or session.default_model or "default",
+                analysis_method=session.analysis_method,
+                rr_summary=rr.summary if rr else None,
+                chain_id=branch_name,
+                chain_position=(
+                    list(reviews_by_id.keys()).index(rr_id) + 1 if rr_id in reviews_by_id else None
+                ),
+                fake=session.fake_review,
+                body_top=output_data.get("body_top"),
+            )
+
+    files_str = ", ".join(str(f) for f in output_files)
+    click.echo(f"\nSeries review saved to: {files_str}")
+    click.echo(f"To submit: bb-review submit {files_str}")
