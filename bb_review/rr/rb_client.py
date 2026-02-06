@@ -593,6 +593,56 @@ class ReviewBoardClient:
 
         return None
 
+    def get_reviews(self, review_request_id: int) -> list[dict]:
+        """Get all reviews for a review request."""
+        result = self._api_get(f"/api/review-requests/{review_request_id}/reviews/")
+        return result.get("reviews", [])
+
+    def get_review_diff_comments(self, review_request_id: int, review_id: int) -> list[dict]:
+        """Get diff comments for a specific review."""
+        result = self._api_get(f"/api/review-requests/{review_request_id}/reviews/{review_id}/diff-comments/")
+        return result.get("diff_comments", [])
+
+    def get_review_replies(self, review_request_id: int, review_id: int) -> list[dict]:
+        """Get replies to a specific review."""
+        result = self._api_get(f"/api/review-requests/{review_request_id}/reviews/{review_id}/replies/")
+        return result.get("replies", [])
+
+    def post_reply(self, review_request_id: int, review_id: int, body_top: str = "") -> dict:
+        """Create a reply draft on a review. Returns the reply resource."""
+        result = self._api_post(
+            f"/api/review-requests/{review_request_id}/reviews/{review_id}/replies/",
+            {"body_top": body_top, "body_top_text_type": "markdown", "public": "0"},
+        )
+        if result.get("stat") != "ok":
+            raise RuntimeError(f"Failed to create reply: {result}")
+        return result.get("reply", result)
+
+    def post_diff_comment_reply(
+        self,
+        review_request_id: int,
+        review_id: int,
+        reply_id: int,
+        reply_to_id: int,
+        text: str,
+    ) -> None:
+        """Add a diff-comment reply to an existing reply draft."""
+        result = self._api_post(
+            f"/api/review-requests/{review_request_id}/reviews/{review_id}/replies/{reply_id}/diff-comments/",
+            {"reply_to_id": str(reply_to_id), "text": text, "text_type": "markdown"},
+        )
+        if result.get("stat") != "ok":
+            raise RuntimeError(f"Failed to post diff comment reply: {result}")
+
+    def publish_reply(self, review_request_id: int, review_id: int, reply_id: int) -> None:
+        """Publish a reply draft."""
+        result = self._api_put(
+            f"/api/review-requests/{review_request_id}/reviews/{review_id}/replies/{reply_id}/",
+            {"public": "1"},
+        )
+        if result.get("stat") != "ok":
+            raise RuntimeError(f"Failed to publish reply: {result}")
+
     def get_repository_info(self, review_request_id: int) -> dict[str, Any]:
         """Get repository information for a review request."""
         rr = self.get_review_request(review_request_id)
