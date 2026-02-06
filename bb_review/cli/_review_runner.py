@@ -10,7 +10,7 @@ import click
 
 from ..git import RepoManagerError
 from ..models import ReviewComment, ReviewFocus, ReviewResult, Severity
-from ..reviewers import extract_changed_files, parse_opencode_output
+from ..reviewers import ParsedReview, extract_changed_files, parse_opencode_output
 from ..rr import (
     ChainError,
     ReviewBoardClient,
@@ -734,6 +734,39 @@ def _run_chain_review(
         click.echo("\nTo submit reviews:")
         for f in output_files:
             click.echo(f"  bb-review submit {f}")
+
+
+def _split_issues_by_rr(
+    issues: list,
+    file_to_rr: dict[str, int],
+    fallback_rr_id: int,
+) -> dict[int, list]:
+    """Partition parsed issues by target RR based on which diff owns each file.
+
+    Tries exact match on file_path, then suffix match (like _find_filediff_id).
+    General issues (no file_path) and unmatched files go to fallback_rr_id.
+    """
+    result: dict[int, list] = {}
+
+    for issue in issues:
+        rr_id = fallback_rr_id
+
+        if issue.file_path:
+            path = issue.file_path
+            if path in file_to_rr:
+                rr_id = file_to_rr[path]
+            else:
+                # Suffix match: LLM may return a shorter or longer path
+                for mapped_path, mapped_rr in file_to_rr.items():
+                    if mapped_path.endswith(path) or path.endswith(mapped_path):
+                        rr_id = mapped_rr
+                        break
+                else:
+                    logger.warning(f"No RR mapping for file {path}, assigning to tip r/{fallback_rr_id}")
+
+        result.setdefault(rr_id, []).append(issue)
+
+    return result
 
 
 def _run_series_review(
