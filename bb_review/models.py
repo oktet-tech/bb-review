@@ -67,6 +67,7 @@ class ReviewComment:
     severity: Severity
     issue_type: ReviewFocus
     suggestion: str | None = None  # Suggested fix if applicable
+    diff_context: str | None = None  # Unified diff hunk around this comment's line
 
 
 @dataclass

@@ -115,6 +115,12 @@ class ReviewDatabase:
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
+            # Migration: add diff_context column to comments
+            try:
+                conn.execute("ALTER TABLE comments ADD COLUMN diff_context TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
         """Context manager for database connections."""
@@ -223,8 +229,8 @@ class ReviewDatabase:
                     """
                     INSERT INTO comments (
                         analysis_id, file_path, line_number, message,
-                        severity, issue_type, suggestion
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        severity, issue_type, suggestion, diff_context
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         analysis_id,
@@ -234,6 +240,7 @@ class ReviewDatabase:
                         comment.severity.value,
                         comment.issue_type.value,
                         comment.suggestion,
+                        comment.diff_context,
                     ),
                 )
 
@@ -822,6 +829,12 @@ class ReviewDatabase:
 
     def _row_to_comment(self, row: sqlite3.Row) -> StoredComment:
         """Convert a database row to StoredComment."""
+        # Handle diff_context column (may not exist in older databases)
+        try:
+            diff_context = row["diff_context"]
+        except (IndexError, KeyError):
+            diff_context = None
+
         return StoredComment(
             id=row["id"],
             analysis_id=row["analysis_id"],
@@ -831,6 +844,7 @@ class ReviewDatabase:
             severity=row["severity"],
             issue_type=row["issue_type"],
             suggestion=row["suggestion"],
+            diff_context=diff_context,
         )
 
     def _row_to_list_item(self, row: sqlite3.Row) -> AnalysisListItem:

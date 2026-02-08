@@ -523,7 +523,13 @@ def _save_to_review_db(
 ) -> None:
     """Save a review result to the reviews database."""
     from ..db import ReviewDatabase
+    from ..reviewers.diff_utils import extract_diff_hunk
     from ..rr.rb_client import ReviewRequestInfo
+
+    # Attach diff hunks to comments
+    if diff_info and diff_info.raw_diff:
+        for c in result.comments:
+            c.diff_context = extract_diff_hunk(diff_info.raw_diff, c.file_path, c.line_number)
 
     # Create a minimal rr_info to pass the summary
     rr_info = None

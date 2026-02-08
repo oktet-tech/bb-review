@@ -34,6 +34,7 @@ class StoredComment:
     severity: str  # low, medium, high, critical
     issue_type: str  # bugs, security, performance, style, architecture
     suggestion: str | None = None
+    diff_context: str | None = None
 
 
 @dataclass

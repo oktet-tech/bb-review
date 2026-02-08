@@ -505,6 +505,7 @@ def _process_item_agent(
         rr_summary=item.summary,
         fake=fake_review,
         body_top=output_data.get("body_top"),
+        raw_diff=diff_info.raw_diff,
     )
 
     analysis = review_db.get_analysis_by_rr(rr_id, item.diff_revision)

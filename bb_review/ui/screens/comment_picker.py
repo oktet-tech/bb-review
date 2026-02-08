@@ -14,6 +14,7 @@ from textual.screen import Screen
 from textual.widgets import Footer, Header, Label, ListItem, ListView, Static
 
 from bb_review.ui.models import ExportableAnalysis, SelectableComment
+from bb_review.ui.widgets.diff_viewer import DiffViewer
 
 
 if TYPE_CHECKING:
@@ -77,6 +78,7 @@ class CommentPickerScreen(Screen):
         Binding("p", "prev_analysis", "Previous"),
         Binding("s", "skip_analysis", "Skip"),
         Binding("b", "back", "Back"),
+        Binding("v", "toggle_diff", "Diff"),
         Binding("d", "done", "Export"),
         Binding("ctrl+s", "submit", "Submit"),
         Binding("q", "quit_app", "Quit"),
@@ -210,10 +212,14 @@ class CommentPickerScreen(Screen):
             with Container(id="comments-container"):
                 yield ListView(id="comments-list")
 
+            yield DiffViewer(id="diff-viewer")
+
             with Horizontal(id="status-bar"):
                 yield Label("", id="status-label")
 
         yield Footer()
+
+    _diff_visible: bool = False
 
     def on_mount(self) -> None:
         """Set up the screen when mounted."""
@@ -267,6 +273,9 @@ class CommentPickerScreen(Screen):
         self._rebuild_comments_list()
         self._update_status()
 
+        if self._diff_visible:
+            self._update_diff_viewer()
+
     def _rebuild_comments_list(self) -> None:
         """Rebuild the comments list view."""
         list_view = self.query_one("#comments-list", ListView)
@@ -283,6 +292,32 @@ class CommentPickerScreen(Screen):
         label = self.query_one("#status-label", Label)
         analysis = self.current_analysis
         label.update(f"Selected: {analysis.selected_count}/{analysis.total_count} comments")
+
+    def action_toggle_diff(self) -> None:
+        """Toggle the diff context viewer."""
+        viewer = self.query_one(DiffViewer)
+        viewer.toggle()
+        self._diff_visible = viewer.is_visible
+        self.query_one("#summary-container").display = not self._diff_visible
+        if self._diff_visible:
+            self._update_diff_viewer()
+
+    def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
+        """Update diff viewer when a different comment is highlighted."""
+        if self._diff_visible:
+            self._update_diff_viewer()
+
+    def _update_diff_viewer(self) -> None:
+        """Show the diff hunk for the currently highlighted comment."""
+        viewer = self.query_one(DiffViewer)
+        list_view = self.query_one("#comments-list", ListView)
+        idx = list_view.index
+        if idx is not None and idx < len(self.current_analysis.comments):
+            c = self.current_analysis.comments[idx].comment
+            diff_context = getattr(c, "diff_context", None)
+            viewer.update_content(diff_context, c.file_path, c.line_number)
+        else:
+            viewer.update_content(None)
 
     def _get_selected_comment_index(self) -> int | None:
         """Get the index of the currently selected comment."""

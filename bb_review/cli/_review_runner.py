@@ -205,9 +205,11 @@ def save_to_review_db(
     chain_position: int | None = None,
     fake: bool = False,
     body_top: str | None = None,
+    raw_diff: str | None = None,
 ) -> None:
     """Save a review result to the reviews database."""
     from ..db import ReviewDatabase
+    from ..reviewers.diff_utils import extract_diff_hunk
     from ..rr.rb_client import ReviewRequestInfo
 
     comments = []
@@ -248,6 +250,11 @@ def save_to_review_db(
                     suggestion=issue.suggestion,
                 )
             )
+
+    # Attach diff hunks to comments
+    if raw_diff:
+        for c in comments:
+            c.diff_context = extract_diff_hunk(raw_diff, c.file_path, c.line_number)
 
     result = ReviewResult(
         review_request_id=review_id,
@@ -590,6 +597,7 @@ def _run_single_review(
             rr_summary=review.summary,
             fake=session.fake_review,
             body_top=output_data.get("body_top"),
+            raw_diff=diff_info.raw_diff,
         )
 
 
@@ -711,6 +719,7 @@ def _run_chain_review(
                         chain_position=i + 1 if len(pending) > 1 else None,
                         fake=session.fake_review,
                         body_top=output_data.get("body_top"),
+                        raw_diff=diff_info.raw_diff,
                     )
 
                 if dump_response and i == len(pending) - 1:
@@ -794,10 +803,12 @@ def _run_series_review(
 
             # Apply all patches as commits, tracking which RR owns each file
             file_to_rr: dict[str, int] = {}
+            raw_diffs_by_rr: dict[int, str] = {}
             for review in all_reviews:
                 rr_id = review.review_request_id
                 click.echo(f"  Applying r/{rr_id}: {review.summary[:60]}...")
                 diff_info = session.rb_client.get_diff(rr_id, review.diff_revision)
+                raw_diffs_by_rr[rr_id] = diff_info.raw_diff
                 for f in diff_info.files:
                     path = f.get("dest_file") or f.get("source_file", "")
                     if path:
@@ -906,6 +917,7 @@ def _run_series_review(
                 ),
                 fake=session.fake_review,
                 body_top=output_data.get("body_top"),
+                raw_diff=raw_diffs_by_rr.get(rr_id),
             )
 
     files_str = ", ".join(str(f) for f in output_files)
