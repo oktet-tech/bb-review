@@ -1,9 +1,14 @@
 """Diff context viewer widget for displaying unified diff hunks."""
 
+import re
+
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Container
 from textual.widgets import RichLog, Static
+
+
+_HUNK_RE = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 
 
 class DiffViewer(Container):
@@ -68,17 +73,57 @@ class DiffViewer(Container):
             log.write(Text("No diff context available", style="dim italic"))
             return
 
+        old_no = new_no = 0
+        target_idx: int | None = None
+        line_idx = 0
+
         for line in diff_text.split("\n"):
-            styled = Text(line)
-            if line.startswith("@@"):
+            m = _HUNK_RE.match(line)
+            if m:
+                old_no = int(m.group(1))
+                new_no = int(m.group(2))
+                styled = Text(line)
                 styled.stylize("cyan dim")
-            elif line.startswith("+"):
-                styled.stylize("green")
+                log.write(styled)
+                line_idx += 1
+                continue
+
+            if line.startswith("+"):
+                gutter = f"     {new_no:>4} | "
+                style = "green"
+                is_target = line_number and new_no == line_number
+                new_no += 1
             elif line.startswith("-"):
-                styled.stylize("red")
+                gutter = f"{old_no:>4}      | "
+                style = "red"
+                is_target = False
+                old_no += 1
             elif line.startswith("\\"):
+                styled = Text(line)
                 styled.stylize("dim")
+                log.write(styled)
+                line_idx += 1
+                continue
+            else:
+                gutter = f"{old_no:>4} {new_no:>4} | "
+                style = ""
+                is_target = line_number and new_no == line_number
+                old_no += 1
+                new_no += 1
+
+            display = gutter + line
+            styled = Text(display)
+            if is_target:
+                styled.stylize("bold reverse")
+                target_idx = line_idx
+            elif style:
+                styled.stylize(style)
             log.write(styled)
+            line_idx += 1
+
+        if target_idx is not None:
+            # Defer scroll so RichLog has rendered all lines
+            self.call_after_refresh(log.scroll_to, y=target_idx, animate=False)
 
     def toggle(self) -> None:
         """Show or hide the diff viewer."""
