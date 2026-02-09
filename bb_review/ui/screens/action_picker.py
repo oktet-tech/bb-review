@@ -357,21 +357,24 @@ class SubmitOptionsScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
 
-# Method labels/IDs used by ProcessOptionsScreen
+# (method, model_key, label) used by ProcessOptionsScreen
+# model_key is a semantic name like "opus", not a provider-specific model ID
 REVIEW_METHODS = [
-    ("llm", "LLM (direct)"),
-    ("opencode", "OpenCode agent"),
-    ("claude", "Claude Code agent"),
+    ("claude", None, "Claude Code Sonnet (default)"),
+    ("claude", "opus", "Claude Code Opus"),
+    ("llm", None, "LLM direct"),
+    ("opencode", None, "OpenCode agent"),
 ]
 
 
-class ProcessOptionsScreen(ModalScreen[str | None]):
-    """Modal screen for choosing the review processing method."""
+class ProcessOptionsScreen(ModalScreen[tuple[str, str | None] | None]):
+    """Modal screen for choosing the review processing method and model."""
 
     BINDINGS = [
+        Binding("c", "pick_sonnet", "Sonnet", show=False),
+        Binding("o", "pick_opus", "Opus", show=False),
         Binding("l", "pick_llm", "LLM", show=False),
-        Binding("o", "pick_opencode", "OpenCode", show=False),
-        Binding("c", "pick_claude", "Claude", show=False),
+        Binding("a", "pick_opencode", "OpenCode", show=False),
         Binding("enter", "select", "Select", priority=True),
         Binding("escape", "cancel", "Cancel"),
     ]
@@ -398,7 +401,7 @@ class ProcessOptionsScreen(ModalScreen[str | None]):
 
     OptionList {
         height: auto;
-        max-height: 10;
+        max-height: 12;
         background: $surface;
     }
 
@@ -407,7 +410,7 @@ class ProcessOptionsScreen(ModalScreen[str | None]):
     }
     """
 
-    def __init__(self, default_method: str = "opencode", name: str | None = None):
+    def __init__(self, default_method: str = "llm", name: str | None = None):
         super().__init__(name=name)
         self._default_method = default_method
 
@@ -415,9 +418,10 @@ class ProcessOptionsScreen(ModalScreen[str | None]):
         with Container(id="dialog"):
             yield Label("Processing Method", id="title")
             yield OptionList(
-                Option("\\[L] LLM (direct)", id="llm"),
-                Option("\\[O] OpenCode agent", id="opencode"),
-                Option("\\[C] Claude Code agent", id="claude"),
+                Option("\\[C] Claude Code Sonnet (default)", id="sonnet"),
+                Option("\\[O] Claude Code Opus", id="opus"),
+                Option("\\[L] LLM direct", id="llm"),
+                Option("\\[A] OpenCode agent", id="opencode"),
                 None,  # Separator
                 Option("\\[Esc] Cancel", id="cancel"),
                 id="method-list",
@@ -427,11 +431,10 @@ class ProcessOptionsScreen(ModalScreen[str | None]):
     def on_mount(self) -> None:
         option_list = self.query_one("#method-list", OptionList)
         option_list.focus()
-        # Pre-select the default method
-        for idx, (method_id, _) in enumerate(REVIEW_METHODS):
-            if method_id == self._default_method:
-                option_list.highlighted = idx
-                break
+        # Map config method names to option indices
+        method_to_idx = {"claude": 0, "llm": 2, "opencode": 3}
+        idx = method_to_idx.get(self._default_method, 0)
+        option_list.highlighted = idx
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         self._select_option(str(event.option_id))
@@ -444,19 +447,29 @@ class ProcessOptionsScreen(ModalScreen[str | None]):
                 self._select_option(str(option.id))
 
     def _select_option(self, option_id: str) -> None:
-        if option_id in ("llm", "opencode", "claude"):
-            self.dismiss(option_id)
+        result_map: dict[str, tuple[str, str | None]] = {
+            "sonnet": ("claude", None),
+            "opus": ("claude", "opus"),
+            "llm": ("llm", None),
+            "opencode": ("opencode", None),
+        }
+        result = result_map.get(option_id)
+        if result:
+            self.dismiss(result)
         elif option_id == "cancel":
             self.dismiss(None)
 
+    def action_pick_sonnet(self) -> None:
+        self.dismiss(("claude", None))
+
+    def action_pick_opus(self) -> None:
+        self.dismiss(("claude", "opus"))
+
     def action_pick_llm(self) -> None:
-        self.dismiss("llm")
+        self.dismiss(("llm", None))
 
     def action_pick_opencode(self) -> None:
-        self.dismiss("opencode")
-
-    def action_pick_claude(self) -> None:
-        self.dismiss("claude")
+        self.dismiss(("opencode", None))
 
     def action_cancel(self) -> None:
         self.dismiss(None)

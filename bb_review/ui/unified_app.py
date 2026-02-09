@@ -256,12 +256,13 @@ class UnifiedApp(App):
     def on_queue_pane_process_requested(self, event: QueuePane.ProcessRequested) -> None:
         from .screens.action_picker import ProcessOptionsScreen
 
-        default = self._config.queue.method if self._config else "opencode"
+        default = self._config.queue.method if self._config else "llm"
         self.push_screen(ProcessOptionsScreen(default_method=default), self._on_method_picked)
 
-    def _on_method_picked(self, method: str | None) -> None:
-        if method is not None:
-            self._run_process(method)
+    def _on_method_picked(self, result: tuple[str, str | None] | None) -> None:
+        if result is not None:
+            method, model_key = result
+            self._run_process(method, model_key)
 
     def on_reviews_pane_action_requested(self, event: ReviewsPane.ActionRequested) -> None:
         if self._review_handler is None:
@@ -344,19 +345,33 @@ class UnifiedApp(App):
             pass
 
     @work(thread=True, exclusive=True, group="process")
-    def _run_process(self, chosen_method: str) -> None:
+    def _run_process(self, chosen_method: str, model_key: str | None = None) -> None:
         """Background worker: process next queue items.
 
         Args:
             chosen_method: method picked in the modal (used as batch default).
                 Per-repo overrides from config still take precedence.
+            model_key: semantic model key (e.g. "opus") to resolve against
+                the configured default model. None means use the default.
         """
         if self._queue_db is None or self._config is None:
             self.call_from_thread(self.notify, "Config or queue DB not available", severity="error")
             return
 
+        # Resolve semantic key ("opus") to a provider-specific model ID.
+        # For LLM: replace "sonnet" in the configured model string.
+        # For claude/opencode: pass the key directly (they accept short names).
+        model_name: str | None = None
+        if model_key:
+            if chosen_method == "llm":
+                default_model = self._config.llm.model
+                model_name = default_model.replace("sonnet", model_key)
+            else:
+                model_name = model_key
+
         self.call_from_thread(self.query_one(LogPanel).show)
-        self.call_from_thread(self._log, f"Starting process (method={chosen_method})...")
+        model_label = model_name or "default"
+        self.call_from_thread(self._log, f"Starting process (method={chosen_method}, model={model_label})...")
 
         config = self._config
         queue_db = self._queue_db
@@ -435,7 +450,7 @@ class UnifiedApp(App):
                             repo_manager,
                             review_db,
                             queue_db,
-                            model_name=None,
+                            model_name=model_name,
                             fake_review=False,
                             submit=False,
                         )
@@ -448,7 +463,7 @@ class UnifiedApp(App):
                             repo_manager,
                             review_db,
                             queue_db,
-                            model_name=None,
+                            model_name=model_name,
                             fake_review=False,
                             submit=False,
                             fallback=True,
