@@ -392,6 +392,7 @@ class ReviewBoardClient:
                 base_commit=base_commit,
                 branch=rr.get("branch"),
                 created_at=_parse_datetime(rr.get("time_added")),
+                issue_open_count=rr.get("issue_open_count", 0),
             )
         except Exception as e:
             logger.warning(f"Error processing review request {rr.get('id')}: {e}")

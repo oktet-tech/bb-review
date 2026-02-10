@@ -125,6 +125,7 @@ def _sync_one(
                 branch=pr.branch,
                 base_commit=pr.base_commit,
                 rb_created_at=pr.created_at,
+                issue_open_count=pr.issue_open_count,
             )
             return
 
@@ -137,6 +138,7 @@ def _sync_one(
         branch=pr.branch,
         base_commit=pr.base_commit,
         rb_created_at=pr.created_at,
+        issue_open_count=pr.issue_open_count,
     )
 
     if action == "inserted":

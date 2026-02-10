@@ -54,6 +54,10 @@ class QueueDatabase:
                     ON review_queue(review_request_id);
                 """
             )
+            # Migration: add issue_open_count if missing
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(review_queue)").fetchall()}
+            if "issue_open_count" not in cols:
+                conn.execute("ALTER TABLE review_queue ADD COLUMN issue_open_count INTEGER DEFAULT 0")
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
@@ -77,6 +81,7 @@ class QueueDatabase:
         branch: str | None = None,
         base_commit: str | None = None,
         rb_created_at: datetime | None = None,
+        issue_open_count: int = 0,
     ) -> tuple[str, bool]:
         """Insert or update a queue item during sync.
 
@@ -99,8 +104,8 @@ class QueueDatabase:
                     INSERT INTO review_queue (
                         review_request_id, diff_revision, status, repository,
                         submitter, summary, branch, base_commit, rb_created_at,
-                        synced_at, updated_at
-                    ) VALUES (?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?)
+                        issue_open_count, synced_at, updated_at
+                    ) VALUES (?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         review_request_id,
@@ -111,6 +116,7 @@ class QueueDatabase:
                         branch,
                         base_commit,
                         rb_created_str,
+                        issue_open_count,
                         now,
                         now,
                     ),
@@ -129,6 +135,7 @@ class QueueDatabase:
                         branch = COALESCE(?, branch),
                         base_commit = COALESCE(?, base_commit),
                         rb_created_at = COALESCE(?, rb_created_at),
+                        issue_open_count = ?,
                         synced_at = ?, updated_at = ?
                     WHERE review_request_id = ?
                     """,
@@ -140,6 +147,7 @@ class QueueDatabase:
                         branch,
                         base_commit,
                         rb_created_str,
+                        issue_open_count,
                         now,
                         now,
                         review_request_id,
@@ -157,6 +165,7 @@ class QueueDatabase:
                     branch = COALESCE(?, branch),
                     base_commit = COALESCE(?, base_commit),
                     rb_created_at = COALESCE(?, rb_created_at),
+                    issue_open_count = ?,
                     synced_at = ?
                 WHERE review_request_id = ?
                 """,
@@ -167,6 +176,7 @@ class QueueDatabase:
                     branch,
                     base_commit,
                     rb_created_str,
+                    issue_open_count,
                     now,
                     review_request_id,
                 ),
@@ -370,6 +380,7 @@ class QueueDatabase:
             rb_created_at=(datetime.fromisoformat(row["rb_created_at"]) if row["rb_created_at"] else None),
             synced_at=(datetime.fromisoformat(row["synced_at"]) if row["synced_at"] else None),
             updated_at=(datetime.fromisoformat(row["updated_at"]) if row["updated_at"] else None),
+            issue_open_count=row["issue_open_count"] or 0,
             analysis_id=row["analysis_id"],
             error_message=row["error_message"],
         )

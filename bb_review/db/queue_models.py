@@ -43,5 +43,6 @@ class QueueItem:
     rb_created_at: datetime | None = None
     synced_at: datetime | None = None
     updated_at: datetime | None = None
+    issue_open_count: int = 0
     analysis_id: int | None = None
     error_message: str | None = None

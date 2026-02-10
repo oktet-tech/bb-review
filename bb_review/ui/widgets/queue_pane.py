@@ -117,6 +117,7 @@ class QueuePane(Container):
         table.add_column("", key="selected", width=3)
         table.add_column("RR#", key="rr", width=8)
         table.add_column("Diff", key="diff", width=5)
+        table.add_column("Issues", key="issues", width=6)
         table.add_column("Status", key="status", width=10)
         table.add_column("Repo", key="repo", width=15)
         table.add_column("Submitter", key="submitter", width=12)
@@ -138,10 +139,12 @@ class QueuePane(Container):
                 summary = f"[bold]{summary}[/bold]"
 
             sel = "[X]" if item.review_request_id in self.selected else "[ ]"
+            issues = str(item.issue_open_count) if item.issue_open_count else ""
             table.add_row(
                 sel,
                 str(item.review_request_id),
                 str(item.diff_revision),
+                issues,
                 f"{icon} {item.status.value}",
                 item.repository or "",
                 item.submitter or "",

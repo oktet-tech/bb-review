@@ -133,6 +133,7 @@ class PendingReview:
     base_commit: str | None = None
     branch: str | None = None
     created_at: datetime | None = None
+    issue_open_count: int = 0
 
 
 @dataclass
