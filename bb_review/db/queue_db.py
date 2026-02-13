@@ -217,10 +217,18 @@ class QueueDatabase:
                     f"to {new_status.value}. Allowed: {allowed_str}"
                 )
 
-            conn.execute(
-                "UPDATE review_queue SET status = ?, updated_at = ? WHERE review_request_id = ?",
-                (new_status.value, datetime.now().isoformat(), review_request_id),
-            )
+            # Clear analysis_id when re-queuing a completed item so it gets reanalyzed
+            if current == QueueStatus.DONE and new_status == QueueStatus.NEXT:
+                conn.execute(
+                    "UPDATE review_queue SET status = ?, analysis_id = NULL, updated_at = ? "
+                    "WHERE review_request_id = ?",
+                    (new_status.value, datetime.now().isoformat(), review_request_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE review_queue SET status = ?, updated_at = ? WHERE review_request_id = ?",
+                    (new_status.value, datetime.now().isoformat(), review_request_id),
+                )
             return current
 
     def mark_done(self, review_request_id: int, analysis_id: int) -> None:

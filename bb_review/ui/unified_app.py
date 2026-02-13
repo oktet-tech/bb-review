@@ -428,7 +428,9 @@ class UnifiedApp(App):
                 )
 
                 try:
-                    if review_db.has_real_analysis(rr_id, item.diff_revision, analysis_method):
+                    if item.analysis_id and review_db.has_real_analysis(
+                        rr_id, item.diff_revision, analysis_method
+                    ):
                         existing = review_db.get_analysis_by_rr(rr_id, item.diff_revision)
                         analysis_id = existing.id if existing else None
                         queue_db.mark_done(rr_id, analysis_id)

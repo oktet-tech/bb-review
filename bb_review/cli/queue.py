@@ -278,8 +278,8 @@ def process(
         click.echo(f"Processing r/{rr_id} (diff {item.diff_revision}, method={item_method})...")
 
         try:
-            # Skip if a real (non-fake) analysis already exists for this method
-            if review_db.has_real_analysis(rr_id, item.diff_revision, analysis_method):
+            # Skip if already analyzed, unless analysis_id was cleared (reanalysis requested)
+            if item.analysis_id and review_db.has_real_analysis(rr_id, item.diff_revision, analysis_method):
                 existing = review_db.get_analysis_by_rr(rr_id, item.diff_revision)
                 analysis_id = existing.id if existing else None
                 queue_db.mark_done(rr_id, analysis_id)
@@ -567,10 +567,27 @@ def _run_agent_review(
 
 
 def _submit_review(rb_client, config, analysis, result) -> None:
-    """Submit a review to Review Board."""
-    from ..rr.rb_commenter import format_comments_for_rb
+    """Submit a review to Review Board, filtering out previously-dropped comments."""
+    from ..rr.dedup import fetch_dropped_comments, filter_dropped
+    from ..rr.rb_commenter import ReviewFormatter
 
-    comments = format_comments_for_rb(result)
+    bot_username = config.reviewboard.bot_username
+    dropped = fetch_dropped_comments(rb_client, result.review_request_id, bot_username)
+    result, removed = filter_dropped(result, dropped)
+    if removed:
+        click.echo(f"  Dedup: filtered {len(removed)} previously-dropped comment(s)")
+
+    comments = []
+    for comment in result.comments:
+        formatted_text = ReviewFormatter.format_comment_text(comment)
+        comments.append(
+            {
+                "file_path": comment.file_path,
+                "line_number": comment.line_number,
+                "text": formatted_text,
+            }
+        )
+
     body_top = analysis.summary or result.summary
 
     try:
