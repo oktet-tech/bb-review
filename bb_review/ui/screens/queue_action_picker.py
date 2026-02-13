@@ -19,6 +19,10 @@ class QueueActionPickerScreen(ModalScreen[tuple[str, list[int]] | None]):
         Binding("escape", "cancel", "Cancel"),
         Binding("q", "cancel", "Cancel"),
         Binding("enter", "select", "Select", priority=True),
+        Binding("n", "pick_next", "Next", show=False),
+        Binding("i", "pick_ignore", "Ignore", show=False),
+        Binding("f", "pick_done", "Done", show=False),
+        Binding("d", "pick_delete", "Delete", show=False),
     ]
 
     CSS = """
@@ -97,6 +101,18 @@ class QueueActionPickerScreen(ModalScreen[tuple[str, list[int]] | None]):
     def _select_action(self, action_id: str) -> None:
         if action_id in ("next", "ignore", "done", "delete"):
             self.dismiss((action_id, self.rr_ids))
+
+    def action_pick_next(self) -> None:
+        self._select_action("next")
+
+    def action_pick_ignore(self) -> None:
+        self._select_action("ignore")
+
+    def action_pick_done(self) -> None:
+        self._select_action("done")
+
+    def action_pick_delete(self) -> None:
+        self._select_action("delete")
 
     def action_cancel(self) -> None:
         self.dismiss(None)
