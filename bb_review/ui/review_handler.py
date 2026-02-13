@@ -103,10 +103,38 @@ class ReviewHandler:
             self.app.notify("Failed to load analysis details", severity="error")
             return
 
+        # Mark duplicate comments based on previously-dropped RB issues
+        self._mark_duplicates(exportable)
+
         self.app.push_screen(
             CommentPickerScreen(exportable, db=self.db),
             callback=self._on_comments_picked,
         )
+
+    def _mark_duplicates(self, exportable: list[ExportableAnalysis]) -> None:
+        """Fetch dropped comments from RB and mark matching comments as duplicates."""
+        if not self.config:
+            return
+
+        try:
+            from bb_review.rr.dedup import fetch_dropped_comments
+            from bb_review.rr.rb_client import ReviewBoardClient
+
+            rb_client = ReviewBoardClient(
+                url=self.config.reviewboard.url,
+                bot_username=self.config.reviewboard.bot_username,
+            )
+            bot_username = self.config.reviewboard.bot_username
+
+            for ea in exportable:
+                rr_id = ea.analysis.review_request_id
+                try:
+                    dropped = fetch_dropped_comments(rb_client, rr_id, bot_username)
+                    ea.mark_duplicates(dropped)
+                except Exception:
+                    logger.warning("Failed to fetch dropped comments for RR #%d", rr_id, exc_info=True)
+        except Exception:
+            logger.warning("Failed to connect to RB for dedup", exc_info=True)
 
     def _on_comments_picked(self, result) -> None:
         if result == "back":

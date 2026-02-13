@@ -13,12 +13,21 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Label, ListItem, ListView, Static
 
-from bb_review.ui.models import ExportableAnalysis, SelectableComment
+from bb_review.ui.models import CommentStatus, ExportableAnalysis, SelectableComment
 from bb_review.ui.widgets.diff_viewer import DiffViewer
 
 
 if TYPE_CHECKING:
     from bb_review.db.review_db import ReviewDatabase
+
+
+def _status_checkbox(status: CommentStatus) -> str:
+    """Return Rich markup for a 3-state checkbox."""
+    if status == CommentStatus.INCLUDED:
+        return "[green bold]\\[x][/]"
+    if status == CommentStatus.DUPLICATE:
+        return "[yellow dim]\\[-][/]"
+    return "[dim]\\[ ][/]"
 
 
 class CommentItem(ListItem):
@@ -37,32 +46,22 @@ class CommentItem(ListItem):
 
     def compose(self) -> ComposeResult:
         """Compose the comment item."""
+        yield Static(self._render_markup(), markup=True)
+
+    def _render_markup(self) -> str:
+        """Build Rich markup for the current status."""
         c = self.comment.comment
+        checkbox = _status_checkbox(self.comment.status)
 
-        # Use escaped brackets for checkbox (Rich interprets [X] as a tag)
-        # Also use different visual style for better visibility
-        if self.comment.selected:
-            checkbox = "[green bold]\\[X][/]"
-        else:
-            checkbox = "[dim]\\[ ][/]"
-
-        # Mark if edited
         edited = " [magenta](edited)[/]" if self.comment.edited_message is not None else ""
 
-        # Build display text with better formatting
-        # Line 1: checkbox, file:line, severity/type
         line1 = (
             f"{checkbox} [bold]{c.file_path}[/]:[cyan]{c.line_number}[/] "
             f"({c.severity}/{c.issue_type}){edited}"
         )
 
-        # Line 2+: full message (no truncation for readability)
         msg = self.comment.effective_message.replace("\n", " ")
-
-        yield Static(
-            f"{line1}\n    {msg}",
-            markup=True,
-        )
+        return f"{line1}\n    {msg}"
 
 
 class CommentPickerScreen(Screen):
@@ -288,10 +287,12 @@ class CommentPickerScreen(Screen):
         list_view.focus()
 
     def _update_status(self) -> None:
-        """Update the status bar."""
+        """Update the status bar with counts."""
         label = self.query_one("#status-label", Label)
         analysis = self.current_analysis
-        label.update(f"Selected: {analysis.selected_count}/{analysis.total_count} comments")
+        dups = analysis.duplicate_count
+        dup_part = f", {dups} dups" if dups else ""
+        label.update(f"Selected: {analysis.selected_count}{dup_part} / {analysis.total_count} comments")
 
     def action_toggle_diff(self) -> None:
         """Toggle the diff context viewer."""
@@ -349,7 +350,7 @@ class CommentPickerScreen(Screen):
         idx = self._get_selected_comment_index()
         if idx is not None:
             comment = self.current_analysis.comments[idx]
-            comment.selected = not comment.selected
+            comment.toggle()
             self._update_comment_item(idx)
             self._update_status()
 
@@ -359,30 +360,17 @@ class CommentPickerScreen(Screen):
         if idx < len(list_view.children):
             item = list_view.children[idx]
             if isinstance(item, CommentItem):
-                # Update the Static widget inside the CommentItem
                 static = item.query_one(Static)
-                c = item.comment.comment
-
-                if item.comment.selected:
-                    checkbox = "[green bold]\\[X][/]"
-                else:
-                    checkbox = "[dim]\\[ ][/]"
-
-                edited = " [magenta](edited)[/]" if item.comment.edited_message is not None else ""
-                line1 = (
-                    f"{checkbox} [bold]{c.file_path}[/]:[cyan]{c.line_number}[/] "
-                    f"({c.severity}/{c.issue_type}){edited}"
-                )
-                msg = item.comment.effective_message.replace("\n", " ")
-                static.update(f"{line1}\n    {msg}")
+                static.update(item._render_markup())
 
     def action_toggle_all(self) -> None:
-        """Toggle all comment selections."""
+        """Toggle all comments: if any non-included -> all included, else all excluded."""
         analysis = self.current_analysis
-        all_selected = all(c.selected for c in analysis.comments)
+        all_included = all(c.status == CommentStatus.INCLUDED for c in analysis.comments)
+        new_status = CommentStatus.EXCLUDED if all_included else CommentStatus.INCLUDED
 
         for i, comment in enumerate(analysis.comments):
-            comment.selected = not all_selected
+            comment.status = new_status
             self._update_comment_item(i)
 
         self._update_status()
@@ -579,10 +567,10 @@ class CommentPickerScreen(Screen):
             self._refresh_display()
 
     def action_skip_analysis(self) -> None:
-        """Skip the current analysis (mark all comments unselected)."""
+        """Skip the current analysis (mark all comments excluded)."""
         self.current_analysis.skipped = True
         for comment in self.current_analysis.comments:
-            comment.selected = False
+            comment.status = CommentStatus.EXCLUDED
 
         self.notify(f"Skipped RR #{self.current_analysis.analysis.review_request_id}")
         self.action_next_analysis()
