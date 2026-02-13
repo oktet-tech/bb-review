@@ -315,7 +315,7 @@ def run_claude_review(
     prompt: str,
     model: str | None = None,
     timeout: int = 600,
-    max_turns: int = 15,
+    max_turns: int = 30,
     binary_path: str = "claude",
     allowed_tools: list[str] | None = None,
     at_reviewed_state: bool = False,

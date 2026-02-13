@@ -211,7 +211,7 @@ class ClaudeCodeConfig(BaseModel):
     enabled: bool = False
     model: str | None = None  # e.g. "sonnet", "opus"
     timeout: int = 600
-    max_turns: int = 15
+    max_turns: int = 30
     opus_max_turns: int = 50
     binary_path: str = "claude"
     allowed_tools: list[str] = Field(default_factory=lambda: ["Read", "Grep", "Glob", "Bash"])

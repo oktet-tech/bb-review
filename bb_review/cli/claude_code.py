@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 )
 @click.option("--model", "-m", help="Override Claude model (e.g. sonnet, opus)")
 @click.option("--timeout", default=600, type=int, help="Timeout in seconds")
-@click.option("--max-turns", default=15, type=int, help="Max agentic turns")
+@click.option("--max-turns", default=30, type=int, help="Max agentic turns")
 @click.option("--dump-response", type=click.Path(path_type=Path), help="Dump raw response to file")
 @click.option("-o", "--output", type=click.Path(path_type=Path), help="Output JSON file")
 @click.option("-O", "--auto-output", is_flag=True, help="Auto-generate output: review_{id}.json")
@@ -140,7 +140,7 @@ def claude_cmd(
         model = cc_config.model
     if timeout == 600:
         timeout = cc_config.timeout
-    if max_turns == 15:
+    if max_turns == 30:
         max_turns = cc_config.effective_max_turns(model)
 
     allowed_tools = cc_config.allowed_tools
