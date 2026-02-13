@@ -45,8 +45,9 @@ class QueuePane(Container):
         Binding("f", "mark_finished", "Done"),
         Binding("d", "delete_item", "Delete"),
         Binding("x", "show_actions", "Actions"),
-        Binding("s", "request_sync", "Sync"),
-        Binding("r", "request_process", "Process"),
+        Binding("ctrl+r", "request_sync", "Sync"),
+        Binding("g", "request_sync", "Sync", show=False),
+        Binding("ctrl+enter", "request_process", "Process"),
     ]
 
     DEFAULT_CSS = """
