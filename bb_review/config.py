@@ -212,9 +212,16 @@ class ClaudeCodeConfig(BaseModel):
     model: str | None = None  # e.g. "sonnet", "opus"
     timeout: int = 600
     max_turns: int = 15
+    opus_max_turns: int = 50
     binary_path: str = "claude"
     allowed_tools: list[str] = Field(default_factory=lambda: ["Read", "Grep", "Glob", "Bash"])
     mcp_config: str | None = None  # Path to MCP config file (e.g. .mcp.json)
+
+    def effective_max_turns(self, model: str | None = None) -> int:
+        """Return max_turns adjusted for the model (opus gets more turns)."""
+        if model and "opus" in model:
+            return self.opus_max_turns
+        return self.max_turns
 
 
 class CocoIndexRepoConfig(BaseModel):

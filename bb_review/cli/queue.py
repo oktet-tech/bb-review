@@ -549,15 +549,16 @@ def _run_agent_review(
         from .claude_code import run_claude_for_review
 
         cc = config.claude_code
+        effective_model = model_name or cc.model
         return run_claude_for_review(
             review_id=rr_id,
             summary=summary,
             raw_diff=raw_diff,
             repo_path=repo_path,
             repo_config=repo_config,
-            model=model_name or cc.model,
+            model=effective_model,
             timeout=cc.timeout,
-            max_turns=cc.max_turns,
+            max_turns=cc.effective_max_turns(effective_model),
             binary_path=cc.binary_path,
             allowed_tools=cc.allowed_tools,
             at_reviewed_state=at_reviewed_state,

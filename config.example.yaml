@@ -93,6 +93,7 @@ claude_code:
   model: "claude-sonnet-4-5-20250929"  # Default model (sonnet 4.5)
   timeout: 600  # Timeout in seconds
   max_turns: 15  # Max agentic turns per review
+  opus_max_turns: 50  # Max turns when model is opus (deeper reasoning needs more turns)
   binary_path: "claude"  # Path to claude binary (or just "claude" if in PATH)
   allowed_tools:  # Tools Claude Code is allowed to use during review
     - Read

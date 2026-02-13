@@ -141,7 +141,7 @@ def claude_cmd(
     if timeout == 600:
         timeout = cc_config.timeout
     if max_turns == 15:
-        max_turns = cc_config.max_turns
+        max_turns = cc_config.effective_max_turns(model)
 
     allowed_tools = cc_config.allowed_tools
 
