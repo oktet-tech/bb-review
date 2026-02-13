@@ -46,9 +46,9 @@ class CommentItem(ListItem):
 
     def compose(self) -> ComposeResult:
         """Compose the comment item."""
-        yield Static(self._render_markup(), markup=True)
+        yield Static(self._build_label(), markup=True)
 
-    def _render_markup(self) -> str:
+    def _build_label(self) -> str:
         """Build Rich markup for the current status."""
         c = self.comment.comment
         checkbox = _status_checkbox(self.comment.status)
@@ -361,7 +361,7 @@ class CommentPickerScreen(Screen):
             item = list_view.children[idx]
             if isinstance(item, CommentItem):
                 static = item.query_one(Static)
-                static.update(item._render_markup())
+                static.update(item._build_label())
 
     def action_toggle_all(self) -> None:
         """Toggle all comments: if any non-included -> all included, else all excluded."""
