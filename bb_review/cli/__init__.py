@@ -51,6 +51,12 @@ class MainGroup(click.Group):
     help="Path to config file",
 )
 @click.option(
+    "--profile",
+    "-p",
+    type=str,
+    help="Profile name (resolves to ~/.bb_review/<name>/config.yaml)",
+)
+@click.option(
     "--verbose",
     "-v",
     is_flag=True,
@@ -58,9 +64,17 @@ class MainGroup(click.Group):
 )
 @click.version_option(version=__version__)
 @click.pass_context
-def main(ctx: click.Context, config: Path | None, verbose: bool) -> None:
+def main(ctx: click.Context, config: Path | None, profile: str | None, verbose: bool) -> None:
     """BB Review - AI-powered code review for Review Board."""
     ctx.ensure_object(dict)
+
+    if config and profile:
+        raise click.UsageError("Cannot use --config and --profile together")
+    if profile:
+        config = Path(f"~/.bb_review/{profile}/config.yaml").expanduser()
+        if not config.exists():
+            raise click.UsageError(f"Profile config not found: {config}")
+
     ctx.obj["config_path"] = config
     ctx.obj["verbose"] = verbose
 
