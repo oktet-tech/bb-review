@@ -35,6 +35,13 @@ class QueuePane(Container):
     class ProcessRequested(Message):
         """User pressed R to process next items."""
 
+    class TriageRequested(Message):
+        """User wants to triage comments on an RR."""
+
+        def __init__(self, rr_id: int) -> None:
+            super().__init__()
+            self.rr_id = rr_id
+
     # -- Bindings (resolved when this pane is focused) --
 
     BINDINGS = [
@@ -43,6 +50,7 @@ class QueuePane(Container):
         Binding("n", "mark_next", "Next"),
         Binding("i", "mark_ignore", "Ignore"),
         Binding("f", "mark_finished", "Done"),
+        Binding("t", "triage_item", "Triage"),
         Binding("d", "delete_item", "Delete"),
         Binding("x", "show_actions", "Actions"),
         Binding("ctrl+r", "request_sync", "Sync"),
@@ -305,11 +313,27 @@ class QueuePane(Container):
             if deleted:
                 self.app.notify(f"Deleted {deleted} item(s)")
             self.refresh_data()
+        elif action == "triage":
+            if len(rr_ids) == 1:
+                self.post_message(self.TriageRequested(rr_ids[0]))
+            else:
+                self.app.notify("Triage works on one RR at a time", severity="warning")
         elif action in action_map:
             saved = self.selected.copy()
             self.selected = set(rr_ids)
             self._apply_status(action_map[action])
             self.selected = saved
+
+    def action_triage_item(self) -> None:
+        """Launch triage on the highlighted queue item."""
+        rr_ids = self._get_target_rr_ids()
+        if not rr_ids:
+            self.app.notify("No item selected", severity="warning")
+            return
+        if len(rr_ids) > 1:
+            self.app.notify("Triage works on one RR at a time", severity="warning")
+            return
+        self.post_message(self.TriageRequested(rr_ids[0]))
 
     def action_request_sync(self) -> None:
         self.post_message(self.SyncRequested())

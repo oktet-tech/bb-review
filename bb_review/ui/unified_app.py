@@ -23,6 +23,8 @@ from .widgets.work_pane import WorkPane
 
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from bb_review.config import Config
     from bb_review.db.queue_db import QueueDatabase
 
@@ -86,6 +88,7 @@ class UnifiedApp(App):
         review_filter_limit: int = 50,
         # UI
         initial_tab: str = "queue",
+        config_path: Path | None = None,
     ) -> None:
         super().__init__()
         self._queue_items = queue_items or []
@@ -98,6 +101,7 @@ class UnifiedApp(App):
         self._analyses = analyses or []
         self._review_db = review_db
         self._config = config
+        self._config_path = config_path
         self._output_path = output_path
         self._r_filter_rr_id = review_filter_rr_id
         self._r_filter_repo = review_filter_repo
@@ -263,6 +267,28 @@ class UnifiedApp(App):
         if result is not None:
             method, model_key = result
             self._run_process(method, model_key)
+
+    def on_queue_pane_triage_requested(self, event: QueuePane.TriageRequested) -> None:
+        self._run_triage(event.rr_id)
+
+    def _run_triage(self, rr_id: int) -> None:
+        """Suspend the TUI and run triage CLI for the given RR."""
+        import subprocess
+        import sys
+
+        cmd = [sys.executable, "-m", "bb_review", "triage", str(rr_id), "-O"]
+        # Pass the same config if we have one
+        config_path = getattr(self, "_config_path", None)
+        if config_path:
+            cmd = [sys.executable, "-m", "bb_review", "-c", str(config_path), "triage", str(rr_id), "-O"]
+
+        try:
+            with self.suspend():
+                subprocess.run(cmd)
+        except Exception as e:
+            self.notify(f"Triage failed: {e}", severity="error")
+
+        self._refresh_work_pane()
 
     def on_reviews_pane_action_requested(self, event: ReviewsPane.ActionRequested) -> None:
         if self._review_handler is None:

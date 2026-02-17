@@ -23,6 +23,7 @@ class QueueActionPickerScreen(ModalScreen[tuple[str, list[int]] | None]):
         Binding("i", "pick_ignore", "Ignore", show=False),
         Binding("f", "pick_done", "Done", show=False),
         Binding("d", "pick_delete", "Delete", show=False),
+        Binding("t", "pick_triage", "Triage", show=False),
     ]
 
     CSS = """
@@ -80,6 +81,8 @@ class QueueActionPickerScreen(ModalScreen[tuple[str, list[int]] | None]):
                 Option("\\[I] Mark as Ignore", id="ignore"),
                 Option("\\[F] Mark as Finished", id="done"),
                 None,  # Separator
+                Option("\\[T] Triage comments", id="triage"),
+                None,  # Separator
                 Option("\\[D] Delete from queue", id="delete"),
                 id="action-list",
             )
@@ -99,7 +102,7 @@ class QueueActionPickerScreen(ModalScreen[tuple[str, list[int]] | None]):
                 self._select_action(str(option.id))
 
     def _select_action(self, action_id: str) -> None:
-        if action_id in ("next", "ignore", "done", "delete"):
+        if action_id in ("next", "ignore", "done", "delete", "triage"):
             self.dismiss((action_id, self.rr_ids))
 
     def action_pick_next(self) -> None:
@@ -113,6 +116,9 @@ class QueueActionPickerScreen(ModalScreen[tuple[str, list[int]] | None]):
 
     def action_pick_delete(self) -> None:
         self._select_action("delete")
+
+    def action_pick_triage(self) -> None:
+        self._select_action("triage")
 
     def action_cancel(self) -> None:
         self.dismiss(None)

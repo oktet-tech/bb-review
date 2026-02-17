@@ -191,6 +191,7 @@ def _run_unified_tui(
         review_filter_chain_id=chain_id,
         review_filter_limit=limit,
         initial_tab=initial_tab,
+        config_path=ctx.obj.get("config_path"),
     )
     app.run()
 
