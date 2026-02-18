@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from textual import work
@@ -23,8 +24,6 @@ from .widgets.work_pane import WorkPane
 
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from bb_review.config import Config
     from bb_review.db.queue_db import QueueDatabase
 
@@ -273,14 +272,15 @@ class UnifiedApp(App):
 
     def _run_triage(self, rr_id: int) -> None:
         """Suspend the TUI and run triage CLI for the given RR."""
+        import shutil
         import subprocess
         import sys
 
-        cmd = [sys.executable, "-m", "bb_review", "triage", str(rr_id), "-O"]
-        # Pass the same config if we have one
-        config_path = getattr(self, "_config_path", None)
-        if config_path:
-            cmd = [sys.executable, "-m", "bb_review", "-c", str(config_path), "triage", str(rr_id), "-O"]
+        # Use the installed entry point, not python -m (no __main__.py)
+        bb_review = shutil.which("bb-review") or str(Path(sys.executable).parent / "bb-review")
+        cmd = [bb_review, "triage", str(rr_id), "-O"]
+        if self._config_path:
+            cmd = [bb_review, "-c", str(self._config_path), "triage", str(rr_id), "-O"]
 
         try:
             with self.suspend():
