@@ -9,6 +9,7 @@ from .action_picker import (
 )
 from .comment_picker import CommentPickerScreen
 from .queue_action_picker import QueueActionPickerScreen
+from .triage_view_screen import TriageViewScreen
 
 
 __all__ = [
@@ -19,4 +20,5 @@ __all__ = [
     "ConfirmDeleteScreen",
     "QueueActionPickerScreen",
     "SubmitOptionsScreen",
+    "TriageViewScreen",
 ]

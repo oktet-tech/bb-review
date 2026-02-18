@@ -268,27 +268,29 @@ class UnifiedApp(App):
             self._run_process(method, model_key)
 
     def on_queue_pane_triage_requested(self, event: QueuePane.TriageRequested) -> None:
-        self._run_triage(event.rr_id)
+        from .screens.action_picker import ProcessOptionsScreen
 
-    def _run_triage(self, rr_id: int) -> None:
-        """Suspend the TUI and run triage CLI for the given RR."""
-        import shutil
-        import subprocess
-        import sys
+        self._triage_rr_id = event.rr_id
+        default = self._config.queue.method if self._config else "llm"
+        self.push_screen(
+            ProcessOptionsScreen(default_method=default),
+            self._on_triage_method_picked,
+        )
 
-        # Use the installed entry point, not python -m (no __main__.py)
-        bb_review = shutil.which("bb-review") or str(Path(sys.executable).parent / "bb-review")
-        cmd = [bb_review, "triage", str(rr_id), "-O"]
-        if self._config_path:
-            cmd = [bb_review, "-c", str(self._config_path), "triage", str(rr_id), "-O"]
+    def _on_triage_method_picked(self, result: tuple[str, str | None] | None) -> None:
+        if result is None:
+            return
+        method, model_key = result
+        rr_id = getattr(self, "_triage_rr_id", None)
+        if rr_id is None:
+            return
+        self._run_triage_worker(rr_id, method, model_key)
 
-        try:
-            with self.suspend():
-                subprocess.run(cmd)
-        except Exception as e:
-            self.notify(f"Triage failed: {e}", severity="error")
-
+    def _on_triage_view_dismissed(self, result: str | None) -> None:
+        """Callback when TriageViewScreen is dismissed."""
         self._refresh_work_pane()
+
+    # -- Review actions --
 
     def on_reviews_pane_action_requested(self, event: ReviewsPane.ActionRequested) -> None:
         if self._review_handler is None:
@@ -307,6 +309,136 @@ class UnifiedApp(App):
             pass
 
     # -- Background workers --
+
+    @work(thread=True, exclusive=True, group="triage")
+    def _run_triage_worker(
+        self,
+        rr_id: int,
+        method: str,
+        model_key: str | None = None,
+    ) -> None:
+        """Background worker: fetch comments and run triage analysis."""
+        if self._config is None:
+            self.call_from_thread(self.notify, "Config not available", severity="error")
+            return
+
+        config = self._config
+        self.call_from_thread(self.query_one(LogPanel).show)
+        self.call_from_thread(self._log, f"Triage r/{rr_id} (method={method})...")
+
+        try:
+            # Phase 1: Connect and fetch comments
+            from bb_review.rr.rb_client import ReviewBoardClient
+            from bb_review.rr.rb_fetcher import RBCommentFetcher
+
+            rb_client = ReviewBoardClient(
+                url=config.reviewboard.url,
+                bot_username=config.reviewboard.bot_username,
+                api_token=config.reviewboard.api_token,
+                username=config.reviewboard.username,
+                password=config.reviewboard.get_password(),
+                use_kerberos=config.reviewboard.use_kerberos,
+            )
+            rb_client.connect()
+            self.call_from_thread(self._log, "  Connected to Review Board")
+
+            fetcher = RBCommentFetcher(rb_client, config.reviewboard.bot_username)
+            comments = fetcher.fetch_all_comments(rr_id)
+            if not comments:
+                self.call_from_thread(self._log, "  No comments found")
+                self.call_from_thread(self.notify, "No comments on this review", severity="information")
+                return
+
+            self.call_from_thread(self._log, f"  Found {len(comments)} comments")
+
+            # Phase 2: Get diff, repo info, file contexts, guidelines
+            diff_info = rb_client.get_diff(rr_id)
+            repo_info = rb_client.get_repository_info(rr_id)
+            repo_name = repo_info.get("name", "unknown")
+            raw_diff = diff_info.raw_diff
+
+            self.call_from_thread(self._log, f"  Repo: {repo_name}, diff rev {diff_info.diff_revision}")
+
+            from bb_review.git import RepoManager
+            from bb_review.guidelines import load_guidelines
+
+            repo_manager = RepoManager(config.get_all_repos())
+            file_contexts = _get_file_contexts(repo_manager, repo_name, diff_info)
+
+            guidelines_text = ""
+            repo_config = repo_manager.get_repo_by_rb_name(repo_name)
+            if repo_config:
+                try:
+                    guidelines = load_guidelines(repo_config.local_path)
+                    if guidelines.context:
+                        guidelines_text = guidelines.context
+                except Exception:
+                    pass
+
+            # Phase 3: Run analysis
+            self.call_from_thread(self._log, f"  Running {method} triage...")
+
+            from bb_review.triage.models import SelectableTriagedComment
+
+            if method == "llm":
+                from bb_review.triage.analyzer import TriageAnalyzer
+
+                analyzer = TriageAnalyzer.from_config(
+                    provider_name=config.llm.provider,
+                    api_key=config.llm.api_key,
+                    model=config.llm.model,
+                    max_tokens=config.llm.max_tokens,
+                    base_url=config.llm.base_url,
+                    site_url=config.llm.site_url,
+                    site_name=config.llm.site_name or "BB Review",
+                )
+                triage_result = analyzer.analyze(
+                    comments=comments,
+                    diff=raw_diff,
+                    file_contexts=file_contexts,
+                    guidelines_text=guidelines_text,
+                )
+            else:
+                # Claude or OpenCode
+                from bb_review.triage.agent_triage import (
+                    build_triage_prompt,
+                    run_claude_triage,
+                    run_opencode_triage,
+                )
+
+                prompt = build_triage_prompt(comments, raw_diff, file_contexts, guidelines_text)
+                runner = run_opencode_triage if method == "opencode" else run_claude_triage
+                triage_result = runner(prompt, comments, rr_id, model=model_key)
+
+            triage_result.review_request_id = rr_id
+            self.call_from_thread(
+                self._log,
+                f"  Triage complete: {triage_result.summary}",
+            )
+
+            # Phase 4: Build selectables and push screen
+            selectables = [SelectableTriagedComment.from_triaged(t) for t in triage_result.triaged_comments]
+
+            from .screens.triage_view_screen import TriageViewScreen
+
+            self.call_from_thread(
+                self.push_screen,
+                TriageViewScreen(
+                    selectables,
+                    raw_diff=raw_diff,
+                    rr_id=rr_id,
+                    repo_name=repo_name,
+                    config=config,
+                    rb_client=rb_client,
+                    comments=comments,
+                ),
+                self._on_triage_view_dismissed,
+            )
+
+        except Exception as e:
+            logger.exception(f"Triage failed for r/{rr_id}")
+            self.call_from_thread(self._log, f"  Triage FAILED: {e}")
+            self.call_from_thread(self.notify, f"Triage failed: {e}", severity="error")
 
     def _log(self, text: str) -> None:
         """Write to the log panel (thread-safe via call_from_thread)."""
@@ -601,3 +733,33 @@ class UnifiedApp(App):
             self.call_from_thread(self.notify, summary, severity=severity)
 
         self.call_from_thread(self.refresh_reviews_pane)
+
+
+def _get_file_contexts(
+    repo_manager,
+    repo_name: str,
+    diff_info,
+) -> dict[str, str]:
+    """Try to get file contexts from the local repo for triage."""
+    from bb_review.reviewers.llm import extract_changed_files
+
+    repo_config = repo_manager.get_repo_by_rb_name(repo_name)
+    if repo_config is None:
+        return {}
+
+    file_contexts: dict[str, str] = {}
+    changed_files = extract_changed_files(diff_info.raw_diff)
+    for file_info in changed_files[:10]:
+        file_path = file_info["path"]
+        if file_info["lines"]:
+            context = repo_manager.get_file_context(
+                repo_config.name,
+                file_path,
+                min(file_info["lines"]),
+                max(file_info["lines"]),
+                context_lines=30,
+            )
+            if context:
+                file_contexts[file_path] = context
+
+    return file_contexts

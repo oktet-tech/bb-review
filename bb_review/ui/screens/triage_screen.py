@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import re
+
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal
+from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import (
     DataTable,
@@ -22,6 +25,7 @@ from bb_review.triage.models import (
     SelectableTriagedComment,
     TriageAction,
 )
+from bb_review.ui.widgets.diff_viewer import DiffViewer
 
 
 # Display helpers
@@ -43,8 +47,36 @@ CLASS_LABELS = {
 }
 
 
+def _extract_file_diff(raw_diff: str, file_path: str) -> str | None:
+    """Extract the diff section for a single file from a unified diff."""
+    if not raw_diff or not file_path:
+        return None
+
+    # Split on "diff --git" boundaries
+    sections = re.split(r"(?=^diff --git )", raw_diff, flags=re.MULTILINE)
+    for section in sections:
+        if file_path in section.split("\n", 1)[0]:
+            return section.strip()
+    return None
+
+
 class TriageScreen(Container):
     """Main triage pane showing comments and their actions."""
+
+    class Done(Message):
+        """User finished triage and picked an execution mode."""
+
+        def __init__(
+            self,
+            selectables: list[SelectableTriagedComment],
+            mode: str,
+        ) -> None:
+            super().__init__()
+            self.selectables = selectables
+            self.mode = mode
+
+    class Cancelled(Message):
+        """User cancelled triage."""
 
     BINDINGS = [
         Binding("f", "set_fix", "Fix"),
@@ -52,6 +84,8 @@ class TriageScreen(Container):
         Binding("s", "set_skip", "Skip"),
         Binding("d", "set_disagree", "Disagree"),
         Binding("e", "edit_reply", "Edit Reply"),
+        Binding("v", "toggle_diff", "Diff"),
+        Binding("b", "go_back", "Back"),
         Binding("D", "done", "Done"),
     ]
 
@@ -109,10 +143,13 @@ class TriageScreen(Container):
         self,
         selectables: list[SelectableTriagedComment],
         *,
+        raw_diff: str = "",
         id: str | None = None,
     ) -> None:
         super().__init__(id=id)
         self.selectables = selectables
+        self.raw_diff = raw_diff
+        self._diff_visible = False
 
     def compose(self) -> ComposeResult:
         with Container(id="triage-header"):
@@ -120,6 +157,7 @@ class TriageScreen(Container):
         with Container(id="triage-table-container"):
             yield DataTable(id="triage-table", cursor_type="row")
         yield Static("", id="detail-panel")
+        yield DiffViewer(id="triage-diff-viewer")
         with Horizontal(id="triage-status"):
             yield Label("", id="triage-status-label")
 
@@ -164,7 +202,9 @@ class TriageScreen(Container):
         counts = Counter(s.action.value for s in self.selectables)
         parts = [f"{counts.get(a.value, 0)} {a.value}" for a in TriageAction]
         label = self.query_one("#triage-status-label", Label)
-        label.update(f"Actions: {', '.join(parts)}  |  f=fix r=reply s=skip d=disagree e=edit D=done")
+        label.update(
+            f"Actions: {', '.join(parts)}  |  f=fix r=reply s=skip d=disagree e=edit v=diff b=back D=done"
+        )
 
     def _update_detail(self) -> None:
         """Update detail panel for current row."""
@@ -189,8 +229,25 @@ class TriageScreen(Container):
             lines.append(f"\nReply: {s.edited_reply}")
         panel.update("\n".join(lines))
 
+    def _update_diff_viewer(self) -> None:
+        """Show the diff for the currently highlighted comment's file."""
+        viewer = self.query_one("#triage-diff-viewer", DiffViewer)
+        table = self.query_one("#triage-table", DataTable)
+        if table.cursor_row is None or table.cursor_row >= len(self.selectables):
+            viewer.update_content(None)
+            return
+
+        src = self.selectables[table.cursor_row].triaged.source
+        if src.file_path and self.raw_diff:
+            file_diff = _extract_file_diff(self.raw_diff, src.file_path)
+            viewer.update_content(file_diff, src.file_path, src.line_number)
+        else:
+            viewer.update_content(None)
+
     def on_data_table_cursor_moved(self, event: DataTable.CursorMoved) -> None:
         self._update_detail()
+        if self._diff_visible:
+            self._update_diff_viewer()
 
     def _set_action(self, action: TriageAction) -> None:
         table = self.query_one("#triage-table", DataTable)
@@ -231,6 +288,20 @@ class TriageScreen(Container):
             self.selectables[idx].edited_reply = text
             self._update_detail()
 
+    def action_toggle_diff(self) -> None:
+        """Toggle the diff context viewer."""
+        viewer = self.query_one("#triage-diff-viewer", DiffViewer)
+        viewer.toggle()
+        self._diff_visible = viewer.is_visible
+        # Hide detail panel when diff is shown
+        self.query_one("#detail-panel", Static).display = not self._diff_visible
+        if self._diff_visible:
+            self._update_diff_viewer()
+
+    def action_go_back(self) -> None:
+        """Post Cancelled message to parent."""
+        self.post_message(self.Cancelled())
+
     def action_done(self) -> None:
         self.app.push_screen(
             TriageModePicker(),
@@ -239,7 +310,7 @@ class TriageScreen(Container):
 
     def _on_mode_picked(self, mode: str | None) -> None:
         if mode is not None:
-            self.app.exit(self.selectables)
+            self.post_message(self.Done(self.selectables, mode))
 
 
 class EditReplyScreen(ModalScreen[str | None]):
@@ -411,6 +482,12 @@ class TriageApp(App[list[SelectableTriagedComment] | None]):
         yield Header()
         yield TriageScreen(self._selectables, id="triage-pane")
         yield Footer()
+
+    def on_triage_screen_done(self, event: TriageScreen.Done) -> None:
+        self.exit(event.selectables)
+
+    def on_triage_screen_cancelled(self, event: TriageScreen.Cancelled) -> None:
+        self.exit(None)
 
     def action_quit_app(self) -> None:
         self.exit(None)

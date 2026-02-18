@@ -169,74 +169,87 @@ class TriageAnalyzer:
         comments: list[RBComment],
         rr_id: int,
     ) -> TriageResult:
-        json_str = _extract_json_object(response_text)
-        if json_str is None:
-            logger.warning("Could not find JSON in triage response")
-            return self._fallback_result(comments, rr_id)
+        return parse_triage_response(response_text, comments, rr_id)
+
+    def _fallback_result(self, comments: list[RBComment], rr_id: int) -> TriageResult:
+        return fallback_triage_result(comments, rr_id)
+
+
+def parse_triage_response(
+    response_text: str,
+    comments: list[RBComment],
+    rr_id: int,
+) -> TriageResult:
+    """Parse LLM triage response JSON into a TriageResult."""
+    json_str = _extract_json_object(response_text)
+    if json_str is None:
+        logger.warning("Could not find JSON in triage response")
+        return fallback_triage_result(comments, rr_id)
+
+    try:
+        data = json.loads(json_str)
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse triage JSON: {e}")
+        return fallback_triage_result(comments, rr_id)
+
+    # Build lookup by comment_id
+    comment_map = {c.comment_id: c for c in comments}
+    classified = data.get("comments", [])
+    triaged: list[TriagedComment] = []
+
+    for item in classified:
+        cid = item.get("comment_id")
+        source = comment_map.get(cid)
+        if source is None:
+            logger.debug(f"Triage returned unknown comment_id={cid}, skipping")
+            continue
 
         try:
-            data = json.loads(json_str)
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse triage JSON: {e}")
-            return self._fallback_result(comments, rr_id)
+            classification = CommentClassification(item.get("classification", "valid"))
+        except ValueError:
+            classification = CommentClassification.VALID
 
-        # Build lookup by comment_id
-        comment_map = {c.comment_id: c for c in comments}
-        classified = data.get("comments", [])
-        triaged: list[TriagedComment] = []
-
-        for item in classified:
-            cid = item.get("comment_id")
-            source = comment_map.get(cid)
-            if source is None:
-                logger.debug(f"Triage returned unknown comment_id={cid}, skipping")
-                continue
-
+        difficulty = None
+        if item.get("difficulty"):
             try:
-                classification = CommentClassification(item.get("classification", "valid"))
+                difficulty = Difficulty(item["difficulty"])
             except ValueError:
-                classification = CommentClassification.VALID
+                pass
 
-            difficulty = None
-            if item.get("difficulty"):
-                try:
-                    difficulty = Difficulty(item["difficulty"])
-                except ValueError:
-                    pass
+        triaged.append(
+            TriagedComment(
+                source=source,
+                classification=classification,
+                difficulty=difficulty,
+                fix_hint=item.get("fix_hint", ""),
+                reply_suggestion=item.get("reply_suggestion", ""),
+            )
+        )
 
+    # Add any comments the LLM missed with default classification
+    classified_ids = {t.source.comment_id for t in triaged}
+    for c in comments:
+        if c.comment_id not in classified_ids:
             triaged.append(
                 TriagedComment(
-                    source=source,
-                    classification=classification,
-                    difficulty=difficulty,
-                    fix_hint=item.get("fix_hint", ""),
-                    reply_suggestion=item.get("reply_suggestion", ""),
+                    source=c,
+                    classification=CommentClassification.VALID,
                 )
             )
 
-        # Add any comments the LLM missed with default classification
-        classified_ids = {t.source.comment_id for t in triaged}
-        for c in comments:
-            if c.comment_id not in classified_ids:
-                triaged.append(
-                    TriagedComment(
-                        source=c,
-                        classification=CommentClassification.VALID,
-                    )
-                )
+    return TriageResult(
+        review_request_id=rr_id,
+        triaged_comments=triaged,
+        summary=data.get("summary", ""),
+    )
 
-        return TriageResult(
-            review_request_id=rr_id,
-            triaged_comments=triaged,
-            summary=data.get("summary", ""),
-        )
 
-    def _fallback_result(self, comments: list[RBComment], rr_id: int) -> TriageResult:
-        """Return all comments as unclassified (valid) when parsing fails."""
-        return TriageResult(
-            review_request_id=rr_id,
-            triaged_comments=[
-                TriagedComment(source=c, classification=CommentClassification.VALID) for c in comments
-            ],
-            summary="Failed to parse triage response -- all comments marked as valid",
-        )
+def fallback_triage_result(comments: list[RBComment], rr_id: int) -> TriageResult:
+    """Return all comments as unclassified (valid) when parsing fails."""
+    return TriageResult(
+        review_request_id=rr_id,
+        triaged_comments=[
+            TriagedComment(source=c, classification=CommentClassification.VALID) for c in comments
+        ],
+        summary="Failed to parse triage response -- all comments marked as valid",
+    )
