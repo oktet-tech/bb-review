@@ -43,6 +43,11 @@ class RBCommentFetcher:
 
             review_id = review["id"]
 
+            # Skip ship-it approvals -- they're just "+1" stamps, not actionable
+            if review.get("ship_it"):
+                logger.debug(f"Skipping ship-it review {review_id} by {reviewer}")
+                continue
+
             # Body top as a body comment
             body_top = (review.get("body_top") or "").strip()
             if body_top:
