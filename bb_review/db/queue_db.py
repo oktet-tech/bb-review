@@ -288,7 +288,7 @@ class QueueDatabase:
                     """
                     SELECT * FROM review_queue
                     WHERE status = 'next'
-                    ORDER BY synced_at ASC
+                    ORDER BY review_request_id ASC
                     LIMIT ?
                     """,
                     (count,),
@@ -298,7 +298,7 @@ class QueueDatabase:
                     """
                     SELECT * FROM review_queue
                     WHERE status = 'next'
-                    ORDER BY synced_at ASC
+                    ORDER BY review_request_id ASC
                     """,
                 ).fetchall()
             return [self._row_to_item(r) for r in rows]

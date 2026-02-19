@@ -224,16 +224,16 @@ class TestResetStaleInProgress:
 
 
 class TestPickNext:
-    def test_pick_ordered_by_synced_at(self, queue_db: QueueDatabase):
+    def test_pick_ordered_by_rr_id(self, queue_db: QueueDatabase):
         for rr_id in [42740, 42738, 42739]:
             queue_db.upsert(review_request_id=rr_id, diff_revision=1)
             queue_db.update_status(rr_id, QueueStatus.NEXT)
 
         items = queue_db.pick_next(count=2)
         assert len(items) == 2
-        # Oldest synced_at first
-        assert items[0].review_request_id == 42740
-        assert items[1].review_request_id == 42738
+        # Lowest review_request_id first (chains processed base-first)
+        assert items[0].review_request_id == 42738
+        assert items[1].review_request_id == 42739
 
     def test_pick_only_next_status(self, queue_db: QueueDatabase):
         queue_db.upsert(review_request_id=42738, diff_revision=1)  # todo
