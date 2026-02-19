@@ -164,7 +164,12 @@ def encrypt_password_cmd(ctx: click.Context, token: str | None, output: Path | N
                 output = Path(config.reviewboard.password_file)
                 click.echo(f"Using password_file from config: {output}")
             else:
-                output = Path("~/.bb_review/password.enc")
+                # Default to same directory as config file
+                config_path = ctx.obj.get("config_path")
+                if config_path:
+                    output = Path(config_path).expanduser().parent / "password.enc"
+                else:
+                    output = Path("~/.bb_review/password.enc")
         except (FileNotFoundError, Exception):
             output = Path("~/.bb_review/password.enc")
 
