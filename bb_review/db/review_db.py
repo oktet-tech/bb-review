@@ -17,6 +17,10 @@ from .models import (
     StoredAnalysis,
     StoredChain,
     StoredComment,
+    StoredTriageComment,
+    StoredTriageSession,
+    TriageListItem,
+    TriageStatus,
 )
 
 
@@ -95,6 +99,51 @@ class ReviewDatabase:
                 CREATE INDEX IF NOT EXISTS idx_analyses_status ON analyses(status);
                 CREATE INDEX IF NOT EXISTS idx_analyses_repository ON analyses(repository);
                 CREATE INDEX IF NOT EXISTS idx_comments_analysis_id ON comments(analysis_id);
+
+                -- Triage sessions
+                CREATE TABLE IF NOT EXISTS triage_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    review_request_id INTEGER NOT NULL,
+                    diff_revision INTEGER,
+                    repository TEXT NOT NULL,
+                    analysis_method TEXT NOT NULL,
+                    model_used TEXT NOT NULL,
+                    analyzed_at TEXT NOT NULL,
+                    summary TEXT,
+                    status TEXT NOT NULL DEFAULT 'draft',
+                    raw_diff TEXT,
+                    comment_count INTEGER DEFAULT 0,
+                    fix_count INTEGER DEFAULT 0,
+                    reply_count INTEGER DEFAULT 0,
+                    skip_count INTEGER DEFAULT 0
+                );
+
+                -- Triage comments
+                CREATE TABLE IF NOT EXISTS triage_comments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    triage_id INTEGER NOT NULL REFERENCES triage_sessions(id) ON DELETE CASCADE,
+                    rb_comment_id INTEGER NOT NULL,
+                    review_id INTEGER,
+                    reviewer TEXT,
+                    text TEXT NOT NULL,
+                    file_path TEXT,
+                    line_number INTEGER,
+                    is_body_comment INTEGER DEFAULT 0,
+                    issue_opened INTEGER DEFAULT 0,
+                    classification TEXT,
+                    difficulty TEXT,
+                    fix_hint TEXT,
+                    reply_suggestion TEXT,
+                    action TEXT NOT NULL DEFAULT 'skip',
+                    edited_reply TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_triage_sessions_rr_id
+                    ON triage_sessions(review_request_id);
+                CREATE INDEX IF NOT EXISTS idx_triage_sessions_status
+                    ON triage_sessions(status);
+                CREATE INDEX IF NOT EXISTS idx_triage_comments_triage_id
+                    ON triage_comments(triage_id);
                 """
             )
             # Migration: add fake column if it doesn't exist (for existing databases)
@@ -776,6 +825,277 @@ class ReviewDatabase:
             if count > 0:
                 conn.execute("DELETE FROM analyses WHERE fake = 1")
             return count
+
+    # -- Triage methods --
+
+    def save_triage(
+        self,
+        session_data: dict,
+        comments: list[dict],
+    ) -> int:
+        """Save a triage session and its comments.
+
+        Args:
+            session_data: dict with keys matching triage_sessions columns
+            comments: list of dicts with keys matching triage_comments columns
+
+        Returns:
+            The database ID of the saved triage session
+        """
+        with self._connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO triage_sessions (
+                    review_request_id, diff_revision, repository,
+                    analysis_method, model_used, analyzed_at, summary,
+                    status, raw_diff, comment_count,
+                    fix_count, reply_count, skip_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_data["review_request_id"],
+                    session_data.get("diff_revision"),
+                    session_data["repository"],
+                    session_data["analysis_method"],
+                    session_data["model_used"],
+                    session_data["analyzed_at"],
+                    session_data.get("summary", ""),
+                    session_data.get("status", "draft"),
+                    session_data.get("raw_diff"),
+                    len(comments),
+                    0,
+                    0,
+                    0,
+                ),
+            )
+            triage_id = cursor.lastrowid
+
+            for c in comments:
+                conn.execute(
+                    """
+                    INSERT INTO triage_comments (
+                        triage_id, rb_comment_id, review_id, reviewer, text,
+                        file_path, line_number, is_body_comment, issue_opened,
+                        classification, difficulty, fix_hint, reply_suggestion,
+                        action, edited_reply
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        triage_id,
+                        c["rb_comment_id"],
+                        c.get("review_id"),
+                        c.get("reviewer", ""),
+                        c["text"],
+                        c.get("file_path"),
+                        c.get("line_number"),
+                        1 if c.get("is_body_comment") else 0,
+                        1 if c.get("issue_opened") else 0,
+                        c.get("classification"),
+                        c.get("difficulty"),
+                        c.get("fix_hint"),
+                        c.get("reply_suggestion"),
+                        c.get("action", "skip"),
+                        c.get("edited_reply"),
+                    ),
+                )
+
+            # Recalculate counts
+            self._recalc_triage_counts(conn, triage_id)
+            return triage_id
+
+    def list_triages(
+        self,
+        review_request_id: int | None = None,
+        repository: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[TriageListItem]:
+        """List triage sessions with optional filters."""
+        conditions = []
+        params: list = []
+
+        if review_request_id is not None:
+            conditions.append("review_request_id = ?")
+            params.append(review_request_id)
+        if repository is not None:
+            conditions.append("repository = ?")
+            params.append(repository)
+        if status is not None:
+            conditions.append("status = ?")
+            params.append(status)
+
+        where = " AND ".join(conditions) if conditions else "1=1"
+
+        with self._connection() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM triage_sessions
+                WHERE {where}
+                ORDER BY analyzed_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                params + [limit, offset],
+            ).fetchall()
+
+            return [self._row_to_triage_list_item(r) for r in rows]
+
+    def get_triage(self, triage_id: int) -> StoredTriageSession | None:
+        """Get a full triage session with all comments."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM triage_sessions WHERE id = ?",
+                (triage_id,),
+            ).fetchone()
+
+            if not row:
+                return None
+
+            session = self._row_to_triage_session(row)
+
+            comment_rows = conn.execute(
+                "SELECT * FROM triage_comments WHERE triage_id = ? ORDER BY id",
+                (triage_id,),
+            ).fetchall()
+            session.comments = [self._row_to_triage_comment(c) for c in comment_rows]
+            return session
+
+    def update_triage_status(self, triage_id: int, status: str) -> None:
+        """Update triage session status."""
+        try:
+            TriageStatus(status)
+        except ValueError:
+            valid = [s.value for s in TriageStatus]
+            raise ValueError(f"Invalid triage status '{status}'. Must be one of: {valid}") from None
+
+        with self._connection() as conn:
+            conn.execute(
+                "UPDATE triage_sessions SET status = ? WHERE id = ?",
+                (status, triage_id),
+            )
+
+    def update_triage_comment(
+        self,
+        comment_id: int,
+        action: str | None = None,
+        edited_reply: str | None = None,
+    ) -> bool:
+        """Update a triage comment's action and/or edited reply."""
+        with self._connection() as conn:
+            exists = conn.execute("SELECT 1 FROM triage_comments WHERE id = ?", (comment_id,)).fetchone()
+            if not exists:
+                return False
+
+            updates = []
+            params: list = []
+            if action is not None:
+                updates.append("action = ?")
+                params.append(action)
+            if edited_reply is not None:
+                updates.append("edited_reply = ?")
+                params.append(edited_reply)
+
+            if not updates:
+                return True
+
+            params.append(comment_id)
+            conn.execute(
+                f"UPDATE triage_comments SET {', '.join(updates)} WHERE id = ?",
+                params,
+            )
+            return True
+
+    def update_triage_counts(self, triage_id: int) -> None:
+        """Recalculate fix/reply/skip counts from comments."""
+        with self._connection() as conn:
+            self._recalc_triage_counts(conn, triage_id)
+
+    def delete_triage(self, triage_id: int) -> bool:
+        """Delete a triage session and its comments (cascade)."""
+        with self._connection() as conn:
+            exists = conn.execute("SELECT 1 FROM triage_sessions WHERE id = ?", (triage_id,)).fetchone()
+            if not exists:
+                return False
+
+            conn.execute("DELETE FROM triage_comments WHERE triage_id = ?", (triage_id,))
+            conn.execute("DELETE FROM triage_sessions WHERE id = ?", (triage_id,))
+            return True
+
+    def _recalc_triage_counts(self, conn: sqlite3.Connection, triage_id: int) -> None:
+        """Recalc and persist triage action counts."""
+        row = conn.execute(
+            """
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN action = 'fix' THEN 1 ELSE 0 END) as fixes,
+                SUM(CASE WHEN action IN ('reply', 'disagree') THEN 1 ELSE 0 END) as replies,
+                SUM(CASE WHEN action = 'skip' THEN 1 ELSE 0 END) as skips
+            FROM triage_comments WHERE triage_id = ?
+            """,
+            (triage_id,),
+        ).fetchone()
+        conn.execute(
+            """
+            UPDATE triage_sessions
+            SET comment_count = ?, fix_count = ?, reply_count = ?, skip_count = ?
+            WHERE id = ?
+            """,
+            (row["total"], row["fixes"], row["replies"], row["skips"], triage_id),
+        )
+
+    def _row_to_triage_list_item(self, row: sqlite3.Row) -> TriageListItem:
+        return TriageListItem(
+            id=row["id"],
+            review_request_id=row["review_request_id"],
+            repository=row["repository"],
+            analyzed_at=datetime.fromisoformat(row["analyzed_at"]),
+            status=TriageStatus(row["status"]),
+            analysis_method=row["analysis_method"],
+            model_used=row["model_used"],
+            summary=row["summary"] or "",
+            comment_count=row["comment_count"] or 0,
+            fix_count=row["fix_count"] or 0,
+            reply_count=row["reply_count"] or 0,
+            skip_count=row["skip_count"] or 0,
+        )
+
+    def _row_to_triage_session(self, row: sqlite3.Row) -> StoredTriageSession:
+        return StoredTriageSession(
+            id=row["id"],
+            review_request_id=row["review_request_id"],
+            diff_revision=row["diff_revision"],
+            repository=row["repository"],
+            analysis_method=row["analysis_method"],
+            model_used=row["model_used"],
+            analyzed_at=datetime.fromisoformat(row["analyzed_at"]),
+            summary=row["summary"] or "",
+            status=TriageStatus(row["status"]),
+            raw_diff=row["raw_diff"],
+            comment_count=row["comment_count"] or 0,
+            fix_count=row["fix_count"] or 0,
+            reply_count=row["reply_count"] or 0,
+            skip_count=row["skip_count"] or 0,
+        )
+
+    def _row_to_triage_comment(self, row: sqlite3.Row) -> StoredTriageComment:
+        return StoredTriageComment(
+            id=row["id"],
+            triage_id=row["triage_id"],
+            rb_comment_id=row["rb_comment_id"],
+            review_id=row["review_id"],
+            reviewer=row["reviewer"] or "",
+            text=row["text"],
+            file_path=row["file_path"],
+            line_number=row["line_number"],
+            is_body_comment=bool(row["is_body_comment"]),
+            issue_opened=bool(row["issue_opened"]),
+            classification=row["classification"],
+            difficulty=row["difficulty"],
+            fix_hint=row["fix_hint"],
+            reply_suggestion=row["reply_suggestion"],
+            action=row["action"] or "skip",
+            edited_reply=row["edited_reply"],
+        )
 
     def _row_to_analysis(self, row: sqlite3.Row) -> StoredAnalysis:
         """Convert a database row to StoredAnalysis."""

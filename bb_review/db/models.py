@@ -119,6 +119,75 @@ class AnalysisListItem:
     rb_url: str | None = None
 
 
+class TriageStatus(str, Enum):
+    """Status of a triage session."""
+
+    DRAFT = "draft"
+    REVIEWED = "reviewed"
+    EXPORTED = "exported"
+
+
+@dataclass
+class TriageListItem:
+    """Lightweight triage session info for listing in the Work tab."""
+
+    id: int
+    review_request_id: int
+    repository: str
+    analyzed_at: datetime
+    status: TriageStatus
+    analysis_method: str
+    model_used: str
+    summary: str
+    comment_count: int
+    fix_count: int
+    reply_count: int
+    skip_count: int
+
+
+@dataclass
+class StoredTriageComment:
+    """A triage comment stored in the database."""
+
+    id: int
+    triage_id: int
+    rb_comment_id: int
+    review_id: int | None
+    reviewer: str
+    text: str
+    file_path: str | None
+    line_number: int | None
+    is_body_comment: bool
+    issue_opened: bool
+    classification: str | None
+    difficulty: str | None
+    fix_hint: str | None
+    reply_suggestion: str | None
+    action: str
+    edited_reply: str | None
+
+
+@dataclass
+class StoredTriageSession:
+    """A full triage session stored in the database."""
+
+    id: int
+    review_request_id: int
+    diff_revision: int | None
+    repository: str
+    analysis_method: str
+    model_used: str
+    analyzed_at: datetime
+    summary: str
+    status: TriageStatus
+    raw_diff: str | None
+    comment_count: int
+    fix_count: int
+    reply_count: int
+    skip_count: int
+    comments: list[StoredTriageComment] = field(default_factory=list)
+
+
 @dataclass
 class DBStats:
     """Statistics about the reviews database."""

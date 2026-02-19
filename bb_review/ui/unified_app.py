@@ -12,11 +12,12 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.widgets import ContentSwitcher, Footer, Header, Tab, Tabs
 
-from bb_review.db.models import AnalysisListItem
+from bb_review.db.models import AnalysisListItem, TriageListItem
 from bb_review.db.queue_models import QueueItem, QueueStatus
 from bb_review.db.review_db import ReviewDatabase
 
 from .review_handler import ReviewHandler
+from .triage_handler import TriageHandler
 from .widgets.log_panel import LogPanel
 from .widgets.queue_pane import QueuePane
 from .widgets.reviews_pane import ReviewsPane
@@ -111,6 +112,8 @@ class UnifiedApp(App):
         tab_map = {"queue": TAB_QUEUE, "reviews": TAB_REVIEWS, "work": TAB_WORK}
         self._initial_tab = tab_map.get(initial_tab, TAB_QUEUE)
         self._review_handler: ReviewHandler | None = None
+        self._triage_handler: TriageHandler | None = None
+        self._triage_items: list[TriageListItem] = []
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -134,7 +137,8 @@ class UnifiedApp(App):
                     yield ReviewsPane(self._analyses, id=TAB_REVIEWS)
                 else:
                     yield Vertical(id=TAB_REVIEWS)
-                yield WorkPane(id=TAB_WORK)
+                self._triage_items = self._load_triage_items()
+                yield WorkPane(self._triage_items, id=TAB_WORK)
             yield LogPanel()
         yield Footer()
 
@@ -149,6 +153,14 @@ class UnifiedApp(App):
                 db=self._review_db,
                 config=self._config,
                 output_path=self._output_path,
+            )
+
+        # Create triage handler
+        if self._review_db is not None:
+            self._triage_handler = TriageHandler(
+                app=self,
+                db=self._review_db,
+                config=self._config,
             )
 
         # Focus the active pane's table
@@ -298,15 +310,41 @@ class UnifiedApp(App):
             return
         self._review_handler.handle_action(event.action, self._analyses)
 
+    def on_work_pane_open_requested(self, event: WorkPane.OpenRequested) -> None:
+        if self._triage_handler is None:
+            self.notify("Review database not configured", severity="error")
+            return
+        self._triage_handler._open_triage(event.triage_id)
+
+    def on_work_pane_action_requested(self, event: WorkPane.ActionRequested) -> None:
+        if self._triage_handler is None:
+            self.notify("Review database not configured", severity="error")
+            return
+        self._triage_handler.handle_action(event.action, self._triage_items)
+
     def on_work_pane_triage_requested(self, event: WorkPane.TriageRequested) -> None:
         self.notify("Use 'bb-review triage <rr-id>' from the CLI", severity="information")
 
-    def _refresh_work_pane(self) -> None:
-        """Refresh the work pane by scanning for plan files."""
+    def _load_triage_items(self) -> list[TriageListItem]:
+        """Query triage sessions from the DB."""
+        if self._review_db is None:
+            return []
         try:
-            self.query_one(WorkPane)._scan_plan_files()
+            return self._review_db.list_triages(limit=50)
+        except Exception:
+            return []
+
+    def refresh_work_pane(self) -> None:
+        """Refresh the work pane from DB (called by TriageHandler)."""
+        try:
+            self._triage_items = self._load_triage_items()
+            self.query_one(WorkPane).refresh_data(self._triage_items)
         except Exception:
             pass
+
+    def _refresh_work_pane(self) -> None:
+        """Internal alias used by tab switching."""
+        self.refresh_work_pane()
 
     # -- Background workers --
 
@@ -416,8 +454,52 @@ class UnifiedApp(App):
                 f"  Triage complete: {triage_result.summary}",
             )
 
-            # Phase 4: Build selectables and push screen
+            # Phase 4: Save to DB and push screen
             selectables = [SelectableTriagedComment.from_triaged(t) for t in triage_result.triaged_comments]
+
+            # Determine analysis_method and model_used for DB
+            analysis_method = "claude_code" if method == "claude" else method
+            model_used = model_key or config.llm.model
+
+            triage_id = None
+            if self._review_db is not None:
+                from datetime import datetime
+
+                session_data = {
+                    "review_request_id": rr_id,
+                    "diff_revision": diff_info.diff_revision,
+                    "repository": repo_name,
+                    "analysis_method": analysis_method,
+                    "model_used": model_used,
+                    "analyzed_at": datetime.now().isoformat(),
+                    "summary": triage_result.summary,
+                    "status": "draft",
+                    "raw_diff": raw_diff,
+                }
+                comment_rows = []
+                for s in selectables:
+                    src = s.triaged.source
+                    comment_rows.append(
+                        {
+                            "rb_comment_id": src.comment_id,
+                            "review_id": src.review_id,
+                            "reviewer": src.reviewer,
+                            "text": src.text,
+                            "file_path": src.file_path,
+                            "line_number": src.line_number,
+                            "is_body_comment": src.is_body_comment,
+                            "issue_opened": src.issue_opened,
+                            "classification": s.triaged.classification.value,
+                            "difficulty": s.triaged.difficulty.value if s.triaged.difficulty else None,
+                            "fix_hint": s.triaged.fix_hint,
+                            "reply_suggestion": s.triaged.reply_suggestion,
+                            "action": s.action.value,
+                            "edited_reply": s.edited_reply,
+                        }
+                    )
+                triage_id = self._review_db.save_triage(session_data, comment_rows)
+                self.call_from_thread(self._log, f"  Saved triage #{triage_id} to DB")
+                self.call_from_thread(self.refresh_work_pane)
 
             from .screens.triage_view_screen import TriageViewScreen
 
@@ -431,6 +513,8 @@ class UnifiedApp(App):
                     config=config,
                     rb_client=rb_client,
                     comments=comments,
+                    db=self._review_db,
+                    triage_id=triage_id,
                 ),
                 self._on_triage_view_dismissed,
             )
