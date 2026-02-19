@@ -234,7 +234,7 @@ class QueueConfig(BaseModel):
     """Queue processing defaults."""
 
     method: str = "opencode"  # llm, opencode, or claude
-    count: int = 5  # items to process per run
+    count: int = 0  # items to process per run (0 = all with status=next)
 
     @field_validator("method")
     @classmethod

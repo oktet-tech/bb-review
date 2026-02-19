@@ -276,18 +276,31 @@ class QueueDatabase:
             )
             return cursor.rowcount
 
-    def pick_next(self, count: int = 1) -> list[QueueItem]:
-        """Pick items with status=next, ordered by synced_at ASC."""
+    def pick_next(self, count: int = 0) -> list[QueueItem]:
+        """Pick items with status=next, ordered by synced_at ASC.
+
+        Args:
+            count: Max items to return. 0 means all.
+        """
         with self._connection() as conn:
-            rows = conn.execute(
-                """
-                SELECT * FROM review_queue
-                WHERE status = 'next'
-                ORDER BY synced_at ASC
-                LIMIT ?
-                """,
-                (count,),
-            ).fetchall()
+            if count > 0:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM review_queue
+                    WHERE status = 'next'
+                    ORDER BY synced_at ASC
+                    LIMIT ?
+                    """,
+                    (count,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM review_queue
+                    WHERE status = 'next'
+                    ORDER BY synced_at ASC
+                    """,
+                ).fetchall()
             return [self._row_to_item(r) for r in rows]
 
     def get(self, review_request_id: int) -> QueueItem | None:
