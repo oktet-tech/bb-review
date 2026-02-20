@@ -75,6 +75,8 @@ def poll_once(ctx: click.Context) -> None:
         def fetch_pending():
             return rb_client.get_pending_reviews(limit=50)
 
+        bot_username = config.reviewboard.bot_username
+
         def process_func(pending: PendingReview):
             result = process_review(
                 review_id=pending.review_request_id,
@@ -84,7 +86,11 @@ def poll_once(ctx: click.Context) -> None:
                 config=config,
                 pending=pending,
             )
-            commenter.post_review(result)
+            commenter.post_review(
+                result,
+                dedup_rr_id=pending.review_request_id,
+                bot_username=bot_username,
+            )
             return result
 
         processed = poller.run_once(fetch_pending, process_func)
@@ -156,6 +162,8 @@ def poll_daemon(ctx: click.Context) -> None:
         def fetch_pending():
             return rb_client.get_pending_reviews(limit=50)
 
+        bot_username = config.reviewboard.bot_username
+
         def process_func(pending: PendingReview):
             result = process_review(
                 review_id=pending.review_request_id,
@@ -165,7 +173,11 @@ def poll_daemon(ctx: click.Context) -> None:
                 config=config,
                 pending=pending,
             )
-            commenter.post_review(result)
+            commenter.post_review(
+                result,
+                dedup_rr_id=pending.review_request_id,
+                bot_username=bot_username,
+            )
             return result
 
         poller.run_daemon(fetch_pending, process_func)

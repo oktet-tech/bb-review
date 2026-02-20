@@ -32,16 +32,28 @@ class Commenter:
         self,
         result: ReviewResult,
         dry_run: bool = False,
+        dedup_rr_id: int | None = None,
+        bot_username: str | None = None,
     ) -> int | None:
         """Post review results to Review Board.
 
         Args:
             result: The review result to post.
             dry_run: If True, print what would be posted without actually posting.
+            dedup_rr_id: RR ID to check for previously-dropped comments.
+            bot_username: Bot username for dedup (required with dedup_rr_id).
 
         Returns:
             Review ID if posted, None if dry run.
         """
+        if dedup_rr_id and bot_username:
+            from .dedup import fetch_dropped_comments, filter_dropped
+
+            dropped = fetch_dropped_comments(self.rb_client, dedup_rr_id, bot_username)
+            result, removed = filter_dropped(result, dropped)
+            if removed:
+                logger.info("Dedup: filtered %d comment(s) for RR #%d", len(removed), dedup_rr_id)
+
         review_request_id = result.review_request_id
 
         # Format the summary

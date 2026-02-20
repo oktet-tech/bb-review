@@ -61,10 +61,34 @@ def _submit_one(
     publish: bool,
     config,
 ) -> None:
-    """Submit a single review and update the DB."""
+    """Submit a single review and update the DB, filtering previously-dropped comments."""
     review_request_id = data["review_request_id"]
     comments = data["comments"]
     ship_it = data.get("ship_it", False)
+
+    # Filter out comments that match previously-dropped issues
+    from ..rr.dedup import _extract_message_core, fetch_dropped_comments
+
+    bot_username = config.reviewboard.bot_username
+    dropped = fetch_dropped_comments(rb_client, review_request_id, bot_username)
+    if dropped:
+        from difflib import SequenceMatcher
+
+        filtered = []
+        removed_count = 0
+        for c in comments:
+            core = _extract_message_core(c.get("text", ""))
+            is_dup = any(
+                c.get("file_path") == dc.file_path and SequenceMatcher(None, core, dc.text).ratio() >= 0.6
+                for dc in dropped
+            )
+            if is_dup:
+                removed_count += 1
+            else:
+                filtered.append(c)
+        if removed_count:
+            click.echo(f"  Dedup: filtered {removed_count} previously-dropped comment(s)")
+        comments = filtered
 
     review_posted = rb_client.post_review(
         review_request_id=review_request_id,
