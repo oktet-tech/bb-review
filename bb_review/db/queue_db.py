@@ -20,17 +20,19 @@ class QueueDatabase:
     its own tables via CREATE TABLE IF NOT EXISTS.
     """
 
-    def __init__(self, db_path: Path | str):
+    def __init__(self, db_path: Path | str, table_name: str = "review_queue"):
         self.db_path = Path(db_path).expanduser()
+        self._table_name = table_name
         self._ensure_db()
 
     def _ensure_db(self) -> None:
-        """Create the review_queue table if it doesn't exist."""
+        """Create the table if it doesn't exist."""
+        t = self._table_name
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection() as conn:
             conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS review_queue (
+                f"""
+                CREATE TABLE IF NOT EXISTS {t} (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     review_request_id INTEGER NOT NULL,
                     diff_revision INTEGER NOT NULL,
@@ -48,16 +50,16 @@ class QueueDatabase:
                     UNIQUE(review_request_id)
                 );
 
-                CREATE INDEX IF NOT EXISTS idx_queue_status
-                    ON review_queue(status);
-                CREATE INDEX IF NOT EXISTS idx_queue_rr_id
-                    ON review_queue(review_request_id);
+                CREATE INDEX IF NOT EXISTS idx_{t}_status
+                    ON {t}(status);
+                CREATE INDEX IF NOT EXISTS idx_{t}_rr_id
+                    ON {t}(review_request_id);
                 """
             )
             # Migration: add issue_open_count if missing
-            cols = {row[1] for row in conn.execute("PRAGMA table_info(review_queue)").fetchall()}
+            cols = {row[1] for row in conn.execute(f"PRAGMA table_info({t})").fetchall()}
             if "issue_open_count" not in cols:
-                conn.execute("ALTER TABLE review_queue ADD COLUMN issue_open_count INTEGER DEFAULT 0")
+                conn.execute(f"ALTER TABLE {t} ADD COLUMN issue_open_count INTEGER DEFAULT 0")
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
@@ -94,14 +96,14 @@ class QueueDatabase:
 
         with self._connection() as conn:
             existing = conn.execute(
-                "SELECT * FROM review_queue WHERE review_request_id = ?",
+                f"SELECT * FROM {self._table_name} WHERE review_request_id = ?",
                 (review_request_id,),
             ).fetchone()
 
             if existing is None:
                 conn.execute(
-                    """
-                    INSERT INTO review_queue (
+                    f"""
+                    INSERT INTO {self._table_name} (
                         review_request_id, diff_revision, status, repository,
                         submitter, summary, branch, base_commit, rb_created_at,
                         issue_open_count, synced_at, updated_at
@@ -126,8 +128,8 @@ class QueueDatabase:
             if existing["diff_revision"] != diff_revision:
                 # New diff version: reset to todo, clear analysis link
                 conn.execute(
-                    """
-                    UPDATE review_queue
+                    f"""
+                    UPDATE {self._table_name}
                     SET diff_revision = ?, status = 'todo', analysis_id = NULL,
                         error_message = NULL, repository = COALESCE(?, repository),
                         submitter = COALESCE(?, submitter),
@@ -157,8 +159,8 @@ class QueueDatabase:
 
             # Same diff_revision: update metadata, keep status
             conn.execute(
-                """
-                UPDATE review_queue
+                f"""
+                UPDATE {self._table_name}
                 SET repository = COALESCE(?, repository),
                     submitter = COALESCE(?, submitter),
                     summary = COALESCE(?, summary),
@@ -200,7 +202,7 @@ class QueueDatabase:
         """
         with self._connection() as conn:
             row = conn.execute(
-                "SELECT status FROM review_queue WHERE review_request_id = ?",
+                f"SELECT status FROM {self._table_name} WHERE review_request_id = ?",
                 (review_request_id,),
             ).fetchone()
 
@@ -220,13 +222,13 @@ class QueueDatabase:
             # Clear analysis_id when re-queuing a completed item so it gets reanalyzed
             if current == QueueStatus.DONE and new_status == QueueStatus.NEXT:
                 conn.execute(
-                    "UPDATE review_queue SET status = ?, analysis_id = NULL, updated_at = ? "
+                    f"UPDATE {self._table_name} SET status = ?, analysis_id = NULL, updated_at = ? "
                     "WHERE review_request_id = ?",
                     (new_status.value, datetime.now().isoformat(), review_request_id),
                 )
             else:
                 conn.execute(
-                    "UPDATE review_queue SET status = ?, updated_at = ? WHERE review_request_id = ?",
+                    f"UPDATE {self._table_name} SET status = ?, updated_at = ? WHERE review_request_id = ?",
                     (new_status.value, datetime.now().isoformat(), review_request_id),
                 )
             return current
@@ -235,8 +237,8 @@ class QueueDatabase:
         """Mark a queue item as done with its analysis_id."""
         with self._connection() as conn:
             conn.execute(
-                """
-                UPDATE review_queue
+                f"""
+                UPDATE {self._table_name}
                 SET status = 'done', analysis_id = ?, error_message = NULL, updated_at = ?
                 WHERE review_request_id = ?
                 """,
@@ -247,8 +249,8 @@ class QueueDatabase:
         """Mark a queue item as failed with an error message."""
         with self._connection() as conn:
             conn.execute(
-                """
-                UPDATE review_queue
+                f"""
+                UPDATE {self._table_name}
                 SET status = 'failed', error_message = ?, updated_at = ?
                 WHERE review_request_id = ?
                 """,
@@ -267,8 +269,8 @@ class QueueDatabase:
         """
         with self._connection() as conn:
             cursor = conn.execute(
-                """
-                UPDATE review_queue
+                f"""
+                UPDATE {self._table_name}
                 SET status = 'next', updated_at = ?
                 WHERE status = 'in_progress'
                 """,
@@ -285,8 +287,8 @@ class QueueDatabase:
         with self._connection() as conn:
             if count > 0:
                 rows = conn.execute(
-                    """
-                    SELECT * FROM review_queue
+                    f"""
+                    SELECT * FROM {self._table_name}
                     WHERE status = 'next'
                     ORDER BY review_request_id ASC
                     LIMIT ?
@@ -295,8 +297,8 @@ class QueueDatabase:
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    """
-                    SELECT * FROM review_queue
+                    f"""
+                    SELECT * FROM {self._table_name}
                     WHERE status = 'next'
                     ORDER BY review_request_id ASC
                     """,
@@ -307,7 +309,7 @@ class QueueDatabase:
         """Get a single queue item by review request ID."""
         with self._connection() as conn:
             row = conn.execute(
-                "SELECT * FROM review_queue WHERE review_request_id = ?",
+                f"SELECT * FROM {self._table_name} WHERE review_request_id = ?",
                 (review_request_id,),
             ).fetchone()
             return self._row_to_item(row) if row else None
@@ -339,7 +341,7 @@ class QueueDatabase:
         with self._connection() as conn:
             rows = conn.execute(
                 f"""
-                SELECT * FROM review_queue
+                SELECT * FROM {self._table_name}
                 WHERE {where}
                 ORDER BY synced_at DESC
                 LIMIT ?
@@ -356,7 +358,7 @@ class QueueDatabase:
         """
         with self._connection() as conn:
             cursor = conn.execute(
-                "DELETE FROM review_queue WHERE review_request_id = ?",
+                f"DELETE FROM {self._table_name} WHERE review_request_id = ?",
                 (review_request_id,),
             )
             return cursor.rowcount > 0
@@ -364,7 +366,9 @@ class QueueDatabase:
     def get_stats(self) -> dict[str, int]:
         """Get count of items by status."""
         with self._connection() as conn:
-            rows = conn.execute("SELECT status, COUNT(*) as cnt FROM review_queue GROUP BY status").fetchall()
+            rows = conn.execute(
+                f"SELECT status, COUNT(*) as cnt FROM {self._table_name} GROUP BY status"
+            ).fetchall()
             stats = {row["status"]: row["cnt"] for row in rows}
             stats["total"] = sum(stats.values())
             return stats

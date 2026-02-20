@@ -19,6 +19,7 @@ from bb_review.db.review_db import ReviewDatabase
 from .review_handler import ReviewHandler
 from .triage_handler import TriageHandler
 from .widgets.log_panel import LogPanel
+from .widgets.my_reviews_pane import MyReviewsPane
 from .widgets.queue_pane import QueuePane
 from .widgets.reviews_pane import ReviewsPane
 from .widgets.work_pane import WorkPane
@@ -32,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 TAB_QUEUE = "tab-queue"
 TAB_REVIEWS = "tab-reviews"
+TAB_MY_REVIEWS = "tab-my-reviews"
 TAB_WORK = "tab-work"
 
 
@@ -45,7 +47,8 @@ class UnifiedApp(App):
         Binding("ctrl+t", "switch_tab", "Switch Tab", show=False),
         Binding("1", "show_queue", "Queue", show=False),
         Binding("2", "show_reviews", "Reviews", show=False),
-        Binding("3", "show_work", "Work", show=False),
+        Binding("3", "show_my_reviews", "My Reviews", show=False),
+        Binding("4", "show_work", "Work", show=False),
         Binding("l", "toggle_log", "Log", priority=True),
         Binding("c", "clear_log", "Clear Log", priority=True, show=False),
         Binding("q", "quit_app", "Quit"),
@@ -76,6 +79,11 @@ class UnifiedApp(App):
         queue_exclude_statuses: list[QueueStatus] | None = None,
         queue_filter_repo: str | None = None,
         queue_filter_limit: int = 50,
+        # My Reviews data (user's own submitted RRs)
+        my_reviews_items: list[QueueItem] | None = None,
+        my_reviews_db: QueueDatabase | None = None,
+        my_reviews_exclude_statuses: list[QueueStatus] | None = None,
+        my_reviews_filter_limit: int = 50,
         # Reviews data
         analyses: list[AnalysisListItem] | None = None,
         review_db: ReviewDatabase | None = None,
@@ -98,6 +106,11 @@ class UnifiedApp(App):
         self._q_filter_repo = queue_filter_repo
         self._q_filter_limit = queue_filter_limit
 
+        self._my_reviews_items = my_reviews_items or []
+        self._my_reviews_db = my_reviews_db
+        self._mr_exclude_statuses = my_reviews_exclude_statuses
+        self._mr_filter_limit = my_reviews_filter_limit
+
         self._analyses = analyses or []
         self._review_db = review_db
         self._config = config
@@ -109,7 +122,12 @@ class UnifiedApp(App):
         self._r_filter_chain_id = review_filter_chain_id
         self._r_filter_limit = review_filter_limit
 
-        tab_map = {"queue": TAB_QUEUE, "reviews": TAB_REVIEWS, "work": TAB_WORK}
+        tab_map = {
+            "queue": TAB_QUEUE,
+            "reviews": TAB_REVIEWS,
+            "my_reviews": TAB_MY_REVIEWS,
+            "work": TAB_WORK,
+        }
         self._initial_tab = tab_map.get(initial_tab, TAB_QUEUE)
         self._review_handler: ReviewHandler | None = None
         self._triage_handler: TriageHandler | None = None
@@ -120,7 +138,8 @@ class UnifiedApp(App):
         yield Tabs(
             Tab("[1] Queue", id=TAB_QUEUE),
             Tab("[2] Reviews", id=TAB_REVIEWS),
-            Tab("[3] Work", id=TAB_WORK),
+            Tab("[3] My Reviews", id=TAB_MY_REVIEWS),
+            Tab("[4] Work", id=TAB_WORK),
         )
         with Vertical(id="main-content"):
             with ContentSwitcher(initial=self._initial_tab):
@@ -137,6 +156,14 @@ class UnifiedApp(App):
                     yield ReviewsPane(self._analyses, id=TAB_REVIEWS)
                 else:
                     yield Vertical(id=TAB_REVIEWS)
+                if self._my_reviews_db is not None:
+                    yield MyReviewsPane(
+                        self._my_reviews_items,
+                        self._my_reviews_db,
+                        id=TAB_MY_REVIEWS,
+                    )
+                else:
+                    yield Vertical(id=TAB_MY_REVIEWS)
                 self._triage_items = self._load_triage_items()
                 yield WorkPane(self._triage_items, id=TAB_WORK)
             yield LogPanel()
@@ -176,7 +203,7 @@ class UnifiedApp(App):
 
     def action_switch_tab(self) -> None:
         tabs = self.query_one(Tabs)
-        order = [TAB_QUEUE, TAB_REVIEWS, TAB_WORK]
+        order = [TAB_QUEUE, TAB_REVIEWS, TAB_MY_REVIEWS, TAB_WORK]
         try:
             idx = order.index(tabs.active)
             tabs.active = order[(idx + 1) % len(order)]
@@ -188,6 +215,9 @@ class UnifiedApp(App):
 
     def action_show_reviews(self) -> None:
         self.query_one(Tabs).active = TAB_REVIEWS
+
+    def action_show_my_reviews(self) -> None:
+        self.query_one(Tabs).active = TAB_MY_REVIEWS
 
     def action_show_work(self) -> None:
         self.query_one(Tabs).active = TAB_WORK
@@ -202,6 +232,11 @@ class UnifiedApp(App):
         elif switcher.current == TAB_REVIEWS:
             try:
                 self.query_one(ReviewsPane).focus_table()
+            except Exception:
+                pass
+        elif switcher.current == TAB_MY_REVIEWS:
+            try:
+                self.query_one(MyReviewsPane).focus_table()
             except Exception:
                 pass
         elif switcher.current == TAB_WORK:
@@ -227,6 +262,8 @@ class UnifiedApp(App):
             self._refresh_queue_pane()
         elif tab_id == TAB_REVIEWS:
             self.refresh_reviews_pane()
+        elif tab_id == TAB_MY_REVIEWS:
+            self._refresh_my_reviews_pane()
         elif tab_id == TAB_WORK:
             self._refresh_work_pane()
 
@@ -260,6 +297,24 @@ class UnifiedApp(App):
         try:
             self._analyses = self.refresh_review_items()
             self.query_one(ReviewsPane).refresh_data(self._analyses)
+        except Exception:
+            pass
+
+    def refresh_my_reviews_items(self) -> list[QueueItem]:
+        """Re-query my-reviews items with stored filters."""
+        if self._my_reviews_db is None:
+            return []
+        return self._my_reviews_db.list_items(
+            exclude_statuses=self._mr_exclude_statuses,
+            limit=self._mr_filter_limit,
+        )
+
+    def _refresh_my_reviews_pane(self) -> None:
+        """Refresh the my-reviews pane with fresh data."""
+        try:
+            items = self.refresh_my_reviews_items()
+            self._my_reviews_items = items
+            self.query_one(MyReviewsPane).refresh_data(items)
         except Exception:
             pass
 
@@ -301,6 +356,35 @@ class UnifiedApp(App):
     def _on_triage_view_dismissed(self, result: str | None) -> None:
         """Callback when TriageViewScreen is dismissed."""
         self._refresh_work_pane()
+
+    # -- My Reviews message handlers --
+
+    def on_my_reviews_pane_sync_requested(self, event: MyReviewsPane.SyncRequested) -> None:
+        self._run_my_reviews_sync()
+
+    def on_my_reviews_pane_process_requested(self, event: MyReviewsPane.ProcessRequested) -> None:
+        from .screens.action_picker import ProcessOptionsScreen
+
+        default = self._config.queue.method if self._config else "llm"
+        self.push_screen(
+            ProcessOptionsScreen(default_method=default),
+            self._on_my_reviews_method_picked,
+        )
+
+    def _on_my_reviews_method_picked(self, result: tuple[str, str | None] | None) -> None:
+        if result is not None:
+            method, model_key = result
+            self._run_my_reviews_process(method, model_key)
+
+    def on_my_reviews_pane_triage_requested(self, event: MyReviewsPane.TriageRequested) -> None:
+        from .screens.action_picker import ProcessOptionsScreen
+
+        self._triage_rr_id = event.rr_id
+        default = self._config.queue.method if self._config else "llm"
+        self.push_screen(
+            ProcessOptionsScreen(default_method=default),
+            self._on_triage_method_picked,
+        )
 
     # -- Review actions --
 
@@ -585,6 +669,200 @@ class UnifiedApp(App):
             self.query_one(QueuePane).refresh_data(items)
         except Exception:
             pass
+
+    @work(thread=True, exclusive=True, group="my_reviews_sync")
+    def _run_my_reviews_sync(self) -> None:
+        """Background worker: sync my-reviews from Review Board."""
+        if self._my_reviews_db is None or self._config is None:
+            self.call_from_thread(self.notify, "Config or my-reviews DB not available", severity="error")
+            return
+
+        username = self._config.reviewboard.username
+        if not username:
+            self.call_from_thread(self.notify, "reviewboard.username not set in config", severity="error")
+            return
+
+        self.call_from_thread(self.query_one(LogPanel).show)
+        self.call_from_thread(self._log, f"Syncing my reviews (user={username})...")
+
+        try:
+            from bb_review.rr.rb_client import ReviewBoardClient
+
+            rb_client = ReviewBoardClient(
+                url=self._config.reviewboard.url,
+                bot_username=self._config.reviewboard.bot_username,
+                api_token=self._config.reviewboard.api_token,
+                username=self._config.reviewboard.username,
+                password=self._config.reviewboard.get_password(),
+                use_kerberos=self._config.reviewboard.use_kerberos,
+            )
+            rb_client.connect()
+            self.call_from_thread(self._log, "Connected to Review Board")
+
+            from bb_review.queue_sync import sync_queue
+
+            counts = sync_queue(
+                rb_client=rb_client,
+                queue_db=self._my_reviews_db,
+                submitter=username,
+            )
+
+            summary = (
+                f"My reviews sync: {counts['total']} fetched, "
+                f"{counts['inserted']} new, "
+                f"{counts['updated']} reset, "
+                f"{counts['skipped']} unchanged"
+            )
+            self.call_from_thread(self._log, summary)
+            self.call_from_thread(self.notify, summary, severity="information")
+
+        except Exception as e:
+            logger.exception("My reviews sync failed")
+            self.call_from_thread(self._log, f"My reviews sync FAILED: {e}")
+            self.call_from_thread(self.notify, f"My reviews sync failed: {e}", severity="error")
+
+        self.call_from_thread(self._refresh_my_reviews_pane)
+
+    @work(thread=True, exclusive=True, group="my_reviews_process")
+    def _run_my_reviews_process(self, chosen_method: str, model_key: str | None = None) -> None:
+        """Background worker: process next my-reviews items.
+
+        Identical to _run_process but operates on the my_reviews DB.
+        """
+        if self._my_reviews_db is None or self._config is None:
+            self.call_from_thread(self.notify, "Config or my-reviews DB not available", severity="error")
+            return
+
+        model_name: str | None = None
+        if model_key:
+            if chosen_method == "llm":
+                default_model = self._config.llm.model
+                model_name = default_model.replace("sonnet", model_key)
+            else:
+                model_name = model_key
+
+        self.call_from_thread(self.query_one(LogPanel).show)
+        model_label = model_name or "default"
+        self.call_from_thread(
+            self._log, f"Processing my reviews (method={chosen_method}, model={model_label})..."
+        )
+
+        config = self._config
+        queue_db = self._my_reviews_db
+
+        try:
+            reset_count = queue_db.reset_stale_in_progress()
+            if reset_count > 0:
+                self.call_from_thread(self._log, f"Reset {reset_count} stale in_progress item(s)")
+
+            items = queue_db.pick_next(config.queue.count)
+            if not items:
+                self.call_from_thread(self._log, "No items with status=next to process.")
+                self.call_from_thread(self.notify, "No items with status=next", severity="information")
+                return
+
+            self.call_from_thread(self._log, f"Processing {len(items)} item(s)...")
+
+            from bb_review.db import ReviewDatabase
+            from bb_review.git import RepoManager
+            from bb_review.rr.rb_client import ReviewBoardClient
+
+            rb_client = ReviewBoardClient(
+                url=config.reviewboard.url,
+                bot_username=config.reviewboard.bot_username,
+                api_token=config.reviewboard.api_token,
+                username=config.reviewboard.username,
+                password=config.reviewboard.get_password(),
+                use_kerberos=config.reviewboard.use_kerberos,
+            )
+            rb_client.connect()
+
+            repo_manager = RepoManager(config.get_all_repos())
+            review_db = ReviewDatabase(config.review_db.resolved_path)
+
+            succeeded = 0
+            failed = 0
+
+            for item in items:
+                rr_id = item.review_request_id
+
+                method = chosen_method
+                for repo in config.repositories:
+                    if repo.rb_repo_name == item.repository and repo.review_method:
+                        method = repo.review_method
+                        break
+
+                analysis_method = "claude_code" if method == "claude" else method
+
+                self.call_from_thread(
+                    self._log,
+                    f"Processing r/{rr_id} (diff {item.diff_revision}, method={method})...",
+                )
+
+                try:
+                    if item.analysis_id and review_db.has_real_analysis(
+                        rr_id, item.diff_revision, analysis_method
+                    ):
+                        existing = review_db.get_analysis_by_rr(rr_id, item.diff_revision)
+                        analysis_id = existing.id if existing else None
+                        queue_db.mark_done(rr_id, analysis_id)
+                        self.call_from_thread(
+                            self._log,
+                            f"  Skipped r/{rr_id}: already analyzed (id={analysis_id})",
+                        )
+                        continue
+
+                    queue_db.mark_in_progress(rr_id)
+
+                    from bb_review.cli.queue import _process_item_agent, _process_item_llm
+
+                    if method == "llm":
+                        _process_item_llm(
+                            item,
+                            config,
+                            rb_client,
+                            repo_manager,
+                            review_db,
+                            queue_db,
+                            model_name=model_name,
+                            fake_review=False,
+                            submit=False,
+                        )
+                    else:
+                        _process_item_agent(
+                            item,
+                            method,
+                            config,
+                            rb_client,
+                            repo_manager,
+                            review_db,
+                            queue_db,
+                            model_name=model_name,
+                            fake_review=False,
+                            submit=False,
+                            fallback=True,
+                        )
+
+                    succeeded += 1
+                    self.call_from_thread(self._log, f"  r/{rr_id}: done")
+
+                except Exception as e:
+                    logger.exception(f"Failed to process r/{rr_id}")
+                    queue_db.mark_failed(rr_id, str(e))
+                    self.call_from_thread(self._log, f"  r/{rr_id} FAILED: {e}")
+                    failed += 1
+
+            summary = f"Process complete: {succeeded} succeeded, {failed} failed"
+            self.call_from_thread(self._log, summary)
+            self.call_from_thread(self.notify, summary, severity="information")
+
+        except Exception as e:
+            logger.exception("My reviews process failed")
+            self.call_from_thread(self._log, f"Process FAILED: {e}")
+            self.call_from_thread(self.notify, f"Process failed: {e}", severity="error")
+
+        self.call_from_thread(self._refresh_my_reviews_pane)
+        self.call_from_thread(self.refresh_reviews_pane)
 
     @work(thread=True, exclusive=True, group="process")
     def _run_process(self, chosen_method: str, model_key: str | None = None) -> None:

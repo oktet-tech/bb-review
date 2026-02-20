@@ -61,7 +61,7 @@ def _restore_console_logging(handlers: list[logging.StreamHandler]) -> None:
 @click.option("--queue", is_flag=True, default=False, help="Start on queue tab (backward compat)")
 @click.option(
     "--tab",
-    type=click.Choice(["queue", "reviews", "work"]),
+    type=click.Choice(["queue", "reviews", "my_reviews", "work"]),
     default=None,
     help="Which tab to start on (default: queue)",
 )
@@ -159,6 +159,14 @@ def _run_unified_tui(
         exclude_statuses=q_exclude_statuses,
     )
 
+    # -- My Reviews data --
+    mr_exclude = [QueueStatus.DONE, QueueStatus.IGNORE]
+    my_reviews_db = QueueDatabase(config.review_db.resolved_path, table_name="my_reviews")
+    my_reviews_items = my_reviews_db.list_items(
+        exclude_statuses=mr_exclude,
+        limit=limit,
+    )
+
     # -- Reviews data --
     review_db = ReviewDatabase(config.review_db.resolved_path)
     status_filter = None if status == "all" else status
@@ -181,6 +189,10 @@ def _run_unified_tui(
         queue_exclude_statuses=q_exclude_statuses,
         queue_filter_repo=repository,
         queue_filter_limit=limit,
+        my_reviews_items=my_reviews_items,
+        my_reviews_db=my_reviews_db,
+        my_reviews_exclude_statuses=mr_exclude,
+        my_reviews_filter_limit=limit,
         analyses=analyses,
         review_db=review_db,
         config=config,
