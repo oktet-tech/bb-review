@@ -35,6 +35,13 @@ class MyReviewsPane(Container):
     class ProcessRequested(Message):
         """User pressed R to process next items."""
 
+    class IssuesRequested(Message):
+        """User wants to view open issues on an RR."""
+
+        def __init__(self, rr_id: int) -> None:
+            super().__init__()
+            self.rr_id = rr_id
+
     class TriageRequested(Message):
         """User wants to triage comments on an RR."""
 
@@ -45,6 +52,7 @@ class MyReviewsPane(Container):
     # -- Bindings --
 
     BINDINGS = [
+        Binding("enter", "view_issues", "Issues"),
         Binding("space", "toggle_selection", "Toggle Select"),
         Binding("a", "toggle_all", "Select All"),
         Binding("n", "mark_next", "Next"),
@@ -229,6 +237,14 @@ class MyReviewsPane(Container):
         self.query_one("#my-reviews-table", DataTable).focus()
 
     # -- Actions --
+
+    def action_view_issues(self) -> None:
+        """View open issues for the cursor item."""
+        rr_id = self._get_cursor_rr_id()
+        if rr_id is None:
+            self.app.notify("No item selected", severity="warning")
+            return
+        self.post_message(self.IssuesRequested(rr_id))
 
     def action_toggle_selection(self) -> None:
         rr_id = self._get_cursor_rr_id()

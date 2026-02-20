@@ -376,6 +376,9 @@ class UnifiedApp(App):
             method, model_key = result
             self._run_my_reviews_process(method, model_key)
 
+    def on_my_reviews_pane_issues_requested(self, event: MyReviewsPane.IssuesRequested) -> None:
+        self._run_fetch_issues(event.rr_id)
+
     def on_my_reviews_pane_triage_requested(self, event: MyReviewsPane.TriageRequested) -> None:
         from .screens.action_picker import ProcessOptionsScreen
 
@@ -722,6 +725,59 @@ class UnifiedApp(App):
             self.call_from_thread(self.notify, f"My reviews sync failed: {e}", severity="error")
 
         self.call_from_thread(self._refresh_my_reviews_pane)
+
+    @work(thread=True, exclusive=True, group="fetch_issues")
+    def _run_fetch_issues(self, rr_id: int) -> None:
+        """Background worker: fetch open issues for an RR and push IssuesScreen."""
+        if self._config is None:
+            self.call_from_thread(self.notify, "Config not available", severity="error")
+            return
+
+        config = self._config
+        self.call_from_thread(self.query_one(LogPanel).show)
+        self.call_from_thread(self._log, f"Fetching issues for r/{rr_id}...")
+
+        try:
+            from bb_review.rr.rb_client import ReviewBoardClient
+            from bb_review.rr.rb_fetcher import RBCommentFetcher
+
+            rb_client = ReviewBoardClient(
+                url=config.reviewboard.url,
+                bot_username=config.reviewboard.bot_username,
+                api_token=config.reviewboard.api_token,
+                username=config.reviewboard.username,
+                password=config.reviewboard.get_password(),
+                use_kerberos=config.reviewboard.use_kerberos,
+            )
+            rb_client.connect()
+
+            fetcher = RBCommentFetcher(rb_client, config.reviewboard.bot_username)
+            all_comments = fetcher.fetch_all_comments(rr_id)
+
+            # Keep only open issues
+            open_issues = [c for c in all_comments if c.issue_opened and c.issue_status in (None, "open")]
+
+            if not open_issues:
+                self.call_from_thread(self._log, f"  No open issues on r/{rr_id}")
+                self.call_from_thread(self.notify, "No open issues", severity="information")
+                return
+
+            self.call_from_thread(self._log, f"  Found {len(open_issues)} open issue(s)")
+
+            diff_info = rb_client.get_diff(rr_id)
+            raw_diff = diff_info.raw_diff
+
+            from .screens.issues_screen import IssuesScreen
+
+            self.call_from_thread(
+                self.push_screen,
+                IssuesScreen(open_issues, raw_diff, rr_id),
+            )
+
+        except Exception as e:
+            logger.exception(f"Failed to fetch issues for r/{rr_id}")
+            self.call_from_thread(self._log, f"  Fetch issues FAILED: {e}")
+            self.call_from_thread(self.notify, f"Fetch issues failed: {e}", severity="error")
 
     @work(thread=True, exclusive=True, group="my_reviews_process")
     def _run_my_reviews_process(self, chosen_method: str, model_key: str | None = None) -> None:

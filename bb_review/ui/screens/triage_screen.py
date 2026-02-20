@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import re
-
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal
@@ -25,6 +23,7 @@ from bb_review.triage.models import (
     SelectableTriagedComment,
     TriageAction,
 )
+from bb_review.ui.utils import extract_file_diff
 from bb_review.ui.widgets.diff_viewer import DiffViewer
 
 
@@ -45,19 +44,6 @@ CLASS_LABELS = {
     CommentClassification.ALREADY_FIXED: "already_fixed",
     CommentClassification.DUPLICATE: "duplicate",
 }
-
-
-def _extract_file_diff(raw_diff: str, file_path: str) -> str | None:
-    """Extract the diff section for a single file from a unified diff."""
-    if not raw_diff or not file_path:
-        return None
-
-    # Split on "diff --git" boundaries
-    sections = re.split(r"(?=^diff --git )", raw_diff, flags=re.MULTILINE)
-    for section in sections:
-        if file_path in section.split("\n", 1)[0]:
-            return section.strip()
-    return None
 
 
 class TriageScreen(Container):
@@ -239,7 +225,7 @@ class TriageScreen(Container):
 
         src = self.selectables[table.cursor_row].triaged.source
         if src.file_path and self.raw_diff:
-            file_diff = _extract_file_diff(self.raw_diff, src.file_path)
+            file_diff = extract_file_diff(self.raw_diff, src.file_path)
             viewer.update_content(file_diff, src.file_path, src.line_number)
         else:
             viewer.update_content(None)
