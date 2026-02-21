@@ -43,11 +43,11 @@ class MyReviewsPane(Container):
             self.rr_id = rr_id
 
     class TriageRequested(Message):
-        """User wants to triage comments on an RR."""
+        """User wants to triage comments on one or more RRs."""
 
-        def __init__(self, rr_id: int) -> None:
+        def __init__(self, rr_ids: list[int]) -> None:
             super().__init__()
-            self.rr_id = rr_id
+            self.rr_ids = rr_ids
 
     # -- Bindings --
 
@@ -296,10 +296,7 @@ class MyReviewsPane(Container):
         }
 
         if action == "triage":
-            if len(rr_ids) == 1:
-                self.post_message(self.TriageRequested(rr_ids[0]))
-            else:
-                self.app.notify("Triage works on one RR at a time", severity="warning")
+            self.post_message(self.TriageRequested(rr_ids))
         elif action == "analyze":
             if len(rr_ids) == 1:
                 self.post_message(self.ProcessRequested())
@@ -312,15 +309,12 @@ class MyReviewsPane(Container):
             self.selected = saved
 
     def action_triage_item(self) -> None:
-        """Launch triage on the highlighted item."""
+        """Launch triage on selected or highlighted items."""
         rr_ids = self._get_target_rr_ids()
         if not rr_ids:
             self.app.notify("No item selected", severity="warning")
             return
-        if len(rr_ids) > 1:
-            self.app.notify("Triage works on one RR at a time", severity="warning")
-            return
-        self.post_message(self.TriageRequested(rr_ids[0]))
+        self.post_message(self.TriageRequested(rr_ids))
 
     def action_request_sync(self) -> None:
         self.post_message(self.SyncRequested())

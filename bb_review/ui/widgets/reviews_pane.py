@@ -36,11 +36,11 @@ class ReviewsPane(Container):
             self.action = action
 
     class TriageRequested(Message):
-        """User wants to triage comments on an RR."""
+        """User wants to triage comments on one or more RRs."""
 
-        def __init__(self, rr_id: int) -> None:
+        def __init__(self, rr_ids: list[int]) -> None:
             super().__init__()
-            self.rr_id = rr_id
+            self.rr_ids = rr_ids
 
     class IssuesRequested(Message):
         """User wants to view open issues on an RR."""
@@ -260,13 +260,16 @@ class ReviewsPane(Container):
         self.post_message(self.ActionRequested(ReviewsAction(type="batch_submit", ids=ids)))
 
     def action_triage_item(self) -> None:
-        """Launch triage on the highlighted item's RR."""
-        table = self.query_one("#reviews-table", DataTable)
-        if table.cursor_row is None or table.row_count == 0:
-            self.app.notify("No item selected", severity="warning")
-            return
-        rr_id = self.analyses[table.cursor_row].review_request_id
-        self.post_message(self.TriageRequested(rr_id))
+        """Launch triage on selected or highlighted items."""
+        if self.selected:
+            rr_ids = list({a.review_request_id for a in self.analyses if a.id in self.selected})
+        else:
+            table = self.query_one("#reviews-table", DataTable)
+            if table.cursor_row is None or table.row_count == 0:
+                self.app.notify("No item selected", severity="warning")
+                return
+            rr_ids = [self.analyses[table.cursor_row].review_request_id]
+        self.post_message(self.TriageRequested(rr_ids))
 
     def action_view_issues(self) -> None:
         """View open issues for the highlighted item's RR."""

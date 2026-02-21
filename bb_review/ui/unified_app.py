@@ -337,7 +337,7 @@ class UnifiedApp(App):
     def on_queue_pane_triage_requested(self, event: QueuePane.TriageRequested) -> None:
         from .screens.action_picker import ProcessOptionsScreen
 
-        self._triage_rr_id = event.rr_id
+        self._triage_rr_ids = event.rr_ids
         default = self._config.queue.method if self._config else "llm"
         self.push_screen(
             ProcessOptionsScreen(default_method=default),
@@ -348,10 +348,10 @@ class UnifiedApp(App):
         if result is None:
             return
         method, model_key = result
-        rr_id = getattr(self, "_triage_rr_id", None)
-        if rr_id is None:
+        rr_ids = getattr(self, "_triage_rr_ids", None)
+        if not rr_ids:
             return
-        self._run_triage_worker(rr_id, method, model_key)
+        self._run_triage_batch(rr_ids, method, model_key)
 
     def _on_triage_view_dismissed(self, result: str | None) -> None:
         """Callback when TriageViewScreen is dismissed."""
@@ -382,7 +382,7 @@ class UnifiedApp(App):
     def on_my_reviews_pane_triage_requested(self, event: MyReviewsPane.TriageRequested) -> None:
         from .screens.action_picker import ProcessOptionsScreen
 
-        self._triage_rr_id = event.rr_id
+        self._triage_rr_ids = event.rr_ids
         default = self._config.queue.method if self._config else "llm"
         self.push_screen(
             ProcessOptionsScreen(default_method=default),
@@ -400,7 +400,7 @@ class UnifiedApp(App):
     def on_reviews_pane_triage_requested(self, event: ReviewsPane.TriageRequested) -> None:
         from .screens.action_picker import ProcessOptionsScreen
 
-        self._triage_rr_id = event.rr_id
+        self._triage_rr_ids = event.rr_ids
         default = self._config.queue.method if self._config else "llm"
         self.push_screen(
             ProcessOptionsScreen(default_method=default),
@@ -449,18 +449,41 @@ class UnifiedApp(App):
     # -- Background workers --
 
     @work(thread=True, exclusive=True, group="triage")
-    def _run_triage_worker(
+    def _run_triage_batch(
+        self,
+        rr_ids: list[int],
+        method: str,
+        model_key: str | None = None,
+    ) -> None:
+        """Background worker: triage one or more RRs sequentially."""
+        if self._config is None:
+            self.call_from_thread(self.notify, "Config not available", severity="error")
+            return
+
+        total = len(rr_ids)
+        if total > 1:
+            self.call_from_thread(self.query_one(LogPanel).show)
+            self.call_from_thread(self._log, f"Batch triage: {total} RRs...")
+
+        for i, rr_id in enumerate(rr_ids):
+            if total > 1:
+                self.call_from_thread(self._log, f"[{i + 1}/{total}] Starting r/{rr_id}")
+            self._triage_one(rr_id, method, model_key)
+
+        if total > 1:
+            self.call_from_thread(self._log, f"Batch triage complete ({total} RRs)")
+
+    def _triage_one(
         self,
         rr_id: int,
         method: str,
         model_key: str | None = None,
     ) -> None:
-        """Background worker: fetch comments and run triage analysis."""
-        if self._config is None:
-            self.call_from_thread(self.notify, "Config not available", severity="error")
+        """Triage a single RR. Must be called from a background thread."""
+        config = self._config
+        if config is None:
             return
 
-        config = self._config
         self.call_from_thread(self.query_one(LogPanel).show)
         self.call_from_thread(self._log, f"Triage r/{rr_id} (method={method})...")
 
