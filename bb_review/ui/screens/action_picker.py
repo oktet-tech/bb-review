@@ -19,6 +19,7 @@ class ActionType(str, Enum):
     EXPORT = "export"
     SUBMIT = "submit"
     DELETE = "delete"
+    TRIAGE = "triage"
     MARK_DRAFT = "mark_draft"
     MARK_SUBMITTED = "mark_submitted"
     MARK_OBSOLETE = "mark_obsolete"
@@ -42,6 +43,7 @@ class ActionPickerScreen(ModalScreen[ActionResult | None]):
         Binding("enter", "select", "Select", priority=True),
         Binding("e", "pick_export", "Export", show=False),
         Binding("s", "pick_submit", "Submit", show=False),
+        Binding("t", "pick_triage", "Triage", show=False),
         Binding("d", "pick_delete", "Delete", show=False),
     ]
 
@@ -109,6 +111,7 @@ class ActionPickerScreen(ModalScreen[ActionResult | None]):
             yield OptionList(
                 Option("\\[E] Export", id="export"),
                 Option("\\[S] Submit to ReviewBoard", id="submit"),
+                Option("\\[T] Triage comments", id="triage"),
                 Option("\\[D] Delete", id="delete"),
                 None,  # Separator
                 Option("Mark as: Draft", id="mark_draft"),
@@ -140,6 +143,7 @@ class ActionPickerScreen(ModalScreen[ActionResult | None]):
         action_map = {
             "export": ActionType.EXPORT,
             "submit": ActionType.SUBMIT,
+            "triage": ActionType.TRIAGE,
             "delete": ActionType.DELETE,
             "mark_draft": ActionType.MARK_DRAFT,
             "mark_submitted": ActionType.MARK_SUBMITTED,
@@ -155,6 +159,9 @@ class ActionPickerScreen(ModalScreen[ActionResult | None]):
 
     def action_pick_submit(self) -> None:
         self._select_action("submit")
+
+    def action_pick_triage(self) -> None:
+        self._select_action("triage")
 
     def action_pick_delete(self) -> None:
         self._select_action("delete")

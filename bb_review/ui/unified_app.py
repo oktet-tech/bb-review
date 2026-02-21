@@ -397,6 +397,19 @@ class UnifiedApp(App):
             return
         self._review_handler.handle_action(event.action, self._analyses)
 
+    def on_reviews_pane_triage_requested(self, event: ReviewsPane.TriageRequested) -> None:
+        from .screens.action_picker import ProcessOptionsScreen
+
+        self._triage_rr_id = event.rr_id
+        default = self._config.queue.method if self._config else "llm"
+        self.push_screen(
+            ProcessOptionsScreen(default_method=default),
+            self._on_triage_method_picked,
+        )
+
+    def on_reviews_pane_issues_requested(self, event: ReviewsPane.IssuesRequested) -> None:
+        self._run_fetch_issues(event.rr_id)
+
     def on_work_pane_open_requested(self, event: WorkPane.OpenRequested) -> None:
         if self._triage_handler is None:
             self.notify("Review database not configured", severity="error")

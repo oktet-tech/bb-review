@@ -35,6 +35,20 @@ class ReviewsPane(Container):
             super().__init__()
             self.action = action
 
+    class TriageRequested(Message):
+        """User wants to triage comments on an RR."""
+
+        def __init__(self, rr_id: int) -> None:
+            super().__init__()
+            self.rr_id = rr_id
+
+    class IssuesRequested(Message):
+        """User wants to view open issues on an RR."""
+
+        def __init__(self, rr_id: int) -> None:
+            super().__init__()
+            self.rr_id = rr_id
+
     # -- Bindings --
 
     BINDINGS = [
@@ -42,6 +56,8 @@ class ReviewsPane(Container):
         Binding("a", "toggle_all", "Select All"),
         Binding("enter", "open_analysis", "Open", priority=True),
         Binding("x", "show_actions", "Actions"),
+        Binding("t", "triage_item", "Triage"),
+        Binding("i", "view_issues", "Issues"),
         Binding("p", "proceed", "Export Selected"),
         Binding("ctrl+s", "submit_selected", "Submit", priority=True),
     ]
@@ -242,6 +258,24 @@ class ReviewsPane(Container):
                 self.app.notify("No analyses selected", severity="warning")
                 return
         self.post_message(self.ActionRequested(ReviewsAction(type="batch_submit", ids=ids)))
+
+    def action_triage_item(self) -> None:
+        """Launch triage on the highlighted item's RR."""
+        table = self.query_one("#reviews-table", DataTable)
+        if table.cursor_row is None or table.row_count == 0:
+            self.app.notify("No item selected", severity="warning")
+            return
+        rr_id = self.analyses[table.cursor_row].review_request_id
+        self.post_message(self.TriageRequested(rr_id))
+
+    def action_view_issues(self) -> None:
+        """View open issues for the highlighted item's RR."""
+        table = self.query_one("#reviews-table", DataTable)
+        if table.cursor_row is None or table.row_count == 0:
+            self.app.notify("No item selected", severity="warning")
+            return
+        rr_id = self.analyses[table.cursor_row].review_request_id
+        self.post_message(self.IssuesRequested(rr_id))
 
     def action_proceed(self) -> None:
         if not self.selected:

@@ -190,6 +190,13 @@ class ReviewHandler:
             self._start_batch_export(action_ids)
         elif result.action == ActionType.SUBMIT:
             self._submit_analyses(action_ids)
+        elif result.action == ActionType.TRIAGE:
+            # Resolve rr_id from the analysis and post triage message
+            analysis = next((a for a in self._current_analyses if a.id == result.analysis_id), None)
+            if analysis:
+                from .widgets.reviews_pane import ReviewsPane
+
+                self.app.post_message(ReviewsPane.TriageRequested(analysis.review_request_id))
         elif result.action == ActionType.DELETE:
             self._delete_analyses(action_ids)
         elif result.action in (
