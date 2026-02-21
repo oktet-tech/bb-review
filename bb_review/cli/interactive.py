@@ -160,7 +160,7 @@ def _run_unified_tui(
     )
 
     # -- My Reviews data --
-    mr_exclude = [QueueStatus.DONE, QueueStatus.IGNORE]
+    mr_exclude = [QueueStatus.IGNORE]
     my_reviews_db = QueueDatabase(config.review_db.resolved_path, table_name="my_reviews")
     my_reviews_items = my_reviews_db.list_items(
         exclude_statuses=mr_exclude,
