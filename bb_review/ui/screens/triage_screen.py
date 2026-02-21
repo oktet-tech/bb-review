@@ -65,6 +65,7 @@ class TriageScreen(Container):
         """User cancelled triage."""
 
     BINDINGS = [
+        Binding("enter", "view_comment", "View", priority=True),
         Binding("f", "set_fix", "Fix"),
         Binding("r", "set_reply", "Reply"),
         Binding("s", "set_skip", "Skip"),
@@ -157,6 +158,7 @@ class TriageScreen(Container):
         table.add_column("Comment", key="comment")
         self._populate_table()
         self._update_status()
+        self._update_detail()
 
     def _populate_table(self) -> None:
         table = self.query_one("#triage-table", DataTable)
@@ -274,6 +276,14 @@ class TriageScreen(Container):
             self.selectables[idx].edited_reply = text
             self._update_detail()
 
+    def action_view_comment(self) -> None:
+        """Open a scrollable modal with full comment details."""
+        table = self.query_one("#triage-table", DataTable)
+        if table.cursor_row is None or table.cursor_row >= len(self.selectables):
+            return
+        s = self.selectables[table.cursor_row]
+        self.app.push_screen(TriageCommentViewModal(s))
+
     def action_toggle_diff(self) -> None:
         """Toggle the diff context viewer."""
         viewer = self.query_one("#triage-diff-viewer", DiffViewer)
@@ -297,6 +307,82 @@ class TriageScreen(Container):
     def _on_mode_picked(self, mode: str | None) -> None:
         if mode is not None:
             self.post_message(self.Done(self.selectables, mode))
+
+
+class TriageCommentViewModal(ModalScreen[None]):
+    """Scrollable read-only view of a triage comment with all details."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss_modal", "Close"),
+    ]
+
+    CSS = """
+    TriageCommentViewModal {
+        align: center middle;
+    }
+
+    #triage-comment-dialog {
+        width: 80;
+        height: 28;
+        border: thick $primary;
+        background: $surface;
+        padding: 1 2;
+    }
+
+    #triage-comment-title {
+        text-style: bold;
+        text-align: center;
+        width: 100%;
+        padding-bottom: 1;
+    }
+
+    #triage-comment-area {
+        height: 1fr;
+    }
+    """
+
+    def __init__(self, selectable: SelectableTriagedComment) -> None:
+        super().__init__()
+        self._selectable = selectable
+
+    def compose(self) -> ComposeResult:
+        s = self._selectable
+        src = s.triaged.source
+        location = f"{src.file_path}:{src.line_number}" if src.file_path else "general"
+        title = f"{src.reviewer} -- {location}"
+
+        lines = [
+            f"Action: {s.action.value.upper()}",
+            f"Classification: {s.triaged.classification.value}",
+        ]
+        if s.triaged.difficulty:
+            lines.append(f"Difficulty: {s.triaged.difficulty.value}")
+        lines.append("")
+        lines.append("--- Comment ---")
+        lines.append(src.text)
+        if s.triaged.fix_hint:
+            lines.append("")
+            lines.append("--- Fix Hint ---")
+            lines.append(s.triaged.fix_hint)
+        if s.triaged.reply_suggestion:
+            lines.append("")
+            lines.append("--- Suggested Reply ---")
+            lines.append(s.triaged.reply_suggestion)
+        if s.edited_reply:
+            lines.append("")
+            lines.append("--- Edited Reply ---")
+            lines.append(s.edited_reply)
+
+        with Container(id="triage-comment-dialog"):
+            yield Label(title, id="triage-comment-title")
+            yield TextArea("\n".join(lines), read_only=True, id="triage-comment-area")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.query_one("#triage-comment-area", TextArea).focus()
+
+    def action_dismiss_modal(self) -> None:
+        self.dismiss(None)
 
 
 class EditReplyScreen(ModalScreen[str | None]):
