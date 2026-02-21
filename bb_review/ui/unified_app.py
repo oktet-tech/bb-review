@@ -766,6 +766,12 @@ class UnifiedApp(App):
 
             diff_info = rb_client.get_diff(rr_id)
             raw_diff = diff_info.raw_diff
+            logger.debug(
+                "Issues r/%d: raw_diff len=%d, first file: %s",
+                rr_id,
+                len(raw_diff) if raw_diff else 0,
+                next((ln for ln in (raw_diff or "").split("\n") if ln.startswith("diff --git")), None),
+            )
 
             from .screens.issues_screen import IssuesScreen
 
