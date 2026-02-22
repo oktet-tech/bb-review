@@ -108,6 +108,7 @@ from . import (
     analyze,  # noqa: E402, F401
     claude_code,  # noqa: E402, F401
     cocoindex,  # noqa: E402, F401
+    comments,  # noqa: E402, F401
     db,  # noqa: E402, F401
     interactive,  # noqa: E402, F401
     opencode,  # noqa: E402, F401
