@@ -123,6 +123,10 @@ class TriageViewScreen(Screen):
             self.notify(f"Failed to write plan: {e}", severity="error")
             return
 
+        # Mark as exported now that plan was written
+        if self._db and self._triage_id:
+            self._db.update_triage_status(self._triage_id, "exported")
+
         if mode == "reply" and self._rb_client and self._comments:
             try:
                 review_comment_map = {c.comment_id: c.review_id for c in self._comments}

@@ -426,11 +426,12 @@ class UnifiedApp(App):
         self.notify("Use 'bb-review triage <rr-id>' from the CLI", severity="information")
 
     def _load_triage_items(self) -> list[TriageListItem]:
-        """Query triage sessions from the DB."""
+        """Query triage sessions from the DB, excluding exported ones."""
         if self._review_db is None:
             return []
         try:
-            return self._review_db.list_triages(limit=50)
+            items = self._review_db.list_triages(limit=50)
+            return [i for i in items if i.status.value != "exported"]
         except Exception:
             return []
 
