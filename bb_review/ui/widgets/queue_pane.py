@@ -53,6 +53,7 @@ class QueuePane(Container):
         Binding("t", "triage_item", "Triage"),
         Binding("d", "delete_item", "Delete"),
         Binding("x", "show_actions", "Actions"),
+        Binding("slash", "filter", "Filter"),
         Binding("ctrl+r", "request_sync", "Sync"),
         Binding("g", "request_sync", "Sync", show=False),
         Binding("ctrl+enter", "request_process", "Process"),
@@ -109,9 +110,11 @@ class QueuePane(Container):
         id: str | None = None,
     ) -> None:
         super().__init__(id=id)
-        self.items = items
+        self._all_items = items
+        self.items = list(items)
         self.queue_db = queue_db
         self.selected: set[int] = set()
+        self._active_filter: tuple[str, str] | None = None
 
     def compose(self) -> ComposeResult:
         with Container(id="queue-header-container"):
@@ -128,7 +131,7 @@ class QueuePane(Container):
         table.add_column("Diff", key="diff", width=5)
         table.add_column("Issues", key="issues", width=6)
         table.add_column("Status", key="status", width=10)
-        table.add_column("Repo", key="repo", width=15)
+        table.add_column("Repo", key="repo", width=22)
         table.add_column("Submitter", key="submitter", width=12)
         table.add_column("Summary", key="summary")
         self._populate_table()
@@ -161,11 +164,26 @@ class QueuePane(Container):
                 key=str(item.review_request_id),
             )
 
+    def _apply_filter(self) -> None:
+        """Filter self.items from _all_items based on active filter."""
+        if not self._active_filter:
+            self.items = list(self._all_items)
+            return
+        kind, value = self._active_filter
+        if kind == "repo":
+            self.items = [i for i in self._all_items if i.repository == value]
+        elif kind == "user":
+            self.items = [i for i in self._all_items if i.submitter == value]
+
     def _update_status(self) -> None:
         label = self.query_one("#queue-status-label", Label)
         total = len(self.items)
         selected = len(self.selected)
-        label.update(f"Selected: {selected}/{total} items")
+        parts = [f"Selected: {selected}/{total} items"]
+        if self._active_filter:
+            kind, value = self._active_filter
+            parts.append(f"[bold]Filter: {kind}={value}[/bold]")
+        label.update("  |  ".join(parts))
 
     def _toggle_row(self, rr_id: int) -> None:
         table = self.query_one("#queue-table", DataTable)
@@ -219,10 +237,11 @@ class QueuePane(Container):
     def refresh_data(self, items: list[QueueItem] | None = None) -> None:
         """Refresh table with new or re-queried items."""
         if items is not None:
-            self.items = items
+            self._all_items = items
         elif hasattr(self.app, "refresh_queue_items"):
-            self.items = self.app.refresh_queue_items()
+            self._all_items = self.app.refresh_queue_items()
 
+        self._apply_filter()
         visible_ids = {item.review_request_id for item in self.items}
         self.selected &= visible_ids
         self._populate_table()
@@ -320,6 +339,31 @@ class QueuePane(Container):
             self.selected = set(rr_ids)
             self._apply_status(action_map[action])
             self.selected = saved
+
+    def action_filter(self) -> None:
+        """Open filter picker."""
+        from bb_review.ui.screens.filter_picker import FilterPickerScreen
+
+        repos = sorted({i.repository for i in self._all_items if i.repository})
+        users = sorted({i.submitter for i in self._all_items if i.submitter})
+        self.app.push_screen(
+            FilterPickerScreen(repos, users, self._active_filter),
+            callback=self._on_filter_picked,
+        )
+
+    def _on_filter_picked(self, result: tuple[str, str] | None) -> None:
+        if result is None:
+            return
+        kind, value = result
+        if kind == "clear":
+            self._active_filter = None
+        else:
+            self._active_filter = (kind, value)
+        self._apply_filter()
+        visible_ids = {item.review_request_id for item in self.items}
+        self.selected &= visible_ids
+        self._populate_table()
+        self._update_status()
 
     def action_triage_item(self) -> None:
         """Launch triage on selected or highlighted queue items."""

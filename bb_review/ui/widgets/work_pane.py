@@ -54,6 +54,7 @@ class WorkPane(Container):
         Binding("x", "show_actions", "Actions"),
         Binding("space", "toggle_selection", "Toggle Select"),
         Binding("a", "toggle_all", "Select All"),
+        Binding("slash", "filter", "Filter"),
         Binding("r", "refresh", "Refresh"),
         Binding("d", "delete", "Delete"),
         Binding("t", "launch_triage", "Triage"),
@@ -109,8 +110,10 @@ class WorkPane(Container):
         id: str | None = None,
     ) -> None:
         super().__init__(id=id)
-        self.items: list[TriageListItem] = items or []
+        self._all_items: list[TriageListItem] = items or []
+        self.items: list[TriageListItem] = list(self._all_items)
         self.selected: set[int] = set()
+        self._active_filter: tuple[str, str] | None = None
 
     def compose(self) -> ComposeResult:
         with Container(id="work-header-container"):
@@ -125,7 +128,7 @@ class WorkPane(Container):
         table.add_column("", key="selected", width=3)
         table.add_column("ID", key="id", width=6)
         table.add_column("RR#", key="rr", width=8)
-        table.add_column("Repo", key="repo", width=15)
+        table.add_column("Repo", key="repo", width=22)
         table.add_column("Fixes", key="fixes", width=7)
         table.add_column("Replies", key="replies", width=8)
         table.add_column("Skip", key="skip", width=7)
@@ -155,18 +158,32 @@ class WorkPane(Container):
                 key=str(item.id),
             )
 
+    def _apply_filter(self) -> None:
+        """Filter self.items from _all_items based on active filter."""
+        if not self._active_filter:
+            self.items = list(self._all_items)
+            return
+        kind, value = self._active_filter
+        if kind == "repo":
+            self.items = [i for i in self._all_items if i.repository == value]
+
     def _update_status(self) -> None:
         label = self.query_one("#work-status-label", Label)
         total = len(self.items)
         selected = len(self.selected)
-        label.update(
-            f"{selected}/{total} selected  |  "
-            "Enter=open x=actions Space=select a=all r=refresh d=delete t=triage"
-        )
+        parts = [
+            f"{selected}/{total} selected",
+            "Enter=open x=actions Space=select a=all /=filter r=refresh d=delete t=triage",
+        ]
+        if self._active_filter:
+            kind, value = self._active_filter
+            parts.insert(1, f"[bold]Filter: {kind}={value}[/bold]")
+        label.update("  |  ".join(parts))
 
     def refresh_data(self, items: list[TriageListItem] | None = None) -> None:
         if items is not None:
-            self.items = items
+            self._all_items = items
+        self._apply_filter()
         visible_ids = {i.id for i in self.items}
         self.selected &= visible_ids
         self._populate_table()
@@ -228,6 +245,30 @@ class WorkPane(Container):
                 ids = [item.id]
         if ids:
             self.post_message(self.ActionRequested(WorkAction(type="batch_delete", ids=ids)))
+
+    def action_filter(self) -> None:
+        """Open filter picker."""
+        from bb_review.ui.screens.filter_picker import FilterPickerScreen
+
+        repos = sorted({i.repository for i in self._all_items if i.repository})
+        self.app.push_screen(
+            FilterPickerScreen(repos, active_filter=self._active_filter),
+            callback=self._on_filter_picked,
+        )
+
+    def _on_filter_picked(self, result: tuple[str, str] | None) -> None:
+        if result is None:
+            return
+        kind, value = result
+        if kind == "clear":
+            self._active_filter = None
+        else:
+            self._active_filter = (kind, value)
+        self._apply_filter()
+        visible_ids = {i.id for i in self.items}
+        self.selected &= visible_ids
+        self._populate_table()
+        self._update_status()
 
     def action_launch_triage(self) -> None:
         self.post_message(self.TriageRequested())

@@ -58,6 +58,7 @@ class ReviewsPane(Container):
         Binding("x", "show_actions", "Actions"),
         Binding("t", "triage_item", "Triage"),
         Binding("i", "view_issues", "Issues"),
+        Binding("slash", "filter", "Filter"),
         Binding("p", "proceed", "Export Selected"),
         Binding("ctrl+s", "submit_selected", "Submit", priority=True),
     ]
@@ -107,8 +108,10 @@ class ReviewsPane(Container):
 
     def __init__(self, analyses: list[AnalysisListItem], *, id: str | None = None) -> None:
         super().__init__(id=id)
-        self.analyses = analyses
+        self._all_analyses = analyses
+        self.analyses = list(analyses)
         self.selected: set[int] = set()
+        self._active_filter: tuple[str, str] | None = None
 
     def compose(self) -> ComposeResult:
         with Container(id="reviews-header-container"):
@@ -123,7 +126,7 @@ class ReviewsPane(Container):
         table.add_column("", key="selected", width=3)
         table.add_column("ID", key="id", width=6)
         table.add_column("RR#", key="rr", width=8)
-        table.add_column("Repo", key="repo", width=15)
+        table.add_column("Repo", key="repo", width=22)
         table.add_column("Issues", key="issues", width=8)
         table.add_column("Status", key="status", width=12)
         table.add_column("Summary", key="summary")
@@ -165,11 +168,24 @@ class ReviewsPane(Container):
                 key=str(analysis.id),
             )
 
+    def _apply_filter(self) -> None:
+        """Filter self.analyses from _all_analyses based on active filter."""
+        if not self._active_filter:
+            self.analyses = list(self._all_analyses)
+            return
+        kind, value = self._active_filter
+        if kind == "repo":
+            self.analyses = [a for a in self._all_analyses if a.repository == value]
+
     def _update_status(self) -> None:
         label = self.query_one("#reviews-status-label", Label)
         total = len(self.analyses)
         selected = len(self.selected)
-        label.update(f"Selected: {selected}/{total} analyses")
+        parts = [f"Selected: {selected}/{total} analyses"]
+        if self._active_filter:
+            kind, value = self._active_filter
+            parts.append(f"[bold]Filter: {kind}={value}[/bold]")
+        label.update("  |  ".join(parts))
 
     def _toggle_row(self, row_key: str) -> None:
         analysis_id = int(row_key)
@@ -187,10 +203,11 @@ class ReviewsPane(Container):
     def refresh_data(self, analyses: list[AnalysisListItem] | None = None) -> None:
         """Refresh table with new or re-queried analyses."""
         if analyses is not None:
-            self.analyses = analyses
+            self._all_analyses = analyses
         elif hasattr(self.app, "refresh_review_items"):
-            self.analyses = self.app.refresh_review_items()
+            self._all_analyses = self.app.refresh_review_items()
 
+        self._apply_filter()
         visible_ids = {a.id for a in self.analyses}
         self.selected &= visible_ids
         self._populate_table()
@@ -258,6 +275,30 @@ class ReviewsPane(Container):
                 self.app.notify("No analyses selected", severity="warning")
                 return
         self.post_message(self.ActionRequested(ReviewsAction(type="batch_submit", ids=ids)))
+
+    def action_filter(self) -> None:
+        """Open filter picker."""
+        from bb_review.ui.screens.filter_picker import FilterPickerScreen
+
+        repos = sorted({a.repository for a in self._all_analyses if a.repository})
+        self.app.push_screen(
+            FilterPickerScreen(repos, active_filter=self._active_filter),
+            callback=self._on_filter_picked,
+        )
+
+    def _on_filter_picked(self, result: tuple[str, str] | None) -> None:
+        if result is None:
+            return
+        kind, value = result
+        if kind == "clear":
+            self._active_filter = None
+        else:
+            self._active_filter = (kind, value)
+        self._apply_filter()
+        visible_ids = {a.id for a in self.analyses}
+        self.selected &= visible_ids
+        self._populate_table()
+        self._update_status()
 
     def action_triage_item(self) -> None:
         """Launch triage on selected or highlighted items."""

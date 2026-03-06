@@ -59,6 +59,7 @@ class MyReviewsPane(Container):
         Binding("i", "mark_ignore", "Ignore"),
         Binding("t", "triage_item", "Triage"),
         Binding("x", "show_actions", "Actions"),
+        Binding("slash", "filter", "Filter"),
         Binding("ctrl+r", "request_sync", "Sync"),
         Binding("g", "request_sync", "Sync", show=False),
         Binding("ctrl+enter", "request_process", "Process"),
@@ -115,9 +116,11 @@ class MyReviewsPane(Container):
         id: str | None = None,
     ) -> None:
         super().__init__(id=id)
-        self.items = items
+        self._all_items = items
+        self.items = list(items)
         self.queue_db = queue_db
         self.selected: set[int] = set()
+        self._active_filter: tuple[str, str] | None = None
 
     def compose(self) -> ComposeResult:
         with Container(id="my-reviews-header-container"):
@@ -134,7 +137,7 @@ class MyReviewsPane(Container):
         table.add_column("Diff", key="diff", width=5)
         table.add_column("Issues", key="issues", width=6)
         table.add_column("Status", key="status", width=10)
-        table.add_column("Repo", key="repo", width=15)
+        table.add_column("Repo", key="repo", width=22)
         table.add_column("Summary", key="summary")
         self._populate_table()
         self._update_status()
@@ -165,11 +168,26 @@ class MyReviewsPane(Container):
                 key=str(item.review_request_id),
             )
 
+    def _apply_filter(self) -> None:
+        """Filter self.items from _all_items based on active filter."""
+        if not self._active_filter:
+            self.items = list(self._all_items)
+            return
+        kind, value = self._active_filter
+        if kind == "repo":
+            self.items = [i for i in self._all_items if i.repository == value]
+        elif kind == "user":
+            self.items = [i for i in self._all_items if i.submitter == value]
+
     def _update_status(self) -> None:
         label = self.query_one("#my-reviews-status-label", Label)
         total = len(self.items)
         selected = len(self.selected)
-        label.update(f"Selected: {selected}/{total} items")
+        parts = [f"Selected: {selected}/{total} items"]
+        if self._active_filter:
+            kind, value = self._active_filter
+            parts.append(f"[bold]Filter: {kind}={value}[/bold]")
+        label.update("  |  ".join(parts))
 
     def _toggle_row(self, rr_id: int) -> None:
         table = self.query_one("#my-reviews-table", DataTable)
@@ -223,10 +241,11 @@ class MyReviewsPane(Container):
     def refresh_data(self, items: list[QueueItem] | None = None) -> None:
         """Refresh table with new or re-queried items."""
         if items is not None:
-            self.items = items
+            self._all_items = items
         elif hasattr(self.app, "refresh_my_reviews_items"):
-            self.items = self.app.refresh_my_reviews_items()
+            self._all_items = self.app.refresh_my_reviews_items()
 
+        self._apply_filter()
         visible_ids = {item.review_request_id for item in self.items}
         self.selected &= visible_ids
         self._populate_table()
@@ -270,6 +289,31 @@ class MyReviewsPane(Container):
 
     def action_mark_ignore(self) -> None:
         self._apply_status(QueueStatus.IGNORE)
+
+    def action_filter(self) -> None:
+        """Open filter picker."""
+        from bb_review.ui.screens.filter_picker import FilterPickerScreen
+
+        repos = sorted({i.repository for i in self._all_items if i.repository})
+        users = sorted({i.submitter for i in self._all_items if i.submitter})
+        self.app.push_screen(
+            FilterPickerScreen(repos, users, self._active_filter),
+            callback=self._on_filter_picked,
+        )
+
+    def _on_filter_picked(self, result: tuple[str, str] | None) -> None:
+        if result is None:
+            return
+        kind, value = result
+        if kind == "clear":
+            self._active_filter = None
+        else:
+            self._active_filter = (kind, value)
+        self._apply_filter()
+        visible_ids = {item.review_request_id for item in self.items}
+        self.selected &= visible_ids
+        self._populate_table()
+        self._update_status()
 
     def action_show_actions(self) -> None:
         """Open the action picker modal."""
