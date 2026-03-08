@@ -326,6 +326,15 @@ class ReviewHandler:
                 )
             )
 
+        if not comments:
+            return {
+                "review_request_id": analysis.review_request_id,
+                "body_top": "BB review found no issues",
+                "inline_comments": [],
+                "ship_it": force_ship_it,
+                "analysis_id": analysis_id,
+            }
+
         if analysis.body_top:
             body_top = analysis.body_top
         else:
@@ -353,7 +362,7 @@ class ReviewHandler:
             "review_request_id": analysis.review_request_id,
             "body_top": body_top,
             "inline_comments": inline_comments,
-            "ship_it": force_ship_it or (len(inline_comments) == 0 and not analysis.has_critical_issues),
+            "ship_it": force_ship_it,
             "analysis_id": analysis_id,
         }
 
