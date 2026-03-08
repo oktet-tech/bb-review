@@ -562,6 +562,19 @@ uv run bb-review opencode <review-id> --dump-response /tmp/opencode.txt -O
 uv run bb-review claude <review-id> --dump-response /tmp/claude.txt -O
 ```
 
+## Claude Code Integration
+
+A skill file at `.claude/skills/bb-review-notes.md` teaches Claude Code how to fetch and analyze Review Board comments. When working in a project that uses bb-review, Claude will automatically know how to:
+
+```bash
+# Fetch review comments as markdown (Claude runs this for you)
+bb-review -p <profile> comments <RR_ID_OR_URL>
+bb-review -p <profile> comments https://reviewboard.example.com/r/18128/ -o notes.md
+bb-review -p <profile> comments 18128 --context-lines 30
+```
+
+After fetching, Claude reads the output, groups comments by theme, identifies action items vs. style nits, and helps draft responses or code fixes.
+
 ## License
 
 MIT
