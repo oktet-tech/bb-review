@@ -59,8 +59,8 @@ class ReviewsPane(Container):
         Binding("t", "triage_item", "Triage"),
         Binding("i", "view_issues", "Issues"),
         Binding("slash", "filter", "Filter"),
-        Binding("home", "cursor_top", "Top", show=False),
-        Binding("end", "cursor_bottom", "Bottom", show=False),
+        Binding("home", "cursor_top", "Top", show=False, priority=True),
+        Binding("end", "cursor_bottom", "Bottom", show=False, priority=True),
         Binding("p", "proceed", "Export Selected"),
         Binding("ctrl+s", "submit_selected", "Submit", priority=True),
     ]
