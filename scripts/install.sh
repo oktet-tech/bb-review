@@ -10,7 +10,7 @@ fi
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "Installing bb-review from ${REPO_DIR} ..."
-uv tool install --from "${REPO_DIR}" bb-review --force
+uv tool install --from "${REPO_DIR}" bb-review --force --reinstall
 
 BIN_DIR="${UV_TOOL_BIN_DIR:-${HOME}/.local/bin}"
 
