@@ -59,6 +59,8 @@ class ReviewsPane(Container):
         Binding("t", "triage_item", "Triage"),
         Binding("i", "view_issues", "Issues"),
         Binding("slash", "filter", "Filter"),
+        Binding("home", "cursor_top", "Top", show=False),
+        Binding("end", "cursor_bottom", "Bottom", show=False),
         Binding("p", "proceed", "Export Selected"),
         Binding("ctrl+s", "submit_selected", "Submit", priority=True),
     ]
@@ -218,6 +220,13 @@ class ReviewsPane(Container):
         self.query_one("#reviews-table", DataTable).focus()
 
     # -- Actions --
+
+    def action_cursor_top(self) -> None:
+        self.query_one("#reviews-table", DataTable).move_cursor(row=0)
+
+    def action_cursor_bottom(self) -> None:
+        table = self.query_one("#reviews-table", DataTable)
+        table.move_cursor(row=table.row_count - 1)
 
     def action_toggle_selection(self) -> None:
         table = self.query_one("#reviews-table", DataTable)

@@ -60,6 +60,8 @@ class MyReviewsPane(Container):
         Binding("t", "triage_item", "Triage"),
         Binding("x", "show_actions", "Actions"),
         Binding("slash", "filter", "Filter"),
+        Binding("home", "cursor_top", "Top", show=False),
+        Binding("end", "cursor_bottom", "Bottom", show=False),
         Binding("ctrl+r", "request_sync", "Sync"),
         Binding("g", "request_sync", "Sync", show=False),
         Binding("ctrl+enter", "request_process", "Process"),
@@ -256,6 +258,13 @@ class MyReviewsPane(Container):
         self.query_one("#my-reviews-table", DataTable).focus()
 
     # -- Actions --
+
+    def action_cursor_top(self) -> None:
+        self.query_one("#my-reviews-table", DataTable).move_cursor(row=0)
+
+    def action_cursor_bottom(self) -> None:
+        table = self.query_one("#my-reviews-table", DataTable)
+        table.move_cursor(row=table.row_count - 1)
 
     def action_view_issues(self) -> None:
         """View open issues for the cursor item."""

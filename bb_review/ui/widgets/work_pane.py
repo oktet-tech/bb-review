@@ -55,6 +55,8 @@ class WorkPane(Container):
         Binding("space", "toggle_selection", "Toggle Select"),
         Binding("a", "toggle_all", "Select All"),
         Binding("slash", "filter", "Filter"),
+        Binding("home", "cursor_top", "Top", show=False),
+        Binding("end", "cursor_bottom", "Bottom", show=False),
         Binding("r", "refresh", "Refresh"),
         Binding("d", "delete", "Delete"),
         Binding("t", "launch_triage", "Triage"),
@@ -199,6 +201,13 @@ class WorkPane(Container):
         return None
 
     # -- Actions --
+
+    def action_cursor_top(self) -> None:
+        self.query_one("#work-table", DataTable).move_cursor(row=0)
+
+    def action_cursor_bottom(self) -> None:
+        table = self.query_one("#work-table", DataTable)
+        table.move_cursor(row=table.row_count - 1)
 
     def action_open_triage(self) -> None:
         item = self._current_item()
