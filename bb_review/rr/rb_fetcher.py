@@ -113,8 +113,8 @@ class RBCommentFetcher:
         links = diff_comment.get("links", {})
         filediff_href = links.get("filediff", {}).get("href", "")
 
-        # Extract filediff ID from href: .../filediffs/{id}/
-        match = re.search(r"/filediffs/(\d+)/", filediff_href)
+        # Extract filediff ID from href: .../filediffs/{id}/ or .../files/{id}/
+        match = re.search(r"/(?:filediffs|files)/(\d+)/", filediff_href)
         if not match:
             return None
 
