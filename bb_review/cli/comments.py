@@ -63,7 +63,7 @@ def comments(
         rb_client.connect()
 
         fetcher = RBCommentFetcher(rb_client, config.reviewboard.bot_username)
-        all_comments = fetcher.fetch_all_comments(review_id)
+        all_comments = fetcher.fetch_all_comments(review_id, include_bot=True)
 
         if not all_comments:
             click.echo("No comments found on this review request.")

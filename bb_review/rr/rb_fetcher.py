@@ -21,13 +21,17 @@ class RBCommentFetcher:
         self.rb_client = rb_client
         self.bot_username = bot_username
 
-    def fetch_all_comments(self, rr_id: int) -> list[RBComment]:
+    def fetch_all_comments(self, rr_id: int, include_bot: bool = False) -> list[RBComment]:
         """Fetch all comments for a review request.
 
         Returns a flat list of RBComment covering:
         - body_top text from each review (as body comments)
         - diff-level inline comments from each review
         Replies are included with reply_to_id set.
+
+        Args:
+            rr_id: Review request ID.
+            include_bot: If True, include comments from the bot user.
         """
         reviews = self.rb_client.get_reviews(rr_id)
         comments: list[RBComment] = []
@@ -37,7 +41,7 @@ class RBCommentFetcher:
 
         for review in reviews:
             reviewer = self._extract_username(review)
-            if reviewer == self.bot_username:
+            if not include_bot and reviewer == self.bot_username:
                 logger.debug(f"Skipping bot review {review.get('id')}")
                 continue
 
@@ -78,7 +82,7 @@ class RBCommentFetcher:
             replies = self.rb_client.get_review_replies(rr_id, review_id)
             for reply in replies:
                 reply_reviewer = self._extract_username(reply)
-                if reply_reviewer == self.bot_username:
+                if not include_bot and reply_reviewer == self.bot_username:
                     continue
 
                 reply_body = (reply.get("body_top") or "").strip()
