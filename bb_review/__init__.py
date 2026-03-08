@@ -4,9 +4,17 @@ __version__ = "0.1.0"
 
 # Re-export commonly used classes for backward compatibility
 from .git import RepoManager, RepoManagerError
-from .indexing import CodebaseIndexer, IndexConfig, IndexResult
 from .reviewers import Analyzer, extract_changed_files, filter_diff_by_paths
 from .rr import Commenter, DiffInfo, ReviewBoardClient, ReviewFormatter
+
+
+# Indexing requires cocoindex (optional dependency), import lazily
+try:
+    from .indexing import CodebaseIndexer, IndexConfig, IndexResult
+except ImportError:
+    CodebaseIndexer = None  # type: ignore[assignment,misc]
+    IndexConfig = None  # type: ignore[assignment,misc]
+    IndexResult = None  # type: ignore[assignment,misc]
 
 
 __all__ = [
