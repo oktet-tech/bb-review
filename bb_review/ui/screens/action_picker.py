@@ -45,6 +45,10 @@ class ActionPickerScreen(ModalScreen[ActionResult | None]):
         Binding("s", "pick_submit", "Submit", show=False),
         Binding("t", "pick_triage", "Triage", show=False),
         Binding("d", "pick_delete", "Delete", show=False),
+        Binding("1", "pick_mark_draft", "Draft", show=False),
+        Binding("2", "pick_mark_submitted", "Submitted", show=False),
+        Binding("3", "pick_mark_obsolete", "Obsolete", show=False),
+        Binding("4", "pick_mark_invalid", "Invalid", show=False),
     ]
 
     CSS = """
@@ -114,10 +118,10 @@ class ActionPickerScreen(ModalScreen[ActionResult | None]):
                 Option("\\[T] Triage comments", id="triage"),
                 Option("\\[D] Delete", id="delete"),
                 None,  # Separator
-                Option("Mark as: Draft", id="mark_draft"),
-                Option("Mark as: Submitted", id="mark_submitted"),
-                Option("Mark as: Obsolete", id="mark_obsolete"),
-                Option("Mark as: Invalid", id="mark_invalid"),
+                Option("\\[1] Mark as: Draft", id="mark_draft"),
+                Option("\\[2] Mark as: Submitted", id="mark_submitted"),
+                Option("\\[3] Mark as: Obsolete", id="mark_obsolete"),
+                Option("\\[4] Mark as: Invalid", id="mark_invalid"),
                 id="action-list",
             )
         yield Footer()
@@ -165,6 +169,18 @@ class ActionPickerScreen(ModalScreen[ActionResult | None]):
 
     def action_pick_delete(self) -> None:
         self._select_action("delete")
+
+    def action_pick_mark_draft(self) -> None:
+        self._select_action("mark_draft")
+
+    def action_pick_mark_submitted(self) -> None:
+        self._select_action("mark_submitted")
+
+    def action_pick_mark_obsolete(self) -> None:
+        self._select_action("mark_obsolete")
+
+    def action_pick_mark_invalid(self) -> None:
+        self._select_action("mark_invalid")
 
     def action_cancel(self) -> None:
         """Cancel and dismiss the modal."""
