@@ -1,5 +1,6 @@
 """Dump RB review comments as markdown with source context."""
 
+import json as json_mod
 import logging
 from pathlib import Path
 import sys
@@ -22,6 +23,8 @@ logger = logging.getLogger(__name__)
 @click.option("-o", "--output", type=click.Path(path_type=Path), help="Output file path")
 @click.option("--context-lines", type=int, default=15, help="Lines of context around each comment")
 @click.option("--diff-revision", type=int, default=None, help="Specific diff revision to use")
+@click.option("--json", "as_json", is_flag=True, help="Output structured JSON to stdout")
+@click.option("--open-issues", is_flag=True, help="Only include open issues")
 @click.pass_context
 def comments(
     ctx: click.Context,
@@ -29,6 +32,8 @@ def comments(
     output: Path | None,
     context_lines: int,
     diff_revision: int | None,
+    as_json: bool,
+    open_issues: bool,
 ) -> None:
     """Dump review comments as markdown with source context.
 
@@ -40,8 +45,9 @@ def comments(
 
     Examples:
         bb-review comments 18128
+        bb-review comments 18128 --json
+        bb-review comments 18128 --json --open-issues
         bb-review comments 18128 -o my_comments.md
-        bb-review comments 18128 --context-lines 30
     """
     try:
         config = get_config(ctx)
@@ -49,7 +55,7 @@ def comments(
         click.echo("Error: Config file required. Use --config or create config.yaml", err=True)
         sys.exit(1)
 
-    click.echo(f"Fetching comments for review request #{review_id}...")
+    click.echo(f"Fetching comments for review request #{review_id}...", err=as_json)
 
     try:
         rb_client = ReviewBoardClient(
@@ -65,11 +71,20 @@ def comments(
         fetcher = RBCommentFetcher(rb_client, config.reviewboard.bot_username)
         all_comments = fetcher.fetch_all_comments(review_id, include_bot=True)
 
+        if open_issues:
+            all_comments = [c for c in all_comments if c.issue_opened and c.issue_status == "open"]
+
         if not all_comments:
-            click.echo("No comments found on this review request.")
+            click.echo("No comments found on this review request.", err=as_json)
+            if as_json:
+                click.echo("[]")
             return
 
-        click.echo(f"  Found {len(all_comments)} comments")
+        click.echo(f"  Found {len(all_comments)} comments", err=as_json)
+
+        if as_json:
+            _output_json(all_comments)
+            return
 
         diff_info = rb_client.get_diff(review_id, diff_revision)
         repo_info = rb_client.get_repository_info(review_id)
@@ -103,6 +118,26 @@ def comments(
         logger.exception("Comments export failed")
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
+
+
+def _output_json(comments: list[RBComment]) -> None:
+    """Output comments as structured JSON to stdout."""
+    records = []
+    for c in comments:
+        records.append(
+            {
+                "comment_id": c.comment_id,
+                "review_id": c.review_id,
+                "reviewer": c.reviewer,
+                "text": c.text,
+                "file_path": c.file_path,
+                "line_number": c.line_number,
+                "issue_opened": c.issue_opened,
+                "issue_status": c.issue_status,
+                "is_body_comment": c.is_body_comment,
+            }
+        )
+    click.echo(json_mod.dumps(records, indent=2))
 
 
 def _get_comment_contexts(
@@ -159,7 +194,7 @@ def _render_comments_md(
 
     for c in inline:
         loc = f"{c.file_path}:{c.line_number}" if c.line_number else c.file_path
-        lines.append(f"## {loc} -- {c.reviewer}")
+        lines.append(f"## {loc} -- {c.reviewer} [c:{c.comment_id} r:{c.review_id}]")
         lines.append("")
 
         key = (c.file_path, c.line_number) if c.file_path and c.line_number else None
@@ -178,7 +213,7 @@ def _render_comments_md(
         lines.append("")
 
     for c in body:
-        lines.append(f"## General comment -- {c.reviewer}")
+        lines.append(f"## General comment -- {c.reviewer} [c:{c.comment_id} r:{c.review_id}]")
         lines.append("")
         lines.append("### Comment")
         lines.append(c.text)

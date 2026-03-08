@@ -109,6 +109,15 @@ class FixPlan:
 
 
 @dataclass
+class CommentResolution:
+    """Agent-provided resolution for a review comment."""
+
+    comment_id: int
+    status: str  # 'fixed' or 'dropped'
+    message: str = ""
+
+
+@dataclass
 class SelectableTriagedComment:
     """Triaged comment with user-selected action (for TUI state)."""
 

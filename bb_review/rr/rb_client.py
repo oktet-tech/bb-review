@@ -635,6 +635,26 @@ class ReviewBoardClient:
         if result.get("stat") != "ok":
             raise RuntimeError(f"Failed to post diff comment reply: {result}")
 
+    def update_issue_status(
+        self,
+        review_request_id: int,
+        review_id: int,
+        comment_id: int,
+        issue_status: str,
+    ) -> dict:
+        """Update the issue status of a diff comment.
+
+        Args:
+            issue_status: One of 'open', 'resolved', 'dropped', 'verifying'.
+        """
+        result = self._api_put(
+            f"/api/review-requests/{review_request_id}/reviews/{review_id}/diff-comments/{comment_id}/",
+            {"issue_status": issue_status},
+        )
+        if result.get("stat") != "ok":
+            raise RuntimeError(f"Failed to update issue status: {result}")
+        return result
+
     def publish_reply(self, review_request_id: int, review_id: int, reply_id: int) -> None:
         """Publish a reply draft."""
         result = self._api_put(
