@@ -56,10 +56,14 @@ class QueueDatabase:
                     ON {t}(review_request_id);
                 """
             )
-            # Migration: add issue_open_count if missing
+            # Migrations: add columns if missing
             cols = {row[1] for row in conn.execute(f"PRAGMA table_info({t})").fetchall()}
             if "issue_open_count" not in cols:
                 conn.execute(f"ALTER TABLE {t} ADD COLUMN issue_open_count INTEGER DEFAULT 0")
+            if "ship_it_count" not in cols:
+                conn.execute(f"ALTER TABLE {t} ADD COLUMN ship_it_count INTEGER DEFAULT 0")
+            if "change_reason" not in cols:
+                conn.execute(f"ALTER TABLE {t} ADD COLUMN change_reason TEXT DEFAULT ''")
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
@@ -84,6 +88,8 @@ class QueueDatabase:
         base_commit: str | None = None,
         rb_created_at: datetime | None = None,
         issue_open_count: int = 0,
+        ship_it_count: int = 0,
+        change_reason: str = "",
     ) -> tuple[str, bool]:
         """Insert or update a queue item during sync.
 
@@ -106,8 +112,9 @@ class QueueDatabase:
                     INSERT INTO {self._table_name} (
                         review_request_id, diff_revision, status, repository,
                         submitter, summary, branch, base_commit, rb_created_at,
-                        issue_open_count, synced_at, updated_at
-                    ) VALUES (?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        issue_open_count, ship_it_count, change_reason,
+                        synced_at, updated_at
+                    ) VALUES (?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         review_request_id,
@@ -119,6 +126,8 @@ class QueueDatabase:
                         base_commit,
                         rb_created_str,
                         issue_open_count,
+                        ship_it_count,
+                        change_reason,
                         now,
                         now,
                     ),
@@ -137,7 +146,8 @@ class QueueDatabase:
                         branch = COALESCE(?, branch),
                         base_commit = COALESCE(?, base_commit),
                         rb_created_at = COALESCE(?, rb_created_at),
-                        issue_open_count = ?,
+                        issue_open_count = ?, ship_it_count = ?,
+                        change_reason = ?,
                         synced_at = ?, updated_at = ?
                     WHERE review_request_id = ?
                     """,
@@ -150,6 +160,8 @@ class QueueDatabase:
                         base_commit,
                         rb_created_str,
                         issue_open_count,
+                        ship_it_count,
+                        change_reason,
                         now,
                         now,
                         review_request_id,
@@ -167,7 +179,8 @@ class QueueDatabase:
                     branch = COALESCE(?, branch),
                     base_commit = COALESCE(?, base_commit),
                     rb_created_at = COALESCE(?, rb_created_at),
-                    issue_open_count = ?,
+                    issue_open_count = ?, ship_it_count = ?,
+                    change_reason = ?,
                     synced_at = ?
                 WHERE review_request_id = ?
                 """,
@@ -179,6 +192,8 @@ class QueueDatabase:
                     base_commit,
                     rb_created_str,
                     issue_open_count,
+                    ship_it_count,
+                    change_reason,
                     now,
                     review_request_id,
                 ),
@@ -406,6 +421,8 @@ class QueueDatabase:
             synced_at=(datetime.fromisoformat(row["synced_at"]) if row["synced_at"] else None),
             updated_at=(datetime.fromisoformat(row["updated_at"]) if row["updated_at"] else None),
             issue_open_count=row["issue_open_count"] or 0,
+            ship_it_count=row["ship_it_count"] or 0,
+            change_reason=row["change_reason"] or "",
             analysis_id=row["analysis_id"],
             error_message=row["error_message"],
         )

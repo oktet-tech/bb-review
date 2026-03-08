@@ -134,6 +134,7 @@ class PendingReview:
     branch: str | None = None
     created_at: datetime | None = None
     issue_open_count: int = 0
+    ship_it_count: int = 0
 
 
 @dataclass

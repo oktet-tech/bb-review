@@ -44,5 +44,7 @@ class QueueItem:
     synced_at: datetime | None = None
     updated_at: datetime | None = None
     issue_open_count: int = 0
+    ship_it_count: int = 0
+    change_reason: str = ""
     analysis_id: int | None = None
     error_message: str | None = None

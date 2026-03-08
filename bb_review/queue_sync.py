@@ -3,7 +3,7 @@
 import logging
 
 from .db.queue_db import QueueDatabase
-from .db.queue_models import QueueStatus
+from .db.queue_models import QueueItem, QueueStatus
 from .models import PendingReview
 from .rr.rb_client import ReviewBoardClient
 
@@ -98,6 +98,21 @@ def _prune_gone(queue_db: QueueDatabase, fetched_rr_ids: set[int]) -> int:
     return pruned
 
 
+def _classify_change(existing: QueueItem | None, pr: PendingReview) -> str:
+    """Determine what changed between the stored snapshot and fresh RB data."""
+    if existing is None:
+        return ""
+    if pr.diff_revision != existing.diff_revision:
+        return "new_diff"
+    if pr.issue_open_count > existing.issue_open_count:
+        return "issues_opened"
+    if pr.issue_open_count < existing.issue_open_count:
+        return "issues_closed"
+    if pr.ship_it_count > existing.ship_it_count:
+        return "ship_it"
+    return ""
+
+
 def _sync_one(
     queue_db: QueueDatabase,
     pr: PendingReview,
@@ -105,6 +120,7 @@ def _sync_one(
 ) -> None:
     """Reconcile a single PendingReview with the queue."""
     existing = queue_db.get(pr.review_request_id)
+    change_reason = _classify_change(existing, pr)
 
     # Check if there's already a non-fake analysis for this exact diff
     if existing and existing.diff_revision == pr.diff_revision:
@@ -115,7 +131,7 @@ def _sync_one(
         if has_analysis:
             counts["analyzed"] += 1
             logger.debug(f"r/{pr.review_request_id}: already analyzed (diff {pr.diff_revision}), skipping")
-            # Still update metadata
+            # Still update metadata and change_reason
             queue_db.upsert(
                 review_request_id=pr.review_request_id,
                 diff_revision=pr.diff_revision,
@@ -126,6 +142,8 @@ def _sync_one(
                 base_commit=pr.base_commit,
                 rb_created_at=pr.created_at,
                 issue_open_count=pr.issue_open_count,
+                ship_it_count=pr.ship_it_count,
+                change_reason=change_reason,
             )
             return
 
@@ -139,6 +157,8 @@ def _sync_one(
         base_commit=pr.base_commit,
         rb_created_at=pr.created_at,
         issue_open_count=pr.issue_open_count,
+        ship_it_count=pr.ship_it_count,
+        change_reason=change_reason,
     )
 
     if action == "inserted":
