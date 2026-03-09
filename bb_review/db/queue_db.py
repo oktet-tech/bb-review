@@ -134,7 +134,7 @@ class QueueDatabase:
                 )
                 return ("inserted", False)
 
-            if existing["diff_revision"] != diff_revision:
+            if diff_revision > existing["diff_revision"]:
                 # New diff version: reset to todo, clear analysis link
                 conn.execute(
                     f"""

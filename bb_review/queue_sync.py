@@ -122,6 +122,15 @@ def _sync_one(
 ) -> None:
     """Reconcile a single PendingReview with the queue."""
     existing = queue_db.get(pr.review_request_id)
+
+    # _get_latest_diff_revision returns 0 on API timeout — don't let that
+    # overwrite a real stored value and trigger a false "new diff" reset.
+    if existing and pr.diff_revision == 0 and existing.diff_revision > 0:
+        logger.debug(
+            f"r/{pr.review_request_id}: API returned diff_revision=0, keeping stored={existing.diff_revision}"
+        )
+        pr.diff_revision = existing.diff_revision
+
     change_reason = _classify_change(existing, pr)
 
     # Check if there's already a non-fake analysis for this exact diff
