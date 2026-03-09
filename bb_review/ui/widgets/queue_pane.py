@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import webbrowser
+
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal
@@ -58,6 +60,7 @@ class QueuePane(Container):
         Binding("i", "mark_ignore", "Ignore"),
         Binding("f", "mark_finished", "Done"),
         Binding("t", "triage_item", "Triage"),
+        Binding("o", "open_in_browser", "Open RB"),
         Binding("d", "delete_item", "Delete"),
         Binding("x", "show_actions", "Actions"),
         Binding("slash", "filter", "Filter"),
@@ -391,6 +394,18 @@ class QueuePane(Container):
             self.app.notify("No item selected", severity="warning")
             return
         self.post_message(self.TriageRequested(rr_ids))
+
+    def action_open_in_browser(self) -> None:
+        """Open the current review request in the browser."""
+        rr_id = self._get_cursor_rr_id()
+        if rr_id is None:
+            return
+        rb_url = getattr(self.app, "_config", None)
+        if rb_url and hasattr(rb_url, "reviewboard"):
+            url = f"{rb_url.reviewboard.url}/r/{rr_id}/"
+            webbrowser.open(url)
+        else:
+            self.app.notify("RB URL not configured", severity="warning")
 
     def action_request_sync(self) -> None:
         self.post_message(self.SyncRequested())
