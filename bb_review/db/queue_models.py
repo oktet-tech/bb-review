@@ -16,14 +16,15 @@ class QueueStatus(str, Enum):
     FAILED = "failed"
 
 
-# Valid state transitions: current_status -> set of allowed next statuses
+# Valid state transitions: current_status -> set of allowed next statuses.
+# Every status allows a self-transition (no-op but useful for bulk actions).
 VALID_TRANSITIONS: dict[QueueStatus, set[QueueStatus]] = {
-    QueueStatus.TODO: {QueueStatus.NEXT, QueueStatus.IGNORE},
-    QueueStatus.NEXT: {QueueStatus.IN_PROGRESS, QueueStatus.IGNORE, QueueStatus.TODO},
-    QueueStatus.IGNORE: {QueueStatus.NEXT},
-    QueueStatus.IN_PROGRESS: {QueueStatus.DONE, QueueStatus.FAILED},
-    QueueStatus.FAILED: {QueueStatus.NEXT, QueueStatus.IGNORE},
-    QueueStatus.DONE: {QueueStatus.TODO, QueueStatus.NEXT},
+    QueueStatus.TODO: {QueueStatus.TODO, QueueStatus.NEXT, QueueStatus.IGNORE},
+    QueueStatus.NEXT: {QueueStatus.NEXT, QueueStatus.IN_PROGRESS, QueueStatus.IGNORE, QueueStatus.TODO},
+    QueueStatus.IGNORE: {QueueStatus.IGNORE, QueueStatus.NEXT},
+    QueueStatus.IN_PROGRESS: {QueueStatus.IN_PROGRESS, QueueStatus.DONE, QueueStatus.FAILED},
+    QueueStatus.FAILED: {QueueStatus.FAILED, QueueStatus.NEXT, QueueStatus.IGNORE},
+    QueueStatus.DONE: {QueueStatus.DONE, QueueStatus.TODO, QueueStatus.NEXT},
 }
 
 
