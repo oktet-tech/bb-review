@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import time
 from typing import Any
 
 from ..models import PendingReview
@@ -132,7 +133,7 @@ class ReviewBoardClient:
         Returns:
             Tuple of (status_code, response_body)
         """
-        cmd = ["curl", "-s", "-w", "\n%{http_code}"]
+        cmd = ["curl", "-s", "-w", "\n%{http_code}", "--connect-timeout", "10", "--max-time", "30"]
 
         # Use cookies
         if self._cookie_file:
@@ -163,11 +164,23 @@ class ReviewBoardClient:
         logger.debug(f"curl {method} {url}")
         if data:
             logger.debug(f"curl data: {data}")
-        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        # Retry on transient curl errors (timeout, connection refused/reset)
+        retryable_codes = {7, 28, 56}
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0 or result.returncode not in retryable_codes:
+                break
+            if attempt < max_retries:
+                delay = 2 * (attempt + 1)
+                logger.warning(f"curl failed for {url} (exit {result.returncode}), retrying in {delay}s...")
+                time.sleep(delay)
 
         if result.returncode != 0:
-            logger.error(f"curl failed: {result.stderr}")
-            raise RuntimeError(f"curl failed: {result.stderr}")
+            detail = result.stderr.strip() or f"exit code {result.returncode} (timeout or connection error)"
+            logger.error(f"curl failed for {url}: {detail}")
+            raise RuntimeError(f"curl failed: {detail}")
 
         # Parse response - last line is status code
         lines = result.stdout.rsplit("\n", 1)
