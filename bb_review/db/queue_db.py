@@ -254,7 +254,8 @@ class QueueDatabase:
             conn.execute(
                 f"""
                 UPDATE {self._table_name}
-                SET status = 'done', analysis_id = ?, error_message = NULL, updated_at = ?
+                SET status = 'done', analysis_id = ?, error_message = NULL,
+                    change_reason = '', updated_at = ?
                 WHERE review_request_id = ?
                 """,
                 (analysis_id, datetime.now().isoformat(), review_request_id),
@@ -266,7 +267,8 @@ class QueueDatabase:
             conn.execute(
                 f"""
                 UPDATE {self._table_name}
-                SET status = 'failed', error_message = ?, updated_at = ?
+                SET status = 'failed', error_message = ?, change_reason = '',
+                    updated_at = ?
                 WHERE review_request_id = ?
                 """,
                 (error_message, datetime.now().isoformat(), review_request_id),
