@@ -113,6 +113,10 @@ class AnalysisListItem:
     summary: str
     issue_count: int
     has_critical_issues: bool
+    severity_low: int = 0
+    severity_medium: int = 0
+    severity_high: int = 0
+    severity_critical: int = 0
     chain_id: str | None = None
     rr_summary: str | None = None
     fake: bool = False

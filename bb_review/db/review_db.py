@@ -522,7 +522,11 @@ class ReviewDatabase:
         with self._connection() as conn:
             rows = conn.execute(
                 f"""
-                SELECT a.*, COUNT(c.id) as comment_count
+                SELECT a.*, COUNT(c.id) as comment_count,
+                    SUM(CASE WHEN c.severity = 'low' THEN 1 ELSE 0 END) as severity_low,
+                    SUM(CASE WHEN c.severity = 'medium' THEN 1 ELSE 0 END) as severity_medium,
+                    SUM(CASE WHEN c.severity = 'high' THEN 1 ELSE 0 END) as severity_high,
+                    SUM(CASE WHEN c.severity = 'critical' THEN 1 ELSE 0 END) as severity_critical
                 FROM analyses a
                 LEFT JOIN comments c ON c.analysis_id = a.id
                 WHERE {where_clause}
@@ -1193,6 +1197,10 @@ class ReviewDatabase:
             summary=row["summary"],
             issue_count=row["comment_count"],
             has_critical_issues=bool(row["has_critical_issues"]),
+            severity_low=row["severity_low"] or 0,
+            severity_medium=row["severity_medium"] or 0,
+            severity_high=row["severity_high"] or 0,
+            severity_critical=row["severity_critical"] or 0,
             chain_id=row["chain_id"],
             rr_summary=row["rr_summary"],
             fake=fake,

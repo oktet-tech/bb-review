@@ -129,7 +129,10 @@ class ReviewsPane(Container):
         table.add_column("ID", key="id", width=6)
         table.add_column("RR#", key="rr", width=8)
         table.add_column("Repo", key="repo", width=22)
-        table.add_column("Issues", key="issues", width=8)
+        table.add_column("L", key="sev_low", width=3)
+        table.add_column("M", key="sev_med", width=3)
+        table.add_column("H", key="sev_high", width=3)
+        table.add_column("C", key="sev_crit", width=3)
         table.add_column("Status", key="status", width=12)
         table.add_column("Summary", key="summary")
         self._populate_table()
@@ -164,7 +167,10 @@ class ReviewsPane(Container):
                 str(analysis.id),
                 str(analysis.review_request_id),
                 analysis.repository,
-                str(analysis.issue_count),
+                str(analysis.severity_low) if analysis.severity_low else "",
+                str(analysis.severity_medium) if analysis.severity_medium else "",
+                str(analysis.severity_high) if analysis.severity_high else "",
+                str(analysis.severity_critical) if analysis.severity_critical else "",
                 f"{status_icon} {analysis.status.value}",
                 summary,
                 key=str(analysis.id),
