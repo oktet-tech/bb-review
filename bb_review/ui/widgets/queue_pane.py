@@ -396,4 +396,7 @@ class QueuePane(Container):
         self.post_message(self.SyncRequested())
 
     def action_request_process(self) -> None:
+        self.selected.clear()
+        self._populate_table()
+        self._update_status()
         self.post_message(self.ProcessRequested())
