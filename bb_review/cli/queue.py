@@ -66,6 +66,10 @@ def sync(
     from ..queue_sync import sync_queue
 
     click.echo(f"Syncing reviews (last {days} days, limit {limit})...")
+
+    def _progress(current: int, total: int) -> None:
+        click.echo(f"\rFetching: {current}/{total}...", nl=False)
+
     counts = sync_queue(
         rb_client=rb_client,
         queue_db=queue_db,
@@ -75,7 +79,9 @@ def sync(
         submitter=submitter,
         bot_only=bot_only,
         prune=prune,
+        on_progress=_progress,
     )
+    click.echo()  # newline after progress
 
     click.echo(
         f"Sync complete: {counts['total']} fetched, "
