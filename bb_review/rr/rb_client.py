@@ -1,5 +1,6 @@
 """Review Board API client with Kerberos support via curl."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import json
@@ -316,7 +317,11 @@ class ReviewBoardClient:
             raise RuntimeError(f"Failed to get review request: {result.get('err', {}).get('msg')}")
         return result.get("review_request", result)
 
-    def get_pending_reviews(self, limit: int = 50) -> list[PendingReview]:
+    def get_pending_reviews(
+        self,
+        limit: int = 50,
+        on_progress: Callable[[int, int], None] | None = None,
+    ) -> list[PendingReview]:
         """Get review requests where bot user is a reviewer but hasn't reviewed."""
         logger.debug(f"Fetching pending reviews for {self.bot_username}")
 
@@ -330,16 +335,18 @@ class ReviewBoardClient:
         )
 
         review_requests = result.get("review_requests", [])
+        total = len(review_requests)
         pending = []
 
-        for rr in review_requests:
+        for i, rr in enumerate(review_requests):
             if self._has_bot_reviewed(rr["id"]):
                 logger.debug(f"Skipping {rr['id']} - already reviewed")
-                continue
-
-            pending_review = self._to_pending_review(rr)
-            if pending_review:
-                pending.append(pending_review)
+            else:
+                pending_review = self._to_pending_review(rr)
+                if pending_review:
+                    pending.append(pending_review)
+            if on_progress:
+                on_progress(i + 1, total)
 
         logger.info(f"Found {len(pending)} pending reviews")
         return pending
@@ -704,6 +711,7 @@ class ReviewBoardClient:
         limit: int = 200,
         repository: str | None = None,
         from_user: str | None = None,
+        on_progress: Callable[[int, int], None] | None = None,
     ) -> list[PendingReview]:
         """Fetch recently-updated pending review requests from RB.
 
@@ -712,6 +720,7 @@ class ReviewBoardClient:
             limit: Max results to return.
             repository: Filter by repository name (RB repo ID or name).
             from_user: Filter by submitter username.
+            on_progress: Called with (current, total) after each RR is processed.
         """
         cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00")
         params: dict[str, str] = {
@@ -727,12 +736,15 @@ class ReviewBoardClient:
         logger.debug(f"Fetching recent reviews: days={days}, limit={limit}")
         result = self._api_get("/api/review-requests/", params)
         review_requests = result.get("review_requests", [])
+        total = len(review_requests)
 
         pending = []
-        for rr in review_requests:
+        for i, rr in enumerate(review_requests):
             pr = self._to_pending_review(rr)
             if pr:
                 pending.append(pr)
+            if on_progress:
+                on_progress(i + 1, total)
 
         logger.info(f"Fetched {len(pending)} recent reviews")
         return pending
