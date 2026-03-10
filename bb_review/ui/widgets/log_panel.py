@@ -1,8 +1,8 @@
 """Collapsible log panel with RichLog for background task output."""
 
 from textual.app import ComposeResult
-from textual.containers import Container
-from textual.widgets import RichLog, Static
+from textual.containers import Container, Horizontal
+from textual.widgets import Label, RichLog
 
 
 class LogPanel(Container):
@@ -21,11 +21,21 @@ class LogPanel(Container):
         display: block;
     }
 
-    LogPanel #log-title {
+    LogPanel #log-title-bar {
         height: 1;
         background: $primary;
+    }
+
+    LogPanel #log-title-left {
+        width: 1fr;
         color: $text;
         text-style: bold;
+        padding: 0 1;
+    }
+
+    LogPanel #log-title-tasks {
+        width: auto;
+        color: $text 70%;
         padding: 0 1;
     }
 
@@ -34,8 +44,14 @@ class LogPanel(Container):
     }
     """
 
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._tasks: dict[str, str] = {}
+
     def compose(self) -> ComposeResult:
-        yield Static("Log (L: toggle, C: clear)", id="log-title")
+        with Horizontal(id="log-title-bar"):
+            yield Label("Log (L: toggle, C: clear)", id="log-title-left")
+            yield Label("", id="log-title-tasks")
         yield RichLog(id="log-output", wrap=True, markup=True)
 
     def write(self, text: str) -> None:
@@ -53,3 +69,18 @@ class LogPanel(Container):
     def show(self) -> None:
         """Make the log panel visible."""
         self.add_class("visible")
+
+    def add_task(self, key: str, label: str) -> None:
+        """Register an active task and refresh the display."""
+        self._tasks[key] = label
+        self._refresh_tasks()
+
+    def remove_task(self, key: str) -> None:
+        """Remove a finished task and refresh the display."""
+        self._tasks.pop(key, None)
+        self._refresh_tasks()
+
+    def _refresh_tasks(self) -> None:
+        """Update the right-side task queue label."""
+        text = " | ".join(self._tasks.values()) if self._tasks else ""
+        self.query_one("#log-title-tasks", Label).update(text)
