@@ -694,9 +694,13 @@ class UnifiedApp(App):
 
             from bb_review.queue_sync import sync_queue
 
+            def on_progress(current: int, total: int) -> None:
+                self.call_from_thread(self._task_start, "sync", f"sync {current}/{total}")
+
             counts = sync_queue(
                 rb_client=rb_client,
                 queue_db=self._queue_db,
+                on_progress=on_progress,
             )
 
             summary = (
@@ -760,10 +764,14 @@ class UnifiedApp(App):
 
             from bb_review.queue_sync import sync_queue
 
+            def on_progress(current: int, total: int) -> None:
+                self.call_from_thread(self._task_start, "my_reviews_sync", f"my-sync {current}/{total}")
+
             counts = sync_queue(
                 rb_client=rb_client,
                 queue_db=self._my_reviews_db,
                 submitter=username,
+                on_progress=on_progress,
             )
 
             summary = (
