@@ -462,17 +462,23 @@ class UnifiedApp(App):
             return
 
         total = len(rr_ids)
-        if total > 1:
-            self.call_from_thread(self.query_one(LogPanel).show)
-            self.call_from_thread(self._log, f"Batch triage: {total} RRs...")
-
-        for i, rr_id in enumerate(rr_ids):
+        task_key = f"triage-{id(rr_ids)}"
+        label = f"triage {total} RRs" if total > 1 else f"triage r/{rr_ids[0]}"
+        self.call_from_thread(self._task_start, task_key, label)
+        try:
             if total > 1:
-                self.call_from_thread(self._log, f"[{i + 1}/{total}] Starting r/{rr_id}")
-            self._triage_one(rr_id, method, model_key)
+                self.call_from_thread(self.query_one(LogPanel).show)
+                self.call_from_thread(self._log, f"Batch triage: {total} RRs...")
 
-        if total > 1:
-            self.call_from_thread(self._log, f"Batch triage complete ({total} RRs)")
+            for i, rr_id in enumerate(rr_ids):
+                if total > 1:
+                    self.call_from_thread(self._log, f"[{i + 1}/{total}] Starting r/{rr_id}")
+                self._triage_one(rr_id, method, model_key)
+
+            if total > 1:
+                self.call_from_thread(self._log, f"Batch triage complete ({total} RRs)")
+        finally:
+            self.call_from_thread(self._task_done, task_key)
 
     def _triage_one(
         self,
@@ -653,6 +659,14 @@ class UnifiedApp(App):
         log_panel = self.query_one(LogPanel)
         log_panel.write(text)
 
+    def _task_start(self, key: str, label: str) -> None:
+        """Register an active background task in the log panel title bar."""
+        self.query_one(LogPanel).add_task(key, label)
+
+    def _task_done(self, key: str) -> None:
+        """Remove a finished background task from the log panel title bar."""
+        self.query_one(LogPanel).remove_task(key)
+
     @work(thread=True, exclusive=True, group="sync")
     def _run_sync(self) -> None:
         """Background worker: sync queue from Review Board."""
@@ -660,6 +674,7 @@ class UnifiedApp(App):
             self.call_from_thread(self.notify, "Config or queue DB not available", severity="error")
             return
 
+        self.call_from_thread(self._task_start, "sync", "sync")
         self.call_from_thread(self.query_one(LogPanel).show)
         self.call_from_thread(self._log, "Starting sync...")
 
@@ -698,6 +713,9 @@ class UnifiedApp(App):
             self.call_from_thread(self._log, f"Sync FAILED: {e}")
             self.call_from_thread(self.notify, f"Sync failed: {e}", severity="error")
 
+        finally:
+            self.call_from_thread(self._task_done, "sync")
+
         # Refresh queue pane
         self.call_from_thread(self._refresh_queue_pane)
 
@@ -722,6 +740,7 @@ class UnifiedApp(App):
             self.call_from_thread(self.notify, "reviewboard.username not set in config", severity="error")
             return
 
+        self.call_from_thread(self._task_start, "my_reviews_sync", "my-sync")
         self.call_from_thread(self.query_one(LogPanel).show)
         self.call_from_thread(self._log, f"Syncing my reviews (user={username})...")
 
@@ -761,6 +780,9 @@ class UnifiedApp(App):
             self.call_from_thread(self._log, f"My reviews sync FAILED: {e}")
             self.call_from_thread(self.notify, f"My reviews sync failed: {e}", severity="error")
 
+        finally:
+            self.call_from_thread(self._task_done, "my_reviews_sync")
+
         self.call_from_thread(self._refresh_my_reviews_pane)
 
     @work(thread=True, exclusive=True, group="fetch_issues")
@@ -770,6 +792,8 @@ class UnifiedApp(App):
             self.call_from_thread(self.notify, "Config not available", severity="error")
             return
 
+        task_key = f"issues-{rr_id}"
+        self.call_from_thread(self._task_start, task_key, f"issues r/{rr_id}")
         config = self._config
         self.call_from_thread(self.query_one(LogPanel).show)
         self.call_from_thread(self._log, f"Fetching issues for r/{rr_id}...")
@@ -822,6 +846,9 @@ class UnifiedApp(App):
             self.call_from_thread(self._log, f"  Fetch issues FAILED: {e}")
             self.call_from_thread(self.notify, f"Fetch issues failed: {e}", severity="error")
 
+        finally:
+            self.call_from_thread(self._task_done, task_key)
+
     @work(thread=True, exclusive=True, group="my_reviews_process")
     def _run_my_reviews_process(self, chosen_method: str, model_key: str | None = None) -> None:
         """Background worker: process next my-reviews items.
@@ -840,6 +867,7 @@ class UnifiedApp(App):
             else:
                 model_name = model_key
 
+        self.call_from_thread(self._task_start, "my_reviews_process", "my-process")
         self.call_from_thread(self.query_one(LogPanel).show)
         model_label = model_name or "default"
         self.call_from_thread(
@@ -960,6 +988,9 @@ class UnifiedApp(App):
             self.call_from_thread(self._log, f"Process FAILED: {e}")
             self.call_from_thread(self.notify, f"Process failed: {e}", severity="error")
 
+        finally:
+            self.call_from_thread(self._task_done, "my_reviews_process")
+
         self.call_from_thread(self._refresh_my_reviews_pane)
         self.call_from_thread(self.refresh_reviews_pane)
 
@@ -988,6 +1019,7 @@ class UnifiedApp(App):
             else:
                 model_name = model_key
 
+        self.call_from_thread(self._task_start, "process", "process")
         self.call_from_thread(self.query_one(LogPanel).show)
         model_label = model_name or "default"
         self.call_from_thread(self._log, f"Starting process (method={chosen_method}, model={model_label})...")
@@ -1108,6 +1140,9 @@ class UnifiedApp(App):
             self.call_from_thread(self._log, f"Process FAILED: {e}")
             self.call_from_thread(self.notify, f"Process failed: {e}", severity="error")
 
+        finally:
+            self.call_from_thread(self._task_done, "process")
+
         # Refresh both panes
         self.call_from_thread(self._refresh_queue_pane)
         self.call_from_thread(self.refresh_reviews_pane)
@@ -1128,6 +1163,7 @@ class UnifiedApp(App):
             self.call_from_thread(self.notify, "Config not available", severity="error")
             return
 
+        self.call_from_thread(self._task_start, "submit", "submit")
         self.call_from_thread(self.query_one(LogPanel).show)
         total = len(submissions)
         label = f"Submitting {total} review(s)..." if total > 1 else "Submitting review..."
@@ -1150,6 +1186,7 @@ class UnifiedApp(App):
             logger.exception("Failed to connect to ReviewBoard")
             self.call_from_thread(self._log, f"Submit FAILED: {e}")
             self.call_from_thread(self.notify, f"Submit failed: {e}", severity="error")
+            self.call_from_thread(self._task_done, "submit")
             return
 
         mode = "Ship It + published" if force_ship_it else ("published" if publish else "draft")
@@ -1193,6 +1230,7 @@ class UnifiedApp(App):
             severity = "information" if failed == 0 else "warning"
             self.call_from_thread(self.notify, summary, severity=severity)
 
+        self.call_from_thread(self._task_done, "submit")
         self.call_from_thread(self.refresh_reviews_pane)
 
 
