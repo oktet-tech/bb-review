@@ -1,5 +1,6 @@
 """Sync logic: fetch review requests from RB and reconcile with queue."""
 
+from collections.abc import Callable
 import logging
 
 from .db.queue_db import QueueDatabase
@@ -23,6 +24,7 @@ def sync_queue(
     submitter: str | None = None,
     bot_only: bool = False,
     prune: bool = True,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> dict[str, int]:
     """Fetch recent RRs from Review Board and reconcile with the queue.
 
@@ -45,6 +47,7 @@ def sync_queue(
         submitter: Filter by submitter username.
         bot_only: If True, only fetch RRs assigned to the bot user.
         prune: If True, delete queue items no longer on RB.
+        on_progress: Called with (current, total) after each RR is fetched.
 
     Returns:
         Dict with counts: inserted, updated (reset), skipped, total, pruned.
@@ -52,13 +55,14 @@ def sync_queue(
     from_user = submitter
     if bot_only:
         # Fetch only reviews assigned to the bot
-        pending = rb_client.get_pending_reviews(limit=limit)
+        pending = rb_client.get_pending_reviews(limit=limit, on_progress=on_progress)
     else:
         pending = rb_client.get_recent_reviews(
             days=days,
             limit=limit,
             repository=repository,
             from_user=from_user,
+            on_progress=on_progress,
         )
 
     counts = {
