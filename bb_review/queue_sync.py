@@ -75,7 +75,7 @@ def sync_queue(
     }
 
     for pr in pending:
-        _sync_one(queue_db, pr, counts)
+        _sync_one(rb_client, queue_db, pr, counts)
 
     if prune:
         fetched_rr_ids = {pr.review_request_id for pr in pending}
@@ -120,6 +120,7 @@ def _classify_change(existing: QueueItem | None, pr: PendingReview) -> str:
 
 
 def _sync_one(
+    rb_client: ReviewBoardClient,
     queue_db: QueueDatabase,
     pr: PendingReview,
     counts: dict[str, int],
@@ -136,6 +137,14 @@ def _sync_one(
         pr.diff_revision = existing.diff_revision
 
     change_reason = _classify_change(existing, pr)
+
+    # Distinguish commit-message-only updates from real code changes
+    if change_reason == "new_diff" and existing:
+        if rb_client.diffs_equal(pr.review_request_id, existing.diff_revision, pr.diff_revision):
+            change_reason = "new_msg"
+            logger.info(
+                f"r/{pr.review_request_id}: diff {existing.diff_revision}->{pr.diff_revision} is message-only"
+            )
 
     # Check if there's already a non-fake analysis for this exact diff
     if existing and existing.diff_revision == pr.diff_revision:
@@ -162,6 +171,7 @@ def _sync_one(
             )
             return
 
+    skip_reset = change_reason == "new_msg"
     action, reset = queue_db.upsert(
         review_request_id=pr.review_request_id,
         diff_revision=pr.diff_revision,
@@ -174,6 +184,7 @@ def _sync_one(
         issue_open_count=pr.issue_open_count,
         ship_it_count=pr.ship_it_count,
         change_reason=change_reason,
+        skip_reset=skip_reset,
     )
 
     if action == "inserted":

@@ -90,8 +90,13 @@ class QueueDatabase:
         issue_open_count: int = 0,
         ship_it_count: int = 0,
         change_reason: str = "",
+        skip_reset: bool = False,
     ) -> tuple[str, bool]:
         """Insert or update a queue item during sync.
+
+        Args:
+            skip_reset: If True, skip the status-reset path even when
+                diff_revision increased (e.g. commit-message-only update).
 
         Returns:
             (action, reset) where action is 'inserted' or 'updated' or 'skipped',
@@ -134,7 +139,7 @@ class QueueDatabase:
                 )
                 return ("inserted", False)
 
-            if diff_revision > existing["diff_revision"] and existing["diff_revision"] > 0:
+            if diff_revision > existing["diff_revision"] and existing["diff_revision"] > 0 and not skip_reset:
                 # New diff version: reset to todo, clear analysis link
                 conn.execute(
                     f"""

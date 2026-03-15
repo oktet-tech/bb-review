@@ -25,6 +25,7 @@ STATUS_ICONS: dict[str, str] = {
 
 CHANGE_LABELS: dict[str, str] = {
     "new_diff": "diff",
+    "new_msg": "msg",
     "issues_opened": "+issues",
     "issues_closed": "-issues",
     "ship_it": "ship-it",
