@@ -134,7 +134,7 @@ class QueueDatabase:
                 )
                 return ("inserted", False)
 
-            if diff_revision > existing["diff_revision"]:
+            if diff_revision > existing["diff_revision"] and existing["diff_revision"] > 0:
                 # New diff version: reset to todo, clear analysis link
                 conn.execute(
                     f"""
@@ -169,11 +169,12 @@ class QueueDatabase:
                 )
                 return ("updated", True)
 
-            # Same diff_revision: update metadata, keep status
+            # Same diff_revision (or baseline was 0): update metadata, keep status
             conn.execute(
                 f"""
                 UPDATE {self._table_name}
-                SET repository = COALESCE(?, repository),
+                SET diff_revision = ?,
+                    repository = COALESCE(?, repository),
                     submitter = COALESCE(?, submitter),
                     summary = COALESCE(?, summary),
                     branch = COALESCE(?, branch),
@@ -185,6 +186,7 @@ class QueueDatabase:
                 WHERE review_request_id = ?
                 """,
                 (
+                    diff_revision,
                     repository,
                     submitter,
                     summary,

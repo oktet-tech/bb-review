@@ -108,7 +108,7 @@ def _classify_change(existing: QueueItem | None, pr: PendingReview) -> str:
         return ""
     # Use > not != — if _get_latest_diff_revision transiently fails and
     # returns 0, we'd false-positive on every synced item.
-    if pr.diff_revision > existing.diff_revision:
+    if pr.diff_revision > existing.diff_revision and existing.diff_revision > 0:
         return "new_diff"
     if pr.issue_open_count > existing.issue_open_count:
         return "issues_opened"
