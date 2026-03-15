@@ -430,6 +430,20 @@ class ReviewBoardClient:
         except Exception:
             return None
 
+    def diffs_equal(self, review_request_id: int, rev_a: int, rev_b: int) -> bool:
+        """Check if two diff revisions have identical patch content.
+
+        Used to distinguish real code changes from commit-message-only updates.
+        Returns False on any API error (safer to assume content changed).
+        """
+        try:
+            diff_a = self._fetch_raw_diff(review_request_id, rev_a)
+            diff_b = self._fetch_raw_diff(review_request_id, rev_b)
+            return diff_a == diff_b
+        except Exception as e:
+            logger.debug(f"r/{review_request_id}: diffs_equal({rev_a}, {rev_b}) failed: {e}")
+            return False
+
     def _get_target_commit(self, review_request_id: int, diff_revision: int) -> str | None:
         """Get the target commit ID from the commits endpoint (RB 4.0+).
 
