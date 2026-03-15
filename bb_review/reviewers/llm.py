@@ -15,6 +15,13 @@ from .providers import create_provider
 
 logger = logging.getLogger(__name__)
 
+_SEVERITY_RANK: dict[Severity, int] = {
+    Severity.LOW: 0,
+    Severity.MEDIUM: 1,
+    Severity.HIGH: 2,
+    Severity.CRITICAL: 3,
+}
+
 
 SYSTEM_PROMPT = """You are an expert code reviewer.
 Your task is to analyze code changes (diffs) and provide actionable, specific feedback.
@@ -134,7 +141,19 @@ class Analyzer:
             else:
                 logger.debug(f"Raw response ({len(result_text)} chars): {result_text[:500]}...")
 
-            return self._parse_response(result_text, review_request_id, diff_revision)
+            result = self._parse_response(result_text, review_request_id, diff_revision)
+
+            # Drop comments below the configured severity threshold
+            threshold = guidelines.severity_threshold
+            if threshold != Severity.LOW:
+                before = len(result.comments)
+                min_rank = _SEVERITY_RANK[threshold]
+                result.comments = [c for c in result.comments if _SEVERITY_RANK[c.severity] >= min_rank]
+                dropped = before - len(result.comments)
+                if dropped:
+                    logger.info(f"Filtered {dropped} comments below {threshold.value} severity")
+
+            return result
 
         except (anthropic.APIError, openai.APIError) as e:
             logger.error(f"API error during analysis: {e}")

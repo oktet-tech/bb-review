@@ -31,7 +31,7 @@ class TestLLMResponseParsing:
 
             result = analyzer.analyze(
                 diff="test diff",
-                guidelines=ReviewGuidelines.default(),
+                guidelines=ReviewGuidelines(severity_threshold=Severity.LOW),
                 review_request_id=1,
                 diff_revision=1,
             )

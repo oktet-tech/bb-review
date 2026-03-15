@@ -49,7 +49,7 @@ class TestAnalyzerIntegration:
 
         result = analyzer.analyze(
             diff=sample_diff,
-            guidelines=ReviewGuidelines.default(),
+            guidelines=ReviewGuidelines(severity_threshold=Severity.LOW),
             review_request_id=42738,
             diff_revision=1,
         )
@@ -60,10 +60,11 @@ class TestAnalyzerIntegration:
         assert len(result.comments) == 1
 
     def test_analyze_extracts_comments(self, analyzer_with_mock, sample_response: dict):
-        """Comments parsed from response."""
+        """Comments parsed from response, low severity filtered by default threshold."""
         analyzer, mock = analyzer_with_mock
         mock.set_response(sample_response)
 
+        # Default threshold is medium, so the low-severity comment is filtered
         result = analyzer.analyze(
             diff="test diff",
             guidelines=ReviewGuidelines.default(),
@@ -71,9 +72,24 @@ class TestAnalyzerIntegration:
             diff_revision=1,
         )
 
+        assert len(result.comments) == 1
+        assert result.comments[0].file_path == "src/utils.c"
+        assert result.comments[0].severity == Severity.MEDIUM
+
+    def test_analyze_all_comments_with_low_threshold(self, analyzer_with_mock, sample_response: dict):
+        """All comments kept when severity threshold is low."""
+        analyzer, mock = analyzer_with_mock
+        mock.set_response(sample_response)
+
+        result = analyzer.analyze(
+            diff="test diff",
+            guidelines=ReviewGuidelines(severity_threshold=Severity.LOW),
+            review_request_id=1,
+            diff_revision=1,
+        )
+
         assert len(result.comments) == 2
         assert result.comments[0].file_path == "src/main.c"
-        assert result.comments[0].line_number == 12
         assert result.comments[0].severity == Severity.LOW
         assert result.comments[1].file_path == "src/utils.c"
         assert result.comments[1].severity == Severity.MEDIUM
