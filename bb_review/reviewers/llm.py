@@ -9,18 +9,11 @@ from typing import Any
 import anthropic
 import openai
 
-from ..models import ReviewComment, ReviewFocus, ReviewGuidelines, ReviewResult, Severity
+from ..models import SEVERITY_RANK, ReviewComment, ReviewFocus, ReviewGuidelines, ReviewResult, Severity
 from .providers import create_provider
 
 
 logger = logging.getLogger(__name__)
-
-_SEVERITY_RANK: dict[Severity, int] = {
-    Severity.LOW: 0,
-    Severity.MEDIUM: 1,
-    Severity.HIGH: 2,
-    Severity.CRITICAL: 3,
-}
 
 
 SYSTEM_PROMPT = """You are an expert code reviewer.
@@ -147,8 +140,8 @@ class Analyzer:
             threshold = guidelines.severity_threshold
             if threshold != Severity.LOW:
                 before = len(result.comments)
-                min_rank = _SEVERITY_RANK[threshold]
-                result.comments = [c for c in result.comments if _SEVERITY_RANK[c.severity] >= min_rank]
+                min_rank = SEVERITY_RANK[threshold]
+                result.comments = [c for c in result.comments if SEVERITY_RANK[c.severity] >= min_rank]
                 dropped = before - len(result.comments)
                 if dropped:
                     logger.info(f"Filtered {dropped} comments below {threshold.value} severity")

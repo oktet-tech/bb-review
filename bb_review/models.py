@@ -25,6 +25,14 @@ class Severity(str, Enum):
     CRITICAL = "critical"
 
 
+SEVERITY_RANK: dict["Severity", int] = {
+    Severity.LOW: 0,
+    Severity.MEDIUM: 1,
+    Severity.HIGH: 2,
+    Severity.CRITICAL: 3,
+}
+
+
 @dataclass
 class RepoConfig:
     """Configuration for a single repository."""
