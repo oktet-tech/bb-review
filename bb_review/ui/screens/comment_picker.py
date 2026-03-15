@@ -579,9 +579,7 @@ class CommentPickerScreen(Screen):
         """Finish and return to export."""
         # Filter out skipped analyses
         # Include analyses that have selected comments OR no comments at all (body-only reviews)
-        result = [
-            a for a in self.analyses if not a.skipped and (a.selected_count > 0 or len(a.comments) == 0)
-        ]
+        result = [a for a in self.analyses if not a.skipped]
 
         if not result:
             self.notify("No analyses selected for export", severity="warning")
@@ -593,9 +591,7 @@ class CommentPickerScreen(Screen):
         """Submit selected comments to ReviewBoard."""
         # Filter out skipped analyses
         # Include analyses that have selected comments OR no comments at all (body-only reviews)
-        result = [
-            a for a in self.analyses if not a.skipped and (a.selected_count > 0 or len(a.comments) == 0)
-        ]
+        result = [a for a in self.analyses if not a.skipped]
 
         if not result:
             self.notify("No analyses to submit", severity="warning")
