@@ -9,7 +9,7 @@ import sys
 import click
 
 from ..git import RepoManagerError
-from ..models import ReviewComment, ReviewFocus, ReviewResult, Severity
+from ..models import SEVERITY_RANK, ReviewComment, ReviewFocus, ReviewResult, Severity
 from ..reviewers import ParsedReview, extract_changed_files, parse_opencode_output
 from ..rr import (
     ChainError,
@@ -250,6 +250,21 @@ def save_to_review_db(
                     suggestion=issue.suggestion,
                 )
             )
+
+    # Filter comments below repository severity threshold
+    repo_config_obj = config.get_repo_by_name(repository)
+    if repo_config_obj and Path(repo_config_obj.local_path).expanduser().is_dir():
+        from ..guidelines import load_guidelines
+
+        guidelines = load_guidelines(repo_config_obj.local_path)
+        threshold = guidelines.severity_threshold
+        if threshold != Severity.LOW:
+            min_rank = SEVERITY_RANK[threshold]
+            before = len(comments)
+            comments = [c for c in comments if SEVERITY_RANK[c.severity] >= min_rank]
+            dropped = before - len(comments)
+            if dropped:
+                logger.info(f"Filtered {dropped} comments below {threshold.value} severity")
 
     # Attach diff hunks to comments
     if raw_diff:
