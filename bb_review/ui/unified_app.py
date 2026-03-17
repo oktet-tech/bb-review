@@ -37,10 +37,29 @@ TAB_MY_REVIEWS = "tab-my-reviews"
 TAB_WORK = "tab-work"
 
 
+def _get_version() -> str:
+    """Return version string with git short hash when available."""
+    import subprocess
+
+    from bb_review import __version__
+
+    try:
+        rev = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=Path(__file__).parent.parent.parent,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        return f"v{__version__} ({rev})"
+    except Exception:
+        return f"v{__version__}"
+
+
 class UnifiedApp(App):
     """Unified interactive TUI with tabbed queue + reviews panes."""
 
     TITLE = "BB Review Interactive"
+    SUB_TITLE = ""
 
     BINDINGS = [
         Binding("question_mark", "command_palette", "Commands"),
@@ -99,6 +118,7 @@ class UnifiedApp(App):
         config_path: Path | None = None,
     ) -> None:
         super().__init__()
+        self.sub_title = _get_version()
         self._queue_items = queue_items or []
         self._queue_db = queue_db
         self._q_filter_status = queue_filter_status
