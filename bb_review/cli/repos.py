@@ -53,6 +53,24 @@ def repos_list(ctx: click.Context) -> None:
             click.echo(f"  Commit: {repo.get('current_commit', 'unknown')}")
 
 
+def _deploy_guidelines(repo_manager: RepoManager, repo_name: str) -> None:
+    """Copy guidelines from guides/ to repo if not already present."""
+    try:
+        repo_path = repo_manager.get_local_path(repo_name)
+    except RepoManagerError:
+        return
+
+    target = repo_path / ".ai-review.yaml"
+    if target.exists():
+        return
+
+    guides_dir = Path(__file__).parent.parent.parent / "guides"
+    guide_file = guides_dir / f"{repo_name}.ai-review.yaml"
+    if guide_file.exists():
+        shutil.copy(guide_file, target)
+        click.echo(f"    Deployed guidelines: {guide_file.name}")
+
+
 @repos.command("sync")
 @click.argument("repo_name", required=False)
 @click.pass_context
@@ -71,6 +89,7 @@ def repos_sync(ctx: click.Context, repo_name: str | None) -> None:
         try:
             repo_manager.ensure_clone(repo_name)
             repo_manager.fetch_all(repo_name)
+            _deploy_guidelines(repo_manager, repo_name)
             click.echo(f"  ✓ {repo_name} synced")
         except RepoManagerError as e:
             click.echo(f"  ✗ {repo_name}: {e}", err=True)
@@ -82,6 +101,8 @@ def repos_sync(ctx: click.Context, repo_name: str | None) -> None:
         for name, success in results.items():
             status = "✓" if success else "✗"
             click.echo(f"  {status} {name}")
+            if success:
+                _deploy_guidelines(repo_manager, name)
 
 
 @repos.command("init-guidelines")
