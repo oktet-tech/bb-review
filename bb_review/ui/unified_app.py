@@ -557,7 +557,7 @@ class UnifiedApp(App):
             repo_config = repo_manager.get_repo_by_rb_name(repo_name)
             if repo_config:
                 try:
-                    guidelines = load_guidelines(repo_config.local_path)
+                    guidelines = load_guidelines(repo_config.local_path, repo_name=repo_config.name)
                     if guidelines.context:
                         guidelines_text = guidelines.context
                 except Exception:

@@ -256,7 +256,7 @@ def save_to_review_db(
     if repo_config_obj and Path(repo_config_obj.local_path).expanduser().is_dir():
         from ..guidelines import load_guidelines
 
-        guidelines = load_guidelines(repo_config_obj.local_path)
+        guidelines = load_guidelines(repo_config_obj.local_path, repo_name=repository)
         threshold = guidelines.severity_threshold
         if threshold != Severity.LOW:
             min_rank = SEVERITY_RANK[threshold]

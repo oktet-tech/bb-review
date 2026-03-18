@@ -252,7 +252,7 @@ def run_claude_for_review(
     verbose: bool = False,
 ) -> str:
     """Run Claude Code analysis for a single review."""
-    guidelines = load_guidelines(repo_path)
+    guidelines = load_guidelines(repo_path, repo_name=repo_config.name)
 
     warnings = validate_guidelines(guidelines)
     for warning in warnings:
@@ -319,7 +319,7 @@ def run_claude_for_series(
     verbose: bool = False,
 ) -> str:
     """Run Claude Code analysis for an entire patch series."""
-    guidelines = load_guidelines(repo_path)
+    guidelines = load_guidelines(repo_path, repo_name=repo_config.name)
 
     warnings = validate_guidelines(guidelines)
     for warning in warnings:

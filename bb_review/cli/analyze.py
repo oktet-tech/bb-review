@@ -461,7 +461,7 @@ def run_analysis(
         verbose: If True, request detailed multi-paragraph explanations.
     """
     # Load guidelines
-    guidelines = load_guidelines(repo_path)
+    guidelines = load_guidelines(repo_path, repo_name=repo_name)
 
     # Validate guidelines
     warnings = validate_guidelines(guidelines)

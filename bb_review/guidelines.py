@@ -23,14 +23,19 @@ GUIDELINES_ALTERNATIVES = [
 ]
 
 
-def load_guidelines(repo_path: Path) -> ReviewGuidelines:
+def load_guidelines(
+    repo_path: Path,
+    repo_name: str | None = None,
+) -> ReviewGuidelines:
     """Load review guidelines from a repository.
 
-    Searches for .ai-review.yaml in the repository root.
-    Falls back to defaults if not found.
+    Search order:
+    1. .ai-review.yaml (or alternatives) in the repository root
+    2. guides/{repo_name}.ai-review.yaml in the bb_review project dir
 
     Args:
         repo_path: Path to repository root.
+        repo_name: Repository name for guides/ fallback lookup.
 
     Returns:
         ReviewGuidelines instance.
@@ -46,8 +51,18 @@ def load_guidelines(repo_path: Path) -> ReviewGuidelines:
                 guidelines_path = alt_path
                 break
         else:
-            logger.debug(f"No guidelines file found in {repo_path}, using defaults")
-            return ReviewGuidelines.default()
+            # Try guides/ directory in the bb_review project
+            if repo_name:
+                guides_dir = Path(__file__).parent.parent / "guides"
+                guide_file = guides_dir / f"{repo_name}.ai-review.yaml"
+                if guide_file.exists():
+                    guidelines_path = guide_file
+                else:
+                    logger.debug(f"No guidelines file found in {repo_path} or guides/, using defaults")
+                    return ReviewGuidelines.default()
+            else:
+                logger.debug(f"No guidelines file found in {repo_path}, using defaults")
+                return ReviewGuidelines.default()
 
     logger.info(f"Loading guidelines from {guidelines_path}")
 
