@@ -231,11 +231,15 @@ class QueuePane(Container):
         return [rr_id] if rr_id else []
 
     def _apply_status(self, new_status: QueueStatus) -> None:
-        """Apply a status change to target items."""
+        """Apply a status change to target items, then advance cursor."""
+        acting_on_cursor = not self.selected
         rr_ids = self._get_target_rr_ids()
         if not rr_ids:
             self.app.notify("No items to update", severity="warning")
             return
+
+        table = self.query_one("#queue-table", DataTable)
+        cursor_row = table.cursor_row
 
         updated = 0
         errors: list[str] = []
@@ -252,6 +256,13 @@ class QueuePane(Container):
             self.app.notify(errors[0], severity="warning")
 
         self.refresh_data()
+
+        # Advance cursor after single-item action, restore position for multi-select
+        if cursor_row is not None:
+            new_row = cursor_row + 1 if acting_on_cursor else cursor_row
+            max_row = table.row_count - 1
+            if max_row >= 0:
+                table.move_cursor(row=min(new_row, max_row))
 
     def refresh_data(self, items: list[QueueItem] | None = None) -> None:
         """Refresh table with new or re-queried items."""
@@ -313,6 +324,9 @@ class QueuePane(Container):
             self.app.notify("No items to delete", severity="warning")
             return
 
+        table = self.query_one("#queue-table", DataTable)
+        cursor_row = table.cursor_row
+
         deleted = 0
         for rr_id in rr_ids:
             if self.queue_db.delete_item(rr_id):
@@ -323,6 +337,12 @@ class QueuePane(Container):
             self.app.notify(f"Deleted {deleted} item(s)")
 
         self.refresh_data()
+
+        # Restore cursor position (items shifted up after delete)
+        if cursor_row is not None:
+            max_row = table.row_count - 1
+            if max_row >= 0:
+                table.move_cursor(row=min(cursor_row, max_row))
 
     def action_show_actions(self) -> None:
         """Open the action picker modal."""
