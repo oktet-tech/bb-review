@@ -411,6 +411,7 @@ class ProcessOptionsScreen(ModalScreen[tuple[str, str | None] | None]):
         Binding("o", "pick_opus", "Opus", show=False),
         Binding("l", "pick_llm", "LLM", show=False),
         Binding("a", "pick_opencode", "OpenCode", show=False),
+        Binding("x", "pick_codex", "Codex", show=False),
         Binding("enter", "select", "Select", priority=True),
         Binding("escape", "cancel", "Cancel"),
     ]
@@ -458,6 +459,7 @@ class ProcessOptionsScreen(ModalScreen[tuple[str, str | None] | None]):
                 Option("\\[O] Claude Code Opus", id="opus"),
                 Option("\\[L] LLM direct", id="llm"),
                 Option("\\[A] OpenCode agent", id="opencode"),
+                Option("\\[X] Codex agent", id="codex"),
                 None,  # Separator
                 Option("\\[Esc] Cancel", id="cancel"),
                 id="method-list",
@@ -468,7 +470,7 @@ class ProcessOptionsScreen(ModalScreen[tuple[str, str | None] | None]):
         option_list = self.query_one("#method-list", OptionList)
         option_list.focus()
         # Map config method names to option indices
-        method_to_idx = {"claude": 0, "llm": 2, "opencode": 3}
+        method_to_idx = {"claude": 0, "llm": 2, "opencode": 3, "codex": 4}
         idx = method_to_idx.get(self._default_method, 0)
         option_list.highlighted = idx
 
@@ -488,6 +490,7 @@ class ProcessOptionsScreen(ModalScreen[tuple[str, str | None] | None]):
             "opus": ("claude", "opus"),
             "llm": ("llm", None),
             "opencode": ("opencode", None),
+            "codex": ("codex", None),
         }
         result = result_map.get(option_id)
         if result:
@@ -506,6 +509,9 @@ class ProcessOptionsScreen(ModalScreen[tuple[str, str | None] | None]):
 
     def action_pick_opencode(self) -> None:
         self.dismiss(("opencode", None))
+
+    def action_pick_codex(self) -> None:
+        self.dismiss(("codex", None))
 
     def action_cancel(self) -> None:
         self.dismiss(None)
