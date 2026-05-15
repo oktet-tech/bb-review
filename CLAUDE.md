@@ -51,6 +51,7 @@ uv run bb-review queue sync                           # Sync pending RRs from RB
 uv run bb-review queue process                        # Process queued items
 uv run bb-review repos sync                           # Fetch/update repositories
 uv run bb-review db list                              # List stored analyses
+uv run bb-review transcript _files/t.json             # Pretty-print agent transcript
 ```
 
 ## Architecture
@@ -68,7 +69,8 @@ Review Board --> bb_review CLI --> LLM API (Anthropic/OpenRouter/OpenAI)
 ### Package Structure (`bb_review/`)
 
 - **`cli/`** -- Click CLI commands. Each file registers on the `main` group. Config lazy-loaded via `get_config(ctx)`.
-  - `analyze.py`, `opencode.py`, `claude_code.py`, `codex.py` -- Four review backends
+  - `analyze.py`, `opencode.py`, `claude_code.py`, `codex.py` -- Four review backends (all support `--transcript`)
+  - `transcript.py` -- Pretty-print agent transcripts saved by `--transcript`
   - `submit.py` -- Post reviews to RB
   - `interactive.py` -- TUI launcher
   - `comments.py` -- Dump RR comments with source context
@@ -117,7 +119,8 @@ Review Board --> bb_review CLI --> LLM API (Anthropic/OpenRouter/OpenAI)
   - `models.py` -- CommentStatus, SelectableComment, ExportableAnalysis
 - **`config.py`** -- Pydantic models: Config, ReviewBoardConfig, LLMConfig, OpenCodeConfig, ClaudeCodeConfig, CodexConfig, CocoIndexConfig, QueueConfig, ReviewDBConfig. Env var `${VAR}` resolution. Per-repo `review_method` override.
 - **`models.py`** -- Core data models: ReviewResult, ReviewComment, ChainReviewResult, ReviewGuidelines, RepoConfig, Severity (LOW/MEDIUM/HIGH/CRITICAL), ReviewFocus
-- **`guidelines.py`** -- Load `.ai-review.yaml` from repo root or `guides/{repo}.ai-review.yaml` fallback
+- **`guidelines.py`** -- Load `.ai-review.yaml` + rich guide dirs (`guides/{repo}/`). Subsystem trigger matching against diff files. `load_rich_context()` concatenates technical-patterns.md, false-positive-guide.md, matched subsystem guides.
+- **`guidelines_deploy.py`** -- Deploy skills/commands from `guides/{repo}/` into repo checkout's agent config dir (`.claude/commands/`, `.codex/`, `.opencode/`) before agent launch.
 - **`poller.py`** -- Polling daemon with SQLite state tracking, deduplication on (rr_id, diff_revision)
 
 ### Review Processing Flow
@@ -174,6 +177,7 @@ Semantic commit messages: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore
 - Main config: `./config.yaml` or `~/.bb_review/config.yaml` (contains secrets, git-ignored)
 - Template: `config.example.yaml`
 - Per-repo review guidelines: `guides/{repo}.ai-review.yaml` and `.ai-review.yaml` in repo root
+- Rich per-repo guides: `guides/{repo}/` dirs with skills, commands, technical patterns, subsystems (see `guides/README.md`)
 - Per-repo review method override: `review_method: llm|opencode|claude|codex` in repository config
 - State DB: `~/.bb_review/state.db` (polling)
 - Reviews DB: `~/.bb_review/reviews.db` (analyses, queue, triage)

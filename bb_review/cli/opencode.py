@@ -224,7 +224,19 @@ def run_opencode_for_review(
     verbose: bool = False,
 ) -> str:
     """Run OpenCode analysis for a single review."""
-    guidelines = load_guidelines(repo_path, repo_name=repo_config.name)
+    changed_file_infos = extract_changed_files(raw_diff)
+    changed_files = [f["path"] for f in changed_file_infos]
+
+    from ..guidelines_deploy import cleanup_deployed, deploy_agent_skills
+
+    deploy_result = deploy_agent_skills(repo_path, repo_config.name, "opencode")
+
+    guidelines = load_guidelines(
+        repo_path,
+        repo_name=repo_config.name,
+        changed_files=None if deploy_result.has_skill else changed_files,
+        skip_rich_context=deploy_result.has_skill,
+    )
 
     warnings = validate_guidelines(guidelines)
     for warning in warnings:
@@ -233,16 +245,21 @@ def run_opencode_for_review(
     if guidelines.ignore_paths:
         raw_diff = filter_diff_by_paths(raw_diff, guidelines.ignore_paths)
 
-    guidelines_context = ""
-    if guidelines.context:
-        guidelines_context = guidelines.context
-    if guidelines.custom_rules:
-        if guidelines_context:
-            guidelines_context += "\n\nCustom rules:\n"
-        guidelines_context += "\n".join(f"- {rule}" for rule in guidelines.custom_rules)
+    # OpenCode uses flat deploy -- convert to file list for prompt
+    skill_files = (
+        [str(p.relative_to(repo_path)) for p in deploy_result.deployed_files]
+        if deploy_result.deployed_files
+        else None
+    )
 
-    changed_file_infos = extract_changed_files(raw_diff)
-    changed_files = [f["path"] for f in changed_file_infos]
+    guidelines_context = ""
+    if not skill_files:
+        if guidelines.context:
+            guidelines_context = guidelines.context
+        if guidelines.custom_rules:
+            if guidelines_context:
+                guidelines_context += "\n\nCustom rules:\n"
+            guidelines_context += "\n".join(f"- {rule}" for rule in guidelines.custom_rules)
 
     focus_areas = [f.value for f in guidelines.focus]
     prompt = build_review_prompt(
@@ -254,6 +271,7 @@ def run_opencode_for_review(
         at_reviewed_state=at_reviewed_state,
         changed_files=changed_files,
         verbose=verbose,
+        skill_files=skill_files,
     )
 
     click.echo(f"    Running OpenCode analysis ({len(raw_diff)} chars diff)...")
@@ -273,6 +291,8 @@ def run_opencode_for_review(
         raise click.ClickException(f"OpenCode timed out after {timeout}s") from e
     except OpenCodeError as e:
         raise click.ClickException(str(e)) from e
+    finally:
+        cleanup_deployed(deploy_result)
 
 
 def _run_api_review(

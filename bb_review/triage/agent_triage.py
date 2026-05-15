@@ -7,6 +7,7 @@ TriageAnalyzer.
 
 import json
 import logging
+from pathlib import Path
 import shutil
 import subprocess
 import sys
@@ -79,7 +80,7 @@ def run_claude_triage(
     """
     binary = shutil.which("claude")
     if not binary:
-        binary = str(__import__("pathlib").Path(sys.executable).parent / "claude")
+        binary = str(Path(sys.executable).parent / "claude")
 
     cmd = [
         binary,
@@ -129,7 +130,7 @@ def run_opencode_triage(
     """
     binary = shutil.which("opencode")
     if not binary:
-        binary = str(__import__("pathlib").Path(sys.executable).parent / "opencode")
+        binary = str(Path(sys.executable).parent / "opencode")
 
     cmd = [
         binary,
@@ -177,13 +178,15 @@ def run_codex_triage(
     Same interface as run_claude_triage but uses the codex binary.
     Codex uses `codex exec` with stdin prompt and -o for output capture.
     """
+    import os
     import tempfile
 
     binary = shutil.which("codex")
     if not binary:
         raise RuntimeError("Codex binary not found in PATH")
 
-    _, output_path = tempfile.mkstemp(suffix=".txt", prefix="bb_review_triage_")
+    fd, output_path = tempfile.mkstemp(suffix=".txt", prefix="bb_review_triage_")
+    os.close(fd)
 
     try:
         full_prompt = f"{TRIAGE_SYSTEM_PROMPT}\n\n{prompt}"
@@ -215,8 +218,6 @@ def run_codex_triage(
             raise RuntimeError(f"Codex CLI exited with code {result.returncode}")
 
         # Read output from -o file
-        from pathlib import Path
-
         output_file = Path(output_path)
         if output_file.exists() and output_file.stat().st_size > 0:
             response_text = output_file.read_text().strip()
@@ -228,7 +229,7 @@ def run_codex_triage(
         return parse_triage_response(response_text, comments, rr_id)
     finally:
         try:
-            __import__("pathlib").Path(output_path).unlink(missing_ok=True)
+            Path(output_path).unlink(missing_ok=True)
         except Exception:
             pass
 

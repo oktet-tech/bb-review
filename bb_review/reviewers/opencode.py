@@ -68,6 +68,7 @@ def build_review_prompt(
     at_reviewed_state: bool = False,
     changed_files: list[str] | None = None,
     verbose: bool = False,
+    skill_files: list[str] | None = None,
 ) -> str:
     """Build the review prompt for OpenCode.
 
@@ -121,7 +122,17 @@ To review effectively:
    (lines starting with +)
 """
 
-    if guidelines_context:
+    if skill_files:
+        files_list = "\n".join(f"- Read `{f}`" for f in skill_files)
+        prompt += f"""
+IMPORTANT: This repository has project-specific review guides deployed in the working \
+directory. You MUST read them before starting your review:
+{files_list}
+
+These contain project-specific conventions, technical patterns, false positive rules, \
+and subsystem-specific guidance. Follow them strictly.
+"""
+    elif guidelines_context:
         prompt += f"""
 Guidelines:
 {guidelines_context}
@@ -183,6 +194,7 @@ def build_series_review_prompt(
     guidelines_context: str,
     focus_areas: list[str],
     verbose: bool = False,
+    skill_files: list[str] | None = None,
 ) -> str:
     """Build a prompt for reviewing an entire patch series as one unit.
 
@@ -224,7 +236,17 @@ To review effectively:
 5. Line numbers in your findings must match the actual file line numbers
 """
 
-    if guidelines_context:
+    if skill_files:
+        files_list = "\n".join(f"- Read `{f}`" for f in skill_files)
+        prompt += f"""
+IMPORTANT: This repository has project-specific review guides deployed in the working \
+directory. You MUST read them before starting your review:
+{files_list}
+
+These contain project-specific conventions, technical patterns, false positive rules, \
+and subsystem-specific guidance. Follow them strictly.
+"""
+    elif guidelines_context:
         prompt += f"""
 Guidelines:
 {guidelines_context}

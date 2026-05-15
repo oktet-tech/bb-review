@@ -358,7 +358,9 @@ def analyze(
 
                 # Save to file if requested
                 if auto_output:
-                    output_path = Path(f"review_{rr_id}.json")
+                    from ._review_runner import review_output_path
+
+                    output_path = review_output_path(rr_id)
                     save_review_to_file(result, output_path)
                     click.echo(f"  Saved: {output_path}")
                 elif output and len(pending) == 1:

@@ -62,3 +62,11 @@ reviews/
 
 # Output files (review exports, comment dumps)
 _files/
+
+# Design docs and plans (local working notes)
+docs/plans/
+
+# Per-repo review guides (project-specific, not version controlled)
+# Only guides/README.md is tracked as template documentation
+guides/*
+!guides/README.md

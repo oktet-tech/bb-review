@@ -507,7 +507,9 @@ def _process_item_agent(
     )
 
     # Write review file (auto-output)
-    output_file = Path(f"review_{rr_id}.json")
+    from ._review_runner import review_output_path
+
+    output_file = review_output_path(rr_id)
     output_file.write_text(json.dumps(output_data, indent=2))
     click.echo(f"  Saved: {output_file}")
 

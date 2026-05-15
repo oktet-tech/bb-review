@@ -252,7 +252,21 @@ def run_claude_for_review(
     verbose: bool = False,
 ) -> str:
     """Run Claude Code analysis for a single review."""
-    guidelines = load_guidelines(repo_path, repo_name=repo_config.name)
+    changed_file_infos = extract_changed_files(raw_diff)
+    changed_files = [f["path"] for f in changed_file_infos]
+
+    # Deploy skills/commands into repo checkout for native agent loading
+    from ..guidelines_deploy import cleanup_deployed, deploy_agent_skills
+
+    deploy_result = deploy_agent_skills(repo_path, repo_config.name, "claude")
+
+    # When skill files are deployed, skip rich context loading -- the agent reads files directly
+    guidelines = load_guidelines(
+        repo_path,
+        repo_name=repo_config.name,
+        changed_files=None if deploy_result.has_skill else changed_files,
+        skip_rich_context=deploy_result.has_skill,
+    )
 
     warnings = validate_guidelines(guidelines)
     for warning in warnings:
@@ -261,16 +275,16 @@ def run_claude_for_review(
     if guidelines.ignore_paths:
         raw_diff = filter_diff_by_paths(raw_diff, guidelines.ignore_paths)
 
+    # When a skill is deployed, the agent invokes it directly.
+    # Only build inline guidelines context as fallback.
     guidelines_context = ""
-    if guidelines.context:
-        guidelines_context = guidelines.context
-    if guidelines.custom_rules:
-        if guidelines_context:
-            guidelines_context += "\n\nCustom rules:\n"
-        guidelines_context += "\n".join(f"- {rule}" for rule in guidelines.custom_rules)
-
-    changed_file_infos = extract_changed_files(raw_diff)
-    changed_files = [f["path"] for f in changed_file_infos]
+    if not deploy_result.has_skill:
+        if guidelines.context:
+            guidelines_context = guidelines.context
+        if guidelines.custom_rules:
+            if guidelines_context:
+                guidelines_context += "\n\nCustom rules:\n"
+            guidelines_context += "\n".join(f"- {rule}" for rule in guidelines.custom_rules)
 
     focus_areas = [f.value for f in guidelines.focus]
     prompt = build_review_prompt(
@@ -282,7 +296,13 @@ def run_claude_for_review(
         at_reviewed_state=at_reviewed_state,
         changed_files=changed_files,
         verbose=verbose,
+        skill_name=deploy_result.skill_name,
     )
+
+    # Ensure Skill tool is allowed when a skill is deployed
+    effective_tools = allowed_tools
+    if deploy_result.has_skill and allowed_tools and "Skill" not in allowed_tools:
+        effective_tools = [*allowed_tools, "Skill"]
 
     click.echo(f"    Running Claude Code analysis ({len(raw_diff)} chars diff)...")
 
@@ -295,7 +315,7 @@ def run_claude_for_review(
             timeout=timeout,
             max_turns=max_turns,
             binary_path=binary_path,
-            allowed_tools=allowed_tools,
+            allowed_tools=effective_tools,
             at_reviewed_state=at_reviewed_state,
             mcp_config=mcp_config,
         )
@@ -303,6 +323,8 @@ def run_claude_for_review(
         raise click.ClickException(f"Claude Code timed out after {timeout}s") from e
     except ClaudeCodeError as e:
         raise click.ClickException(str(e)) from e
+    finally:
+        cleanup_deployed(deploy_result)
 
 
 def run_claude_for_series(
@@ -319,19 +341,28 @@ def run_claude_for_series(
     verbose: bool = False,
 ) -> str:
     """Run Claude Code analysis for an entire patch series."""
-    guidelines = load_guidelines(repo_path, repo_name=repo_config.name)
+    from ..guidelines_deploy import deploy_agent_skills
+
+    deploy_result = deploy_agent_skills(repo_path, repo_config.name, "claude")
+
+    guidelines = load_guidelines(
+        repo_path,
+        repo_name=repo_config.name,
+        skip_rich_context=deploy_result.has_skill,
+    )
 
     warnings = validate_guidelines(guidelines)
     for warning in warnings:
         click.echo(f"    Warning: {warning}", err=True)
 
     guidelines_context = ""
-    if guidelines.context:
-        guidelines_context = guidelines.context
-    if guidelines.custom_rules:
-        if guidelines_context:
-            guidelines_context += "\n\nCustom rules:\n"
-        guidelines_context += "\n".join(f"- {rule}" for rule in guidelines.custom_rules)
+    if not deploy_result.has_skill:
+        if guidelines.context:
+            guidelines_context = guidelines.context
+        if guidelines.custom_rules:
+            if guidelines_context:
+                guidelines_context += "\n\nCustom rules:\n"
+            guidelines_context += "\n".join(f"- {rule}" for rule in guidelines.custom_rules)
 
     focus_areas = [f.value for f in guidelines.focus]
     prompt = build_series_review_prompt(
@@ -341,7 +372,12 @@ def run_claude_for_series(
         guidelines_context=guidelines_context,
         focus_areas=focus_areas,
         verbose=verbose,
+        skill_name=deploy_result.skill_name,
     )
+
+    effective_tools = allowed_tools
+    if deploy_result.has_skill and allowed_tools and "Skill" not in allowed_tools:
+        effective_tools = [*allowed_tools, "Skill"]
 
     click.echo("    Running Claude Code series analysis...")
 
@@ -354,7 +390,7 @@ def run_claude_for_series(
             timeout=timeout,
             max_turns=max_turns,
             binary_path=binary_path,
-            allowed_tools=allowed_tools,
+            allowed_tools=effective_tools,
             at_reviewed_state=True,
             mcp_config=mcp_config,
         )

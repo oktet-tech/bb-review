@@ -7,7 +7,7 @@ Big Brother AI-powered code review system for Review Board.
 BB Review integrates with Review Board to provide automated AI code reviews. When a designated bot user is added as a reviewer, the system analyzes the diff and posts inline comments.
 
 **Key Features:**
-- Multiple analysis modes: direct LLM, OpenCode agent, or Claude Code CLI with full codebase context
+- Multiple analysis modes: direct LLM, OpenCode agent, Claude Code CLI, or Codex CLI with full codebase context
 - Semantic code search via CocoIndex (optional, uses local embeddings - no API needed)
 - Reviews database for analysis history, tracking, and export
 - Review/edit/submit workflow for human oversight
@@ -26,6 +26,7 @@ BB Review integrates with Review Board to provide automated AI code reviews. Whe
 - (Optional) Docker for PostgreSQL+pgvector (CocoIndex semantic search)
 - (Optional) [OpenCode](https://opencode.ai) for enhanced analysis mode
 - (Optional) [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI for agentic analysis mode
+- (Optional) [Codex](https://github.com/openai/codex) CLI for OpenAI agentic analysis mode
 
 ### Step 1: Install uv
 
@@ -141,10 +142,10 @@ uv run bb-review cocoindex status-db
 uv run bb-review analyze <review-id> -O
 
 # Review the JSON file, then submit as draft
-uv run bb-review submit review_<review-id>.json
+uv run bb-review submit _files/review_<review-id>.json
 
 # After verifying, publish
-uv run bb-review submit review_<review-id>.json --publish
+uv run bb-review submit _files/review_<review-id>.json --publish
 ```
 
 **Polling daemon:**
@@ -158,27 +159,28 @@ uv run bb-review poll daemon
 ### Quick Start: Analyze and Submit
 
 ```bash
-# 1. Analyze a review (saves to review_42738.json by default)
+# 1. Analyze a review (saves to _files/review_42738.json by default)
 uv run bb-review analyze 42738 -O
 
 # 2. Review the generated JSON file, edit if needed
 
 # 3. Submit as draft (only you can see it)
-uv run bb-review submit review_42738.json
+uv run bb-review submit _files/review_42738.json
 
 # 4. After verifying in RB UI, publish to everyone
-uv run bb-review submit review_42738.json --publish
+uv run bb-review submit _files/review_42738.json --publish
 ```
 
 ### Analysis Commands
 
-All three analysis modes (`analyze`, `opencode`, `claude`) work similarly:
+All four analysis modes (`analyze`, `opencode`, `claude`, `codex`) work similarly:
 
 ```bash
-# Run analysis, save to auto-generated file (review_{id}.json)
+# Run analysis, save to auto-generated file (_files/review_{id}.json)
 uv run bb-review analyze 42738 -O
 uv run bb-review opencode 42738 -O
 uv run bb-review claude 42738 -O
+uv run bb-review codex 42738 -O
 
 # Save to custom file
 uv run bb-review analyze 42738 -o my_review.json
@@ -250,6 +252,38 @@ uv run bb-review claude 42738 --mcp-config /path/to/repo/.mcp.json -O
 
 Set `mcp_config` in `config.yaml` to avoid passing `--mcp-config` every time.
 
+### Codex CLI
+
+The `codex` command uses OpenAI's Codex CLI in non-interactive (`exec`) mode
+with sandbox isolation. Codex can read files and run commands in the repo
+to understand context before reporting issues.
+
+```bash
+# Basic review (resolves dependency chain automatically)
+uv run bb-review codex 42738 -O
+
+# Override model (e.g. o3, gpt-4.1)
+uv run bb-review codex 42738 -m o3 -O
+
+# Allow write access to workspace (default: read-only sandbox)
+uv run bb-review codex 42738 --sandbox workspace-write -O
+
+# Dry run / fake review for testing
+uv run bb-review codex 42738 --dry-run
+uv run bb-review codex 42738 --fake-review -O
+```
+
+Configure defaults in `config.yaml`:
+
+```yaml
+codex:
+  enabled: true
+  # model: "o3"             # Default model override
+  timeout: 300              # Seconds
+  binary_path: "codex"      # Path to codex binary
+  sandbox: "read-only"      # read-only or workspace-write
+```
+
 ### Patch Series (Chain Review)
 
 Review chains of dependent patches:
@@ -288,13 +322,13 @@ Submit reviews to Review Board:
 
 ```bash
 # Submit as draft (default) - only you can see it
-uv run bb-review submit review_42738.json
+uv run bb-review submit _files/review_42738.json
 
 # Submit and publish - visible to everyone
-uv run bb-review submit review_42738.json --publish
+uv run bb-review submit _files/review_42738.json --publish
 
 # Preview what would be submitted
-uv run bb-review submit review_42738.json --dry-run
+uv run bb-review submit _files/review_42738.json --dry-run
 ```
 
 ### Review JSON File Structure
@@ -433,6 +467,7 @@ uv run bb-review queue process                     # Analyze up to 5 'next' item
 uv run bb-review queue process --count 10          # Process more at once
 uv run bb-review queue process --dry-run           # Preview without running
 uv run bb-review queue process --fake-review       # Mock analysis for testing
+uv run bb-review queue process --method codex       # Use Codex instead of default
 uv run bb-review queue process --model opus        # Override LLM model
 uv run bb-review queue process --submit            # Auto-submit to RB after analysis
 
@@ -444,9 +479,14 @@ uv run bb-review queue list --status todo          # See what needs attention
 Queue states: `todo` -> `next` -> `in_progress` -> `done`/`failed`.
 Items can also be set to `ignore`. Failed items can be retried via `set --status next`.
 
-## Per-Repository Configuration
+## Per-Repository Review Guides
 
-Create `.ai-review.yaml` in your repository root to customize review behavior:
+BB Review supports two levels of per-repo review customization:
+
+### Simple: `.ai-review.yaml`
+
+Create `.ai-review.yaml` in your repository root (or `guides/{repo}.ai-review.yaml`
+in bb-review's directory) for basic config:
 
 ```yaml
 focus:
@@ -454,20 +494,40 @@ focus:
   - security
   - performance
 
-context: |
-  This is a C network stack. Focus on memory safety,
-  buffer overflows, and proper error handling.
-
 ignore_paths:
   - vendor/
   - generated/
 
 severity_threshold: medium
-
-custom_rules:
-  - Always check return values of memory allocation functions
-  - Ensure all network buffers are properly bounded
 ```
+
+### Rich: Guide Directories
+
+For deeper review guidance, create a directory structure under `guides/{repo}/`:
+
+```
+guides/{repo}/
+  skills/{repo}.md                 # Project skill -- auto-loaded by agents
+  slash-commands/{repo}-review.md  # Review protocol/workflow
+  technical-patterns.md            # Correct patterns, anti-patterns, checklist
+  false-positive-guide.md          # What NOT to report (optional)
+  subsystem/
+    subsystem.md                   # Trigger table: path/symbol -> guide file
+    {name}.md                      # Per-subsystem rules (loaded on match)
+```
+
+See `guides/README.md` for the full template and instructions.
+
+**How guides are consumed:**
+
+- **Agent methods** (Claude/Codex/OpenCode): Skills and commands are deployed
+  into the repo checkout's local agent config (e.g., `.claude/commands/`) before
+  the agent launches. The agent loads them natively.
+- **Direct LLM**: `guidelines.py` reads technical-patterns.md, matches subsystem
+  triggers against the diff, and concatenates relevant content into the prompt.
+
+Guide directories are gitignored -- they contain project-specific content that
+stays local. Only `guides/README.md` is tracked as template documentation.
 
 ## Configuration Reference
 
@@ -521,8 +581,8 @@ uv run bb-review repos mcp-setup net-drv-ts
 3. For each review:
    - Fetches the diff from Review Board
    - Checks out the base/target commit in the local repo
-   - Loads per-repo guidelines from `.ai-review.yaml`
-   - Analyzes the changes using an LLM (direct, OpenCode, or Claude Code)
+   - Loads per-repo guidelines from `.ai-review.yaml` and `guides/{repo}/`
+   - Analyzes the changes using an LLM (direct, OpenCode, Claude Code, or Codex)
    - Posts inline comments back to Review Board
 
 ## Troubleshooting
@@ -560,6 +620,17 @@ uv run bb-review -v analyze <review-id> --dry-run
 uv run bb-review analyze <review-id> --dump-response /tmp/llm.txt -O
 uv run bb-review opencode <review-id> --dump-response /tmp/opencode.txt -O
 uv run bb-review claude <review-id> --dump-response /tmp/claude.txt -O
+
+# Save full agent conversation transcript (all tool calls, messages, costs)
+uv run bb-review claude <review-id> --transcript _files/transcript.json -O
+uv run bb-review codex <review-id> --transcript _files/transcript.jsonl -O
+uv run bb-review opencode <review-id> --transcript _files/transcript.log -O
+
+# Pretty-print a transcript (collapses noise, highlights tool calls and costs)
+uv run bb-review transcript _files/transcript.json
+
+# Full JSON pretty-print
+uv run bb-review transcript --raw _files/transcript.json
 ```
 
 ## Claude Code Integration

@@ -448,7 +448,7 @@ class TestRunSingleReview:
             auto_output=True,
             fallback=False,
         )
-        assert (tmp_path / "review_100.json").exists()
+        assert (tmp_path / "_files" / "review_100.json").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -578,8 +578,8 @@ class TestRunChainReview:
             fallback=False,
             keep_branch=False,
         )
-        assert (tmp_path / "review_100.json").exists()
-        assert (tmp_path / "review_101.json").exists()
+        assert (tmp_path / "_files" / "review_100.json").exists()
+        assert (tmp_path / "_files" / "review_101.json").exists()
 
     def test_previous_patch_committed(self, tmp_path, monkeypatch):
         """When reviewing 2nd patch, the 1st patch should be committed."""

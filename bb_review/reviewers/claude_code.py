@@ -92,6 +92,7 @@ def build_review_prompt(
     at_reviewed_state: bool = False,
     changed_files: list[str] | None = None,
     verbose: bool = False,
+    skill_name: str | None = None,
 ) -> str:
     """Build the review prompt for Claude Code.
 
@@ -104,6 +105,7 @@ def build_review_prompt(
         at_reviewed_state: If True, repo is at reviewed state (files staged).
         changed_files: List of files changed in the review.
         verbose: If True, request detailed multi-paragraph explanations.
+        skill_name: Deployed skill name to invoke (e.g. "net-drv-ts").
 
     Returns:
         Formatted prompt string.
@@ -144,7 +146,13 @@ To review effectively:
 (lines starting with +)
 """
 
-    if guidelines_context:
+    if skill_name:
+        prompt += f"""
+IMPORTANT: Before starting your review, invoke the /{skill_name} skill.
+It contains project-specific conventions, technical patterns, and subsystem-specific guidance.
+Follow it strictly, including any review command or subsystem guides it directs you to.
+"""
+    elif guidelines_context:
         prompt += f"""
 Guidelines:
 {guidelines_context}
@@ -206,6 +214,7 @@ def build_series_review_prompt(
     guidelines_context: str,
     focus_areas: list[str],
     verbose: bool = False,
+    skill_name: str | None = None,
 ) -> str:
     """Build a prompt for reviewing an entire patch series as one unit.
 
@@ -247,7 +256,13 @@ To review effectively:
 5. Line numbers in your findings must match the actual file line numbers
 """
 
-    if guidelines_context:
+    if skill_name:
+        prompt += f"""
+IMPORTANT: Before starting your review, invoke the /{skill_name} skill.
+It contains project-specific conventions, technical patterns, and subsystem-specific guidance.
+Follow it strictly, including any review command or subsystem guides it directs you to.
+"""
+    elif guidelines_context:
         prompt += f"""
 Guidelines:
 {guidelines_context}
@@ -376,6 +391,7 @@ def run_claude_review(
         logger.info(f"Running Claude Code in {repo_path}")
         print(f"  Command: {' '.join(cmd)}", file=sys.stderr)
         logger.debug(f"Full command: {cmd}")
+        logger.debug(f"Prompt (piped via stdin):\n{prompt}")
 
         result = subprocess.run(
             cmd,

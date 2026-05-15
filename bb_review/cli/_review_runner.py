@@ -25,6 +25,15 @@ from ._session import ReviewSession
 
 logger = logging.getLogger(__name__)
 
+# Default output directory for review JSON files
+_OUTPUT_DIR = Path("_files")
+
+
+def review_output_path(review_id: int) -> Path:
+    """Return the default output path for a review JSON file."""
+    _OUTPUT_DIR.mkdir(exist_ok=True)
+    return _OUTPUT_DIR / f"review_{review_id}.json"
+
 
 def generate_branch_name(target_rr_id: int) -> str:
     """Generate a unique branch name for chain review."""
@@ -588,12 +597,10 @@ def _run_single_review(
     )
 
     # Save to file
-    if auto_output:
-        output_file = Path(f"review_{review_id}.json")
-    elif output:
+    if output:
         output_file = output
     else:
-        output_file = Path(f"review_{review_id}.json")
+        output_file = review_output_path(review_id)
 
     output_file.write_text(json.dumps(output_data, indent=2))
     click.echo(f"\nReview saved to: {output_file}")
@@ -715,7 +722,7 @@ def _run_chain_review(
                 )
 
                 if auto_output:
-                    output_path = Path(f"review_{rr_id}.json")
+                    output_path = review_output_path(rr_id)
                     output_path.write_text(json.dumps(output_data, indent=2))
                     output_files.append(output_path)
                     click.echo(f"  Saved: {output_path}")
@@ -910,7 +917,7 @@ def _run_series_review(
         if output and is_tip:
             output_file = output
         else:
-            output_file = Path(f"review_{rr_id}.json")
+            output_file = review_output_path(rr_id)
 
         output_file.write_text(json.dumps(output_data, indent=2))
         output_files.append(output_file)
