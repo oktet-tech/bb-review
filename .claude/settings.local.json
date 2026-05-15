@@ -1,26 +1,28 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git -C /Users/kostik/prj/tools/bb_review log --oneline)",
-      "Bash(wc:*)",
-      "Bash(grep:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(uv run ruff:*)",
-      "Bash(uv run pytest:*)",
-      "Bash(find:*)",
-      "Bash(xargs:*)",
-      "Bash(git status:*)",
-      "Bash(git -C /Users/kostik/prj/tools/bb_review status)",
-      "Bash(git -C /Users/kostik/prj/tools/bb_review log --oneline -5)",
-      "Bash(git -C /Users/kostik/prj/tools/bb_review log --oneline -10)",
+      "Bash(git reset:*)",
+      "Bash(uv run:*)",
       "Bash(task lint:*)",
       "Bash(task format:*)",
-      "Bash(uv run:*)",
-      "Bash(analyze...\" before the actual review. Add explicit instruction to\noutput only structured review blocks, no preamble.\nEOF\n\\)\")",
+      "Bash(task test:*)",
+      "Bash(ls:*)",
       "Bash(tree:*)",
-      "Bash(task test:unit:*)",
-      "Bash(printf:*)"
+      "Bash(wc:*)",
+      "Bash(ln:*)",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "mcp__plugin_context7_context7__query-docs",
+      "WebSearch",
+      "WebFetch(domain:www.reviewboard.org)",
+      "Bash(codex --version)",
+      "Bash(codex:*)",
+      "Bash(mkdir -p _files)",
+      "Bash(mv comments_*.md review_*.json _files/)"
     ]
   }
 }
