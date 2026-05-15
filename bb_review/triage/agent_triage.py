@@ -1,7 +1,7 @@
-"""Claude Code and OpenCode triage runners.
+"""Claude Code, OpenCode, and Codex triage runners.
 
-Runs triage analysis via external CLI tools (claude, opencode) instead of
-direct LLM API calls. Parses the response using the same parse logic as
+Runs triage analysis via external CLI tools (claude, opencode, codex) instead
+of direct LLM API calls. Parses the response using the same parse logic as
 TriageAnalyzer.
 """
 
@@ -162,6 +162,75 @@ def run_opencode_triage(
     logger.info(f"OpenCode triage response: {len(response_text)} chars")
 
     return parse_triage_response(response_text, comments, rr_id)
+
+
+def run_codex_triage(
+    prompt: str,
+    comments: list[RBComment],
+    rr_id: int,
+    *,
+    model: str | None = None,
+    max_turns: int = 3,
+) -> TriageResult:
+    """Run triage via Codex CLI.
+
+    Same interface as run_claude_triage but uses the codex binary.
+    Codex uses `codex exec` with stdin prompt and -o for output capture.
+    """
+    import tempfile
+
+    binary = shutil.which("codex")
+    if not binary:
+        raise RuntimeError("Codex binary not found in PATH")
+
+    _, output_path = tempfile.mkstemp(suffix=".txt", prefix="bb_review_triage_")
+
+    try:
+        full_prompt = f"{TRIAGE_SYSTEM_PROMPT}\n\n{prompt}"
+
+        cmd = [
+            binary,
+            "exec",
+            "-s",
+            "read-only",
+            "-o",
+            output_path,
+        ]
+        if model:
+            cmd.extend(["-m", model])
+        cmd.append("-")
+
+        logger.info(f"Running codex triage ({len(prompt)} chars prompt, model={model or 'default'})")
+
+        result = subprocess.run(
+            cmd,
+            input=full_prompt,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+
+        if result.returncode != 0:
+            logger.error(f"Codex triage failed (rc={result.returncode}): {result.stderr[:500]}")
+            raise RuntimeError(f"Codex CLI exited with code {result.returncode}")
+
+        # Read output from -o file
+        from pathlib import Path
+
+        output_file = Path(output_path)
+        if output_file.exists() and output_file.stat().st_size > 0:
+            response_text = output_file.read_text().strip()
+        else:
+            response_text = result.stdout.strip()
+
+        logger.info(f"Codex triage response: {len(response_text)} chars")
+
+        return parse_triage_response(response_text, comments, rr_id)
+    finally:
+        try:
+            __import__("pathlib").Path(output_path).unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 def _extract_claude_response(stdout: str) -> str:

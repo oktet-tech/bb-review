@@ -115,6 +115,7 @@ class UnifiedApp(App):
         review_filter_limit: int = 50,
         # UI
         initial_tab: str = "queue",
+        sync_days: int = 10,
         config_path: Path | None = None,
     ) -> None:
         super().__init__()
@@ -130,6 +131,7 @@ class UnifiedApp(App):
         self._my_reviews_db = my_reviews_db
         self._mr_exclude_statuses = my_reviews_exclude_statuses
         self._mr_filter_limit = my_reviews_filter_limit
+        self._sync_days = sync_days
 
         self._analyses = analyses or []
         self._review_db = review_db
@@ -587,15 +589,21 @@ class UnifiedApp(App):
                     guidelines_text=guidelines_text,
                 )
             else:
-                # Claude or OpenCode
+                # Claude, OpenCode, or Codex
                 from bb_review.triage.agent_triage import (
                     build_triage_prompt,
                     run_claude_triage,
+                    run_codex_triage,
                     run_opencode_triage,
                 )
 
                 prompt = build_triage_prompt(comments, raw_diff, file_contexts, guidelines_text)
-                runner = run_opencode_triage if method == "opencode" else run_claude_triage
+                if method == "opencode":
+                    runner = run_opencode_triage
+                elif method == "codex":
+                    runner = run_codex_triage
+                else:
+                    runner = run_claude_triage
                 triage_result = runner(prompt, comments, rr_id, model=model_key)
 
             triage_result.review_request_id = rr_id
@@ -720,6 +728,7 @@ class UnifiedApp(App):
             counts = sync_queue(
                 rb_client=rb_client,
                 queue_db=self._queue_db,
+                days=self._sync_days,
                 on_progress=on_progress,
             )
 

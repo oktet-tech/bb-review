@@ -168,7 +168,7 @@ def set_status(ctx: click.Context, rr_ids: tuple[int, ...], status: str) -> None
 @click.option(
     "--method",
     default=None,
-    type=click.Choice(["llm", "opencode", "claude"]),
+    type=click.Choice(["llm", "opencode", "claude", "codex"]),
     help="Analysis method (default: from config).",
 )
 @click.option("--model", "model_name", help="Override model from config.")
@@ -249,6 +249,13 @@ def process(
             from ..reviewers import check_claude_available
 
             available, msg = check_claude_available(config.claude_code.binary_path)
+            if not available:
+                click.echo(f"Error: {msg}", err=True)
+                sys.exit(1)
+        if "codex" in methods_needed:
+            from ..reviewers import check_codex_available
+
+            available, msg = check_codex_available(config.codex.binary_path)
             if not available:
                 click.echo(f"Error: {msg}", err=True)
                 sys.exit(1)
@@ -453,6 +460,10 @@ def _process_item_agent(
         model = model_name or config.opencode.model or "default"
         analysis_method = "opencode"
         method_label = "OpenCode"
+    elif method == "codex":
+        model = model_name or config.codex.model or "default"
+        analysis_method = "codex"
+        method_label = "Codex"
     else:
         model = model_name or config.claude_code.model or "default"
         analysis_method = "claude_code"
@@ -549,6 +560,22 @@ def _run_agent_review(
             model=model_name or config.opencode.model,
             timeout=config.opencode.timeout,
             binary_path=config.opencode.binary_path,
+            at_reviewed_state=at_reviewed_state,
+        )
+    elif method == "codex":
+        from .codex import run_codex_for_review
+
+        cx = config.codex
+        return run_codex_for_review(
+            review_id=rr_id,
+            summary=summary,
+            raw_diff=raw_diff,
+            repo_path=repo_path,
+            repo_config=repo_config,
+            model=model_name or cx.model,
+            timeout=cx.timeout,
+            binary_path=cx.binary_path,
+            sandbox=cx.sandbox,
             at_reviewed_state=at_reviewed_state,
         )
     else:

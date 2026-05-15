@@ -399,6 +399,7 @@ REVIEW_METHODS = [
     ("claude", "opus", "Claude Code Opus"),
     ("llm", None, "LLM direct"),
     ("opencode", None, "OpenCode agent"),
+    ("codex", None, "Codex agent"),
 ]
 
 
