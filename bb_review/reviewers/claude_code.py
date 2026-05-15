@@ -335,6 +335,7 @@ def run_claude_review(
     allowed_tools: list[str] | None = None,
     at_reviewed_state: bool = False,
     mcp_config: Path | None = None,
+    transcript_path: Path | None = None,
 ) -> str:
     """Run Claude Code CLI and return the analysis.
 
@@ -388,6 +389,9 @@ def run_claude_review(
         if mcp_config:
             cmd.extend(["--mcp-config", str(mcp_config)])
 
+        if transcript_path:
+            cmd.append("--verbose")
+
         logger.info(f"Running Claude Code in {repo_path}")
         print(f"  Command: {' '.join(cmd)}", file=sys.stderr)
         logger.debug(f"Full command: {cmd}")
@@ -414,10 +418,19 @@ def run_claude_review(
         if not output:
             raise ClaudeCodeError("Claude Code returned empty output")
 
+        # Save full transcript before parsing
+        if transcript_path:
+            transcript_path.write_text(output)
+            logger.info(f"Saved agent transcript to {transcript_path}")
+
         # Unwrap JSON envelope - claude -p --output-format json returns
         # {"type": "result", "subtype": "success", "result": "...", ...}
+        # With --verbose, stdout is a JSON array; the last element is the result.
         try:
             envelope = json.loads(output)
+            if isinstance(envelope, list):
+                # --verbose mode: array of events, last is the result
+                envelope = envelope[-1] if envelope else {}
             subtype = envelope.get("subtype", "")
             text = envelope.get("result", "")
 

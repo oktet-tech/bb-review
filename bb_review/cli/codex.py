@@ -83,6 +83,11 @@ logger = logging.getLogger(__name__)
     default=None,
     help="Codex sandbox mode (default: from config or read-only)",
 )
+@click.option(
+    "--transcript",
+    type=click.Path(path_type=Path),
+    help="Save full agent conversation transcript to file",
+)
 @click.pass_context
 def codex_cmd(
     ctx: click.Context,
@@ -103,6 +108,7 @@ def codex_cmd(
     verbose: bool,
     series: bool,
     sandbox: str | None,
+    transcript: Path | None,
 ) -> None:
     """Analyze a review using Codex CLI.
 
@@ -164,6 +170,7 @@ def codex_cmd(
             sandbox,
             at_reviewed_state,
             verbose=verbose,
+            transcript_path=transcript,
         )
 
     def series_reviewer(reviews, base_ref, repo_path, repo_config) -> str:
@@ -238,6 +245,7 @@ def run_codex_for_review(
     sandbox: str,
     at_reviewed_state: bool = True,
     verbose: bool = False,
+    transcript_path: Path | None = None,
 ) -> str:
     """Run Codex analysis for a single review."""
     changed_file_infos = extract_changed_files(raw_diff)
@@ -302,6 +310,7 @@ def run_codex_for_review(
             binary_path=binary_path,
             sandbox=sandbox,
             at_reviewed_state=at_reviewed_state,
+            transcript_path=transcript_path,
         )
     except CodexTimeoutError as e:
         raise click.ClickException(f"Codex timed out after {timeout}s") from e

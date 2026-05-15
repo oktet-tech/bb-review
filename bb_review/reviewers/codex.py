@@ -297,6 +297,7 @@ def run_codex_review(
     binary_path: str = "codex",
     sandbox: str = "read-only",
     at_reviewed_state: bool = False,
+    transcript_path: Path | None = None,
 ) -> str:
     """Run Codex CLI and return the analysis.
 
@@ -344,6 +345,9 @@ def run_codex_review(
         if model:
             cmd.extend(["-m", model])
 
+        if transcript_path:
+            cmd.append("--json")
+
         # Prompt is read from stdin
         cmd.append("-")
 
@@ -367,6 +371,11 @@ def run_codex_review(
         if result.returncode != 0:
             error_msg = result.stderr or result.stdout or "Unknown error"
             raise CodexError(f"Codex exited with code {result.returncode}: {error_msg}")
+
+        # Save full transcript (JSONL events from --json)
+        if transcript_path and result.stdout:
+            transcript_path.write_text(result.stdout)
+            logger.info(f"Saved agent transcript to {transcript_path}")
 
         # Read output from -o file (last agent message, plain text)
         output_file = Path(output_path)

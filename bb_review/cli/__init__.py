@@ -118,6 +118,7 @@ from . import (
     repos,  # noqa: E402, F401
     resolve,  # noqa: E402, F401
     submit,  # noqa: E402, F401
+    transcript,  # noqa: E402, F401
     triage,  # noqa: E402, F401
     utils,  # noqa: E402, F401
 )

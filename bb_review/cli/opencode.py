@@ -76,6 +76,11 @@ logger = logging.getLogger(__name__)
     is_flag=True,
     help="Review entire patch series as one unit (implies --chain)",
 )
+@click.option(
+    "--transcript",
+    type=click.Path(path_type=Path),
+    help="Save full agent conversation transcript to file",
+)
 @click.pass_context
 def opencode_cmd(
     ctx: click.Context,
@@ -95,6 +100,7 @@ def opencode_cmd(
     review_from: int | None,
     verbose: bool,
     series: bool,
+    transcript: Path | None,
 ) -> None:
     """Analyze a review using OpenCode agent.
 
@@ -150,6 +156,7 @@ def opencode_cmd(
             binary_path,
             at_reviewed_state,
             verbose=verbose,
+            transcript_path=transcript,
         )
 
     def series_reviewer(reviews, base_ref, repo_path, repo_config) -> str:
@@ -222,6 +229,7 @@ def run_opencode_for_review(
     binary_path: str | None,
     at_reviewed_state: bool = True,
     verbose: bool = False,
+    transcript_path: Path | None = None,
 ) -> str:
     """Run OpenCode analysis for a single review."""
     changed_file_infos = extract_changed_files(raw_diff)
@@ -286,6 +294,7 @@ def run_opencode_for_review(
             timeout=timeout,
             binary_path=binary_path,
             at_reviewed_state=at_reviewed_state,
+            transcript_path=transcript_path,
         )
     except OpenCodeTimeoutError as e:
         raise click.ClickException(f"OpenCode timed out after {timeout}s") from e

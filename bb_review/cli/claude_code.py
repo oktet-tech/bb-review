@@ -83,6 +83,11 @@ logger = logging.getLogger(__name__)
     is_flag=True,
     help="Review entire patch series as one unit (implies --chain)",
 )
+@click.option(
+    "--transcript",
+    type=click.Path(path_type=Path),
+    help="Save full agent conversation transcript to file",
+)
 @click.pass_context
 def claude_cmd(
     ctx: click.Context,
@@ -104,6 +109,7 @@ def claude_cmd(
     review_from: int | None,
     verbose: bool,
     series: bool,
+    transcript: Path | None,
 ) -> None:
     """Analyze a review using Claude Code CLI.
 
@@ -172,6 +178,7 @@ def claude_cmd(
             at_reviewed_state,
             mcp_config,
             verbose=verbose,
+            transcript_path=transcript,
         )
 
     def series_reviewer(reviews, base_ref, repo_path, repo_config) -> str:
@@ -250,6 +257,7 @@ def run_claude_for_review(
     at_reviewed_state: bool = True,
     mcp_config: Path | None = None,
     verbose: bool = False,
+    transcript_path: Path | None = None,
 ) -> str:
     """Run Claude Code analysis for a single review."""
     changed_file_infos = extract_changed_files(raw_diff)
@@ -318,6 +326,7 @@ def run_claude_for_review(
             allowed_tools=effective_tools,
             at_reviewed_state=at_reviewed_state,
             mcp_config=mcp_config,
+            transcript_path=transcript_path,
         )
     except ClaudeCodeTimeoutError as e:
         raise click.ClickException(f"Claude Code timed out after {timeout}s") from e

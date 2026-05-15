@@ -311,6 +311,7 @@ def run_opencode_review(
     timeout: int = 300,
     binary_path: str = "opencode",
     at_reviewed_state: bool = False,
+    transcript_path: Path | None = None,
 ) -> str:
     """Run opencode and return the analysis.
 
@@ -362,6 +363,9 @@ def run_opencode_review(
         if model:
             cmd.extend(["--model", model])
 
+        if transcript_path:
+            cmd.extend(["--print-logs", "--log-level", "DEBUG"])
+
         # Use @filename to include the prompt - file must be relative to cwd (repo_path)
         # The prompt itself references the patch file when in fallback mode
         cmd.append("@.bb_review_prompt.md")
@@ -385,6 +389,16 @@ def run_opencode_review(
         if result.stderr:
             logger.debug(f"OpenCode stderr: {result.stderr}")
             print(f"  OpenCode stderr: {result.stderr[:500]}", file=sys.stderr)
+
+        # Save transcript (stderr has debug logs, stdout has review)
+        if transcript_path:
+            parts = []
+            if result.stderr:
+                parts.append("=== STDERR (debug logs) ===\n" + result.stderr)
+            if result.stdout:
+                parts.append("=== STDOUT (review output) ===\n" + result.stdout)
+            transcript_path.write_text("\n\n".join(parts))
+            logger.info(f"Saved agent transcript to {transcript_path}")
 
         # Check for errors
         if result.returncode != 0:
