@@ -71,6 +71,7 @@ def _restore_console_logging(handlers: list[logging.StreamHandler]) -> None:
     default="active",
     help="Filter queue by status (default: active = exclude done/ignore, 'all' for everything)",
 )
+@click.option("--sync-days", default=10, type=int, help="How far back to look when syncing (default: 10)")
 @click.pass_context
 def interactive(
     ctx: click.Context,
@@ -83,6 +84,7 @@ def interactive(
     queue: bool,
     tab: str | None,
     queue_status: str | None,
+    sync_days: int,
 ) -> None:
     """Interactive review management with TUI.
 
@@ -117,6 +119,7 @@ def interactive(
         output=output,
         queue_status=queue_status,
         initial_tab=initial_tab,
+        sync_days=sync_days,
     )
 
 
@@ -131,6 +134,7 @@ def _run_unified_tui(
     output: str | None,
     queue_status: str | None,
     initial_tab: str,
+    sync_days: int = 10,
 ) -> None:
     """Launch the unified TUI."""
     from ..db import QueueDatabase, QueueStatus
@@ -203,6 +207,7 @@ def _run_unified_tui(
         review_filter_chain_id=chain_id,
         review_filter_limit=limit,
         initial_tab=initial_tab,
+        sync_days=sync_days,
         config_path=ctx.obj.get("config_path"),
     )
     app.run()
