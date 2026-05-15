@@ -103,7 +103,7 @@ class RepositoryConfig(BaseModel):
     def validate_review_method(cls, v: str | None) -> str | None:
         if v is None:
             return None
-        valid = ("llm", "opencode", "claude")
+        valid = ("llm", "opencode", "claude", "codex")
         if v not in valid:
             raise ValueError(f"review_method must be one of: {valid}")
         return v
@@ -224,6 +224,16 @@ class ClaudeCodeConfig(BaseModel):
         return self.max_turns
 
 
+class CodexConfig(BaseModel):
+    """Codex CLI configuration for AI-powered review."""
+
+    enabled: bool = False
+    model: str | None = None  # e.g. "o3", "gpt-4.1"
+    timeout: int = 300
+    binary_path: str = "codex"
+    sandbox: str = "read-only"  # read-only or workspace-write
+
+
 class CocoIndexRepoConfig(BaseModel):
     """Per-repository CocoIndex configuration."""
 
@@ -239,7 +249,7 @@ class QueueConfig(BaseModel):
     @field_validator("method")
     @classmethod
     def validate_method(cls, v: str) -> str:
-        valid = ("llm", "opencode", "claude")
+        valid = ("llm", "opencode", "claude", "codex")
         if v not in valid:
             raise ValueError(f"method must be one of: {valid}")
         return v
@@ -330,6 +340,7 @@ class Config(BaseModel):
     defaults: DefaultsConfig = Field(default_factory=DefaultsConfig)
     opencode: OpenCodeConfig = Field(default_factory=OpenCodeConfig)
     claude_code: ClaudeCodeConfig = Field(default_factory=ClaudeCodeConfig)
+    codex: CodexConfig = Field(default_factory=CodexConfig)
     cocoindex: CocoIndexConfig = Field(default_factory=CocoIndexConfig)
     queue: QueueConfig = Field(default_factory=QueueConfig)
     review_db: ReviewDBConfig = Field(default_factory=ReviewDBConfig)
