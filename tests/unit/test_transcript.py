@@ -217,14 +217,32 @@ class TestGuidelinesDeployment:
         for path in result.deployed_files:
             assert not path.exists()
 
-    def test_deploy_codex_flat(self, tmp_path: Path):
-        """Deploy skills into .codex/ as flat files."""
-        from bb_review.guidelines_deploy import deploy_agent_skills
+    def test_deploy_codex_skills(self, tmp_path: Path):
+        """Deploy a Codex skill dir under .agents/skills/{repo}/."""
+        from bb_review.guidelines_deploy import cleanup_deployed, deploy_agent_skills
 
         result = deploy_agent_skills(tmp_path, "net-drv-ts", "codex")
 
-        assert len(result.deployed_files) > 0
-        assert (tmp_path / ".codex").is_dir()
+        assert result.has_skill
+        assert result.skill_name == "net-drv-ts"
+
+        skill_dir = tmp_path / ".agents" / "skills" / "net-drv-ts"
+        assert skill_dir.is_dir()
+        assert (skill_dir / "SKILL.md").exists()
+        assert (skill_dir / "net-drv-ts-review.md").exists()
+        assert (skill_dir / "technical-patterns.md").exists()
+        assert (skill_dir / "subsystem" / "subsystem.md").exists()
+
+        # Placeholders resolved to Codex expansions
+        skill_text = (skill_dir / "SKILL.md").read_text()
+        assert ".agents/skills/net-drv-ts" in skill_text
+        assert "{{GUIDE_DIR}}" not in skill_text
+        assert "{{REVIEW_GUIDE}}" not in skill_text
+        assert "${CLAUDE_SKILL_DIR}" not in skill_text
+
+        # Cleanup removes the skill dir tree
+        cleanup_deployed(result)
+        assert not skill_dir.exists()
 
     def test_deploy_nonexistent_repo(self, tmp_path: Path):
         """No files deployed for unknown repo."""

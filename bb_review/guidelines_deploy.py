@@ -47,6 +47,8 @@ def deploy_agent_skills(
 
     if agent_type == "claude":
         result = _deploy_claude(repo_path, guides_dir, repo_name)
+    elif agent_type == "codex":
+        result = _deploy_codex(repo_path, guides_dir, repo_name)
     else:
         result = _deploy_flat(repo_path, guides_dir, agent_type)
 
@@ -115,6 +117,45 @@ def _deploy_claude(
     return result
 
 
+def _deploy_codex(
+    repo_path: Path,
+    guides_dir: Path,
+    repo_name: str,
+) -> DeployResult:
+    """Deploy guides as a Codex skill under .agents/skills/{repo}/.
+
+    Codex has no slash commands in `codex exec`, so the review protocol is
+    deployed as a plain file inside the skill directory; SKILL.md points to it.
+    """
+    result = DeployResult()
+
+    skill_src = guides_dir / "skills"
+    if not skill_src.is_dir():
+        return result
+    skill_files = list(skill_src.glob("*.md"))
+    if not skill_files:
+        return result
+
+    review_cmd = _find_review_cmd(guides_dir)
+
+    skill_dir = repo_path / ".agents" / "skills" / repo_name
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    result.deployed_dirs.append(skill_dir)
+    result.skill_name = repo_name
+
+    rendered = _render_skill(skill_files[0].read_text(), "codex", repo_name, review_cmd)
+    (skill_dir / "SKILL.md").write_text(rendered)
+
+    # Review protocol as a plain file inside the skill dir
+    slash_src = guides_dir / "slash-commands"
+    if slash_src.is_dir():
+        for md_file in slash_src.glob("*.md"):
+            shutil.copy2(md_file, skill_dir / md_file.name)
+
+    _copy_supporting_files(guides_dir, skill_dir)
+    return result
+
+
 def _copy_supporting_files(guides_dir: Path, skill_dir: Path) -> None:
     """Copy technical-patterns, false-positive-guide, and subsystem/ into skill dir."""
     for filename in ("technical-patterns.md", "false-positive-guide.md"):
@@ -162,10 +203,9 @@ def _render_skill(
     return text.replace("{{GUIDE_DIR}}", guide_dir).replace("{{REVIEW_GUIDE}}", review_guide)
 
 
-# --- Flat deploy for Codex/OpenCode (unchanged, deferred) ---
+# --- Flat deploy for OpenCode (unchanged, deferred) ---
 
 _AGENT_DIRS = {
-    "codex": ".codex",
     "opencode": ".opencode",
 }
 
