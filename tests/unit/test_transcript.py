@@ -204,6 +204,13 @@ class TestGuidelinesDeployment:
         commands_dir = tmp_path / ".claude" / "commands"
         assert (commands_dir / "net-drv-ts-review.md").exists()
 
+        # Placeholders resolved to Claude expansions
+        skill_text = (skill_dir / "SKILL.md").read_text()
+        assert "${CLAUDE_SKILL_DIR}" in skill_text
+        assert "/net-drv-ts-review" in skill_text
+        assert "{{GUIDE_DIR}}" not in skill_text
+        assert "{{REVIEW_GUIDE}}" not in skill_text
+
         # Cleanup removes skill dir and command files
         cleanup_deployed(result)
         assert not skill_dir.exists()

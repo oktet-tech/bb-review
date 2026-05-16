@@ -85,11 +85,11 @@ def _deploy_claude(
     Slash-commands go to .claude/commands/.
     """
     result = DeployResult()
+    review_cmd = _find_review_cmd(guides_dir)
 
     # --- Skill directory: .claude/skills/{repo}/ ---
     skill_src = guides_dir / "skills"
     if skill_src.is_dir():
-        # Find the skill file (expect exactly one per repo)
         skill_files = list(skill_src.glob("*.md"))
         if skill_files:
             skill_dir = repo_path / ".claude" / "skills" / repo_name
@@ -97,10 +97,9 @@ def _deploy_claude(
             result.deployed_dirs.append(skill_dir)
             result.skill_name = repo_name
 
-            # Copy skill file as SKILL.md
-            shutil.copy2(skill_files[0], skill_dir / "SKILL.md")
+            rendered = _render_skill(skill_files[0].read_text(), "claude", repo_name, review_cmd)
+            (skill_dir / "SKILL.md").write_text(rendered)
 
-            # Copy supporting files into skill dir
             _copy_supporting_files(guides_dir, skill_dir)
 
     # --- Slash commands: .claude/commands/ ---
