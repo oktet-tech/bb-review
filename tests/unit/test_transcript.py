@@ -237,3 +237,35 @@ class TestGuidelinesDeployment:
 
         assert not result.has_skill
         assert result.deployed_files == []
+
+    def test_render_skill_claude(self):
+        """Claude expansion of skill placeholders."""
+        from bb_review.guidelines_deploy import _render_skill
+
+        text = "Read {{GUIDE_DIR}}/technical-patterns.md\nFor review, {{REVIEW_GUIDE}}."
+        out = _render_skill(text, "claude", "net-drv-ts", "net-drv-ts-review")
+
+        assert out == (
+            "Read ${CLAUDE_SKILL_DIR}/technical-patterns.md\n"
+            "For review, invoke the `/net-drv-ts-review` command."
+        )
+
+    def test_render_skill_codex(self):
+        """Codex expansion of skill placeholders."""
+        from bb_review.guidelines_deploy import _render_skill
+
+        text = "Read {{GUIDE_DIR}}/technical-patterns.md\nFor review, {{REVIEW_GUIDE}}."
+        out = _render_skill(text, "codex", "net-drv-ts", "net-drv-ts-review")
+
+        assert out == (
+            "Read .agents/skills/net-drv-ts/technical-patterns.md\n"
+            "For review, read `.agents/skills/net-drv-ts/net-drv-ts-review.md`."
+        )
+
+    def test_render_skill_no_review_cmd(self):
+        """Falls back gracefully when no review command exists."""
+        from bb_review.guidelines_deploy import _render_skill
+
+        out = _render_skill("{{REVIEW_GUIDE}}", "codex", "demo", None)
+
+        assert out == "follow the review protocol"

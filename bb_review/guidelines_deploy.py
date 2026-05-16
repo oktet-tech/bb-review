@@ -129,6 +129,40 @@ def _copy_supporting_files(guides_dir: Path, skill_dir: Path) -> None:
         shutil.copytree(subsystem_src, subsystem_dest, dirs_exist_ok=True)
 
 
+def _find_review_cmd(guides_dir: Path) -> str | None:
+    """Return the review command name (stem of the slash-command file)."""
+    slash_src = guides_dir / "slash-commands"
+    if slash_src.is_dir():
+        files = sorted(slash_src.glob("*.md"))
+        if files:
+            return files[0].stem
+    return None
+
+
+def _render_skill(
+    text: str,
+    agent: str,
+    repo_name: str,
+    review_cmd: str | None,
+) -> str:
+    """Resolve {{GUIDE_DIR}} and {{REVIEW_GUIDE}} placeholders for an agent.
+
+    {{GUIDE_DIR}}    -> the directory holding the skill's supporting files.
+    {{REVIEW_GUIDE}} -> how the agent loads the repo-specific review protocol.
+    """
+    if agent == "claude":
+        guide_dir = "${CLAUDE_SKILL_DIR}"
+        review_guide = f"invoke the `/{review_cmd}` command" if review_cmd else "follow the review protocol"
+    else:  # codex
+        guide_dir = f".agents/skills/{repo_name}"
+        review_guide = (
+            f"read `.agents/skills/{repo_name}/{review_cmd}.md`"
+            if review_cmd
+            else "follow the review protocol"
+        )
+    return text.replace("{{GUIDE_DIR}}", guide_dir).replace("{{REVIEW_GUIDE}}", review_guide)
+
+
 # --- Flat deploy for Codex/OpenCode (unchanged, deferred) ---
 
 _AGENT_DIRS = {
