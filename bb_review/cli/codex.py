@@ -325,19 +325,28 @@ def run_codex_for_series(
     verbose: bool = False,
 ) -> str:
     """Run Codex analysis for an entire patch series."""
-    guidelines = load_guidelines(repo_path, repo_name=repo_config.name)
+    from ..guidelines_deploy import cleanup_deployed, deploy_agent_skills
+
+    deploy_result = deploy_agent_skills(repo_path, repo_config.name, "codex")
+
+    guidelines = load_guidelines(
+        repo_path,
+        repo_name=repo_config.name,
+        skip_rich_context=deploy_result.has_skill,
+    )
 
     warnings = validate_guidelines(guidelines)
     for warning in warnings:
         click.echo(f"    Warning: {warning}", err=True)
 
     guidelines_context = ""
-    if guidelines.context:
-        guidelines_context = guidelines.context
-    if guidelines.custom_rules:
-        if guidelines_context:
-            guidelines_context += "\n\nCustom rules:\n"
-        guidelines_context += "\n".join(f"- {rule}" for rule in guidelines.custom_rules)
+    if not deploy_result.has_skill:
+        if guidelines.context:
+            guidelines_context = guidelines.context
+        if guidelines.custom_rules:
+            if guidelines_context:
+                guidelines_context += "\n\nCustom rules:\n"
+            guidelines_context += "\n".join(f"- {rule}" for rule in guidelines.custom_rules)
 
     focus_areas = [f.value for f in guidelines.focus]
     prompt = build_series_review_prompt(
@@ -347,6 +356,7 @@ def run_codex_for_series(
         guidelines_context=guidelines_context,
         focus_areas=focus_areas,
         verbose=verbose,
+        skill_name=deploy_result.skill_name,
     )
 
     click.echo("    Running Codex series analysis...")
@@ -366,3 +376,5 @@ def run_codex_for_series(
         raise click.ClickException(f"Codex timed out after {timeout}s") from e
     except CodexError as e:
         raise click.ClickException(str(e)) from e
+    finally:
+        cleanup_deployed(deploy_result)
