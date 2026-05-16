@@ -36,7 +36,8 @@ def deploy_agent_skills(
       - technical-patterns.md, subsystem/ -> .claude/skills/{repo}/
       - slash-commands/*.md -> .claude/commands/
 
-    For Codex/OpenCode: flat copy into .codex/ or .opencode/ (unchanged).
+    For Codex: skill dir under .agents/skills/{repo}/.
+    For OpenCode: flat copy into .opencode/.
 
     Returns:
         DeployResult with skill name and paths for cleanup.
@@ -146,7 +147,8 @@ def _deploy_codex(
     rendered = _render_skill(skill_files[0].read_text(), "codex", repo_name, review_cmd)
     (skill_dir / "SKILL.md").write_text(rendered)
 
-    # Review protocol as a plain file inside the skill dir
+    # Review protocol as a plain file inside the skill dir. Not tracked in
+    # deployed_files -- it lives inside skill_dir, which cleanup removes wholesale.
     slash_src = guides_dir / "slash-commands"
     if slash_src.is_dir():
         for md_file in slash_src.glob("*.md"):
