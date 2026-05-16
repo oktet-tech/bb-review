@@ -269,3 +269,27 @@ class TestGuidelinesDeployment:
         out = _render_skill("{{REVIEW_GUIDE}}", "codex", "demo", None)
 
         assert out == "follow the review protocol"
+
+    def test_find_review_cmd_returns_stem(self, tmp_path: Path):
+        """Returns the stem of the slash-command file."""
+        from bb_review.guidelines_deploy import _find_review_cmd
+
+        slash_dir = tmp_path / "slash-commands"
+        slash_dir.mkdir()
+        (slash_dir / "demo-review.md").write_text("protocol")
+
+        assert _find_review_cmd(tmp_path) == "demo-review"
+
+    def test_find_review_cmd_no_dir(self, tmp_path: Path):
+        """Returns None when slash-commands/ is absent."""
+        from bb_review.guidelines_deploy import _find_review_cmd
+
+        assert _find_review_cmd(tmp_path) is None
+
+    def test_find_review_cmd_empty_dir(self, tmp_path: Path):
+        """Returns None when slash-commands/ exists but has no .md files."""
+        from bb_review.guidelines_deploy import _find_review_cmd
+
+        (tmp_path / "slash-commands").mkdir()
+
+        assert _find_review_cmd(tmp_path) is None
