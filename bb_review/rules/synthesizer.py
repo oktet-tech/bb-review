@@ -1,6 +1,14 @@
 """Synthesize cached reviewer comments into a draft rules document."""
 
-from ..db.mining_db import MinedComment
+from collections.abc import Callable
+from pathlib import Path
+
+from ..db.mining_db import MinedComment, MiningDatabase
+from .agent_runner import run_agent
+
+
+class RulesDraftError(Exception):
+    """Error drafting a rules document."""
 
 
 def format_comments_artifact(comments: list[MinedComment]) -> str:
@@ -95,3 +103,85 @@ Output ONLY the Markdown document. Do not include narration, thinking, or \
 commentary about your process.
 """
     return prompt
+
+
+ARTIFACT_FILENAME = ".bb_review_mined_comments.md"
+
+
+def draft_rules(
+    repo_name: str,
+    mining_db: MiningDatabase,
+    repo_manager,
+    guides_dir: Path,
+    method: str = "claude",
+    model: str | None = None,
+    timeout: int = 600,
+    binary_path: str | None = None,
+    transcript_path: Path | None = None,
+    run_agent_fn: Callable[..., str] = run_agent,
+) -> Path:
+    """Draft a rules file for a repository from its cached reviewer comments.
+
+    Loads cached comments, checks out the repo, writes a comments artifact
+    into the checkout, runs an agent, and writes the result to
+    `guides/{repo_name}/draft-rules.md`.
+
+    Args:
+        repo_name: Config repository name (also the cache `repository` key).
+        mining_db: Cache database holding the fetched comments.
+        repo_manager: RepoManager used to clone/checkout the repo.
+        guides_dir: Path to the `guides/` directory.
+        method: Agent backend, 'claude' or 'codex'.
+        model: Optional model override for the agent.
+        timeout: Agent timeout in seconds.
+        binary_path: Optional explicit agent binary path.
+        transcript_path: If set, the agent transcript is saved here.
+        run_agent_fn: Agent runner callable (overridable for tests).
+
+    Returns:
+        Path to the written draft-rules.md file.
+
+    Raises:
+        RulesDraftError: If no comments are cached or the agent yields nothing.
+    """
+    comments = mining_db.get_comments_for_repo(repo_name)
+    if not comments:
+        raise RulesDraftError(
+            f"No cached comments for '{repo_name}'. Run 'bb-review rules fetch {repo_name}' first."
+        )
+
+    repo_manager.ensure_clone(repo_name)
+    repo_config = repo_manager.get_repo(repo_name)
+    repo_manager.checkout(repo_name, repo_config.default_branch)
+    repo_path = repo_manager.get_local_path(repo_name)
+
+    existing_path = guides_dir / repo_name / "technical-patterns.md"
+    existing_patterns = existing_path.read_text() if existing_path.exists() else None
+
+    artifact = format_comments_artifact(comments)
+    artifact_path = repo_path / ARTIFACT_FILENAME
+    artifact_path.write_text(artifact)
+
+    prompt = build_rules_prompt(repo_name, artifact, existing_patterns)
+
+    try:
+        output = run_agent_fn(
+            method=method,
+            repo_path=repo_path,
+            prompt=prompt,
+            model=model,
+            timeout=timeout,
+            binary_path=binary_path,
+            transcript_path=transcript_path,
+        )
+    finally:
+        artifact_path.unlink(missing_ok=True)
+
+    if not output.strip():
+        raise RulesDraftError("Agent produced empty output")
+
+    out_dir = guides_dir / repo_name
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "draft-rules.md"
+    out_path.write_text(output)
+    return out_path
