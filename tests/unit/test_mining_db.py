@@ -65,3 +65,44 @@ def test_record_review_request_is_idempotent(tmp_path: Path):
     stats = db.get_repo_stats("testrepo")
     assert stats.review_request_count == 1
     assert stats.comment_count == 1
+
+
+def test_get_comments_for_repo(tmp_path: Path):
+    db = MiningDatabase(tmp_path / "m.db")
+    db.record_review_request(
+        rr_id=100,
+        repository="testrepo",
+        rr_status="submitted",
+        rr_summary="Add widget",
+        submitter="bob",
+        branch="main",
+        rb_last_updated="2026-05-10",
+        comments=[_sample_comment()],
+    )
+    comments = db.get_comments_for_repo("testrepo")
+    assert len(comments) == 1
+    assert comments[0].rr_id == 100
+    assert comments[0].rr_status == "submitted"
+    assert comments[0].issue_status == "resolved"
+    assert comments[0].is_body_comment is False
+    assert comments[0].issue_opened is True
+
+    assert db.get_comments_for_repo("other") == []
+
+
+def test_get_repo_stats(tmp_path: Path):
+    db = MiningDatabase(tmp_path / "m.db")
+    db.record_review_request(
+        rr_id=100,
+        repository="testrepo",
+        rr_status="submitted",
+        rr_summary="Add widget",
+        submitter="bob",
+        branch="main",
+        rb_last_updated="2026-05-10",
+        comments=[_sample_comment()],
+    )
+    stats = db.get_repo_stats("testrepo")
+    assert stats.repository == "testrepo"
+    assert stats.review_request_count == 1
+    assert stats.comment_count == 1
