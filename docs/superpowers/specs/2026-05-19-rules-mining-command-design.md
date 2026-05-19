@@ -145,6 +145,8 @@ module `bb_review/db/mining_db.py` with a `MiningDatabase` class.
    existing draft (it is a regenerable suggestions file). `--transcript` saves
    the agent transcript, consistent with other commands.
 
+`--method` defaults to `claude`.
+
 ## Error Handling
 
 - `rules draft` with zero cached comments for `REPO` -> clear error directing
@@ -164,9 +166,10 @@ module `bb_review/db/mining_db.py` with a `MiningDatabase` class.
   - `rules draft` with a mocked agent runner, mirroring how existing reviewer
     tests mock the agent subprocess.
 
-## Open Questions
+## Resolved Decisions
 
-- Default `--method` for `rules draft`: fixed default (e.g. `claude`) vs.
-  derived from the per-repo `review_method` config override.
-- Should `rules fetch` re-fetch RRs whose `rb_last_updated` is newer than
-  `fetched_at` automatically, or only on explicit `--refresh`.
+- `--method` for `rules draft` defaults to `claude` (fixed default, not
+  derived from the per-repo `review_method` config override).
+- `rules fetch` re-fetches a cached RR only on explicit `--refresh`. It never
+  auto-re-fetches based on `rb_last_updated`; that column is stored for
+  inspection and possible future use.
