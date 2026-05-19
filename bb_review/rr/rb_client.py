@@ -763,6 +763,50 @@ class ReviewBoardClient:
         logger.info(f"Fetched {len(pending)} recent reviews")
         return pending
 
+    def list_repo_review_requests(
+        self,
+        repository: str,
+        statuses: list[str],
+        limit: int = 50,
+        days: int = 0,
+    ) -> list[dict]:
+        """List review requests for a repository, filtered by status.
+
+        RB's `status` query parameter accepts a single value, so each
+        status is queried separately and the results are merged,
+        de-duplicated by id, and sorted by last_updated descending.
+
+        Args:
+            repository: RB repository name or id.
+            statuses: Statuses to include, e.g. ["submitted", "discarded"].
+            limit: Max number of review requests to return.
+            days: If > 0, only include RRs updated within this many days.
+
+        Returns:
+            Review request dicts, newest first, capped at `limit`.
+        """
+        merged: dict[int, dict] = {}
+        for status in statuses:
+            params: dict[str, str] = {
+                "repository": repository,
+                "status": status,
+                "max-results": str(limit),
+            }
+            if days > 0:
+                cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00")
+                params["last-updated-from"] = cutoff
+
+            result = self._api_get("/api/review-requests/", params)
+            for rr in result.get("review_requests", []):
+                merged[rr["id"]] = rr
+
+        ordered = sorted(
+            merged.values(),
+            key=lambda r: r.get("last_updated", ""),
+            reverse=True,
+        )
+        return ordered[:limit]
+
     def get_review_request_info(self, review_request_id: int) -> ReviewRequestInfo:
         """Get essential review request info including depends_on for chain resolution.
 
