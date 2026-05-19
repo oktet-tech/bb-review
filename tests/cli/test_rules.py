@@ -105,6 +105,23 @@ def test_rules_draft_writes_file(runner: CliRunner, config_path: Path, monkeypat
     assert f"Wrote {out_file}" in result.output
 
 
+def test_rules_draft_forwards_model(runner: CliRunner, config_path: Path, monkeypatch, tmp_path: Path):
+    out_file = tmp_path / "draft-rules.md"
+    captured = {}
+
+    def _capture(**kw):
+        captured.update(kw)
+        return out_file
+
+    monkeypatch.setattr("bb_review.cli.rules.draft_rules", _capture)
+    result = runner.invoke(
+        main,
+        ["--config", str(config_path), "rules", "draft", "testrepo", "--model", "opus"],
+    )
+    assert result.exit_code == 0
+    assert captured["model"] == "opus"
+
+
 def test_rules_draft_handles_missing_cache(runner: CliRunner, config_path: Path, monkeypatch):
     from bb_review.rules.synthesizer import RulesDraftError
 

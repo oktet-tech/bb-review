@@ -95,12 +95,23 @@ def rules_fetch(ctx: click.Context, repo_name: str, count: int, days: int, refre
     help="Agent backend for synthesis.",
 )
 @click.option(
+    "--model",
+    default=None,
+    help="Agent model override (e.g. 'opus', 'sonnet'). Defaults to the agent's own default.",
+)
+@click.option(
     "--transcript",
     type=click.Path(path_type=Path),
     help="Save the agent transcript to this path.",
 )
 @click.pass_context
-def rules_draft(ctx: click.Context, repo_name: str, method: str, transcript: Path | None) -> None:
+def rules_draft(
+    ctx: click.Context,
+    repo_name: str,
+    method: str,
+    model: str | None,
+    transcript: Path | None,
+) -> None:
     """Draft guides/REPO_NAME/draft-rules.md from cached comments."""
     config = get_config(ctx)
     repo_manager = RepoManager(config.get_all_repos())
@@ -114,6 +125,7 @@ def rules_draft(ctx: click.Context, repo_name: str, method: str, transcript: Pat
             repo_manager=repo_manager,
             guides_dir=_guides_dir(),
             method=method,
+            model=model,
             transcript_path=transcript,
         )
     except (RulesDraftError, RepoManagerError) as e:
