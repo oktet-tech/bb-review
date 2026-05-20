@@ -11,6 +11,14 @@ from .guidelines import get_guides_dir
 logger = logging.getLogger(__name__)
 
 
+# Skill-aware agents: (skill_root, command_root) relative to repo checkout.
+# Claude uses plural; OpenCode native uses singular.
+_SKILL_AWARE_PATHS = {
+    "claude": (".claude/skills", ".claude/commands"),
+    "opencode": (".opencode/skill", ".opencode/command"),
+}
+
+
 @dataclass
 class DeployResult:
     """Result of deploying guide files into a repo checkout."""
@@ -31,27 +39,21 @@ def deploy_agent_skills(
 ) -> DeployResult:
     """Deploy skills and slash-commands into the repo checkout for native agent loading.
 
-    For Claude Code:
-      - skills/{repo}.md -> .claude/skills/{repo}/SKILL.md
-      - technical-patterns.md, subsystem/ -> .claude/skills/{repo}/
-      - slash-commands/*.md -> .claude/commands/
-
-    For Codex: skill dir under .agents/skills/{repo}/.
-    For OpenCode: flat copy into .opencode/.
-
-    Returns:
-        DeployResult with skill name and paths for cleanup.
+    Claude and OpenCode share the same shape via `_deploy_skill_with_commands`;
+    only the destination paths and SKILL.md placeholder resolution differ.
+    Codex uses its own layout under `.agents/skills/{repo}/`.
     """
     guides_dir = get_guides_dir(repo_name)
     if guides_dir is None:
         return DeployResult()
 
-    if agent_type == "claude":
-        result = _deploy_claude(repo_path, guides_dir, repo_name)
+    if agent_type in _SKILL_AWARE_PATHS:
+        result = _deploy_skill_with_commands(repo_path, guides_dir, repo_name, agent_type)
     elif agent_type == "codex":
         result = _deploy_codex(repo_path, guides_dir, repo_name)
     else:
-        result = _deploy_flat(repo_path, guides_dir, agent_type)
+        logger.warning(f"Unknown agent type for skill deployment: {agent_type}")
+        return DeployResult()
 
     total = len(result.deployed_files) + len(result.deployed_dirs)
     if total:
@@ -77,38 +79,40 @@ def cleanup_deployed(result: DeployResult) -> None:
             pass
 
 
-def _deploy_claude(
+def _deploy_skill_with_commands(
     repo_path: Path,
     guides_dir: Path,
     repo_name: str,
+    agent: str,
 ) -> DeployResult:
-    """Deploy guides using Claude Code's native skill/command structure.
+    """Deploy guides for an agent that supports native skill+command discovery.
 
-    Skills go to .claude/skills/{repo}/ with supporting files alongside.
-    Slash-commands go to .claude/commands/.
+    SKILL.md goes to `<skill_root>/{repo}/SKILL.md`, supporting files alongside,
+    and slash-command files go to `<command_root>/`.
     """
+    skill_root_rel, cmd_root_rel = _SKILL_AWARE_PATHS[agent]
     result = DeployResult()
     review_cmd = _find_review_cmd(guides_dir)
 
-    # --- Skill directory: .claude/skills/{repo}/ ---
+    # Skill directory
     skill_src = guides_dir / "skills"
     if skill_src.is_dir():
         skill_files = list(skill_src.glob("*.md"))
         if skill_files:
-            skill_dir = repo_path / ".claude" / "skills" / repo_name
+            skill_dir = repo_path / skill_root_rel / repo_name
             skill_dir.mkdir(parents=True, exist_ok=True)
             result.deployed_dirs.append(skill_dir)
             result.skill_name = repo_name
 
-            rendered = _render_skill(skill_files[0].read_text(), "claude", repo_name, review_cmd)
+            rendered = _render_skill(skill_files[0].read_text(), agent, repo_name, review_cmd)
             (skill_dir / "SKILL.md").write_text(rendered)
 
             _copy_supporting_files(guides_dir, skill_dir)
 
-    # --- Slash commands: .claude/commands/ ---
+    # Slash commands
     slash_src = guides_dir / "slash-commands"
     if slash_src.is_dir():
-        commands_dir = repo_path / ".claude" / "commands"
+        commands_dir = repo_path / cmd_root_rel
         commands_dir.mkdir(parents=True, exist_ok=True)
         for md_file in slash_src.glob("*.md"):
             dest = commands_dir / md_file.name
@@ -195,6 +199,9 @@ def _render_skill(
     if agent == "claude":
         guide_dir = "${CLAUDE_SKILL_DIR}"
         review_guide = f"invoke the `/{review_cmd}` command" if review_cmd else "follow the review protocol"
+    elif agent == "opencode":
+        guide_dir = f".opencode/skill/{repo_name}"
+        review_guide = f"invoke the `/{review_cmd}` command" if review_cmd else "follow the review protocol"
     else:  # codex
         guide_dir = f".agents/skills/{repo_name}"
         review_guide = (
@@ -203,43 +210,3 @@ def _render_skill(
             else "follow the review protocol"
         )
     return text.replace("{{GUIDE_DIR}}", guide_dir).replace("{{REVIEW_GUIDE}}", review_guide)
-
-
-# --- Flat deploy for OpenCode (unchanged, deferred) ---
-
-_AGENT_DIRS = {
-    "opencode": ".opencode",
-}
-
-
-def _deploy_flat(
-    repo_path: Path,
-    guides_dir: Path,
-    agent_type: str,
-) -> DeployResult:
-    """Flat copy of skills and slash-commands for non-Claude agents."""
-    rel = _AGENT_DIRS.get(agent_type)
-    if rel is None:
-        logger.warning(f"Unknown agent type for skill deployment: {agent_type}")
-        return DeployResult()
-
-    dest_dir = repo_path / rel
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    result = DeployResult()
-
-    for subdir in ("skills", "slash-commands"):
-        src = guides_dir / subdir
-        if src.is_dir():
-            for md_file in src.glob("*.md"):
-                dest = dest_dir / md_file.name
-                shutil.copy2(md_file, dest)
-                result.deployed_files.append(dest)
-
-    for filename in ("technical-patterns.md", "false-positive-guide.md"):
-        src = guides_dir / filename
-        if src.exists():
-            dest = dest_dir / filename
-            shutil.copy2(src, dest)
-            result.deployed_files.append(dest)
-
-    return result
