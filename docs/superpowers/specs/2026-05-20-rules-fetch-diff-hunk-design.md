@@ -45,33 +45,38 @@ Out of scope:
 
 ## Schema Change
 
-Add a nullable `diff_hunk TEXT` column to `mined_comments`. The existing
-`MiningDatabase._ensure_db` performs a lightweight migration matching the
-pattern in `bb_review/db/queue_db.py`:
+Add two nullable columns to `mined_comments`: `diff_revision INTEGER` and
+`diff_hunk TEXT`. Both are needed: the hunk is the content, the revision
+is what lets the backfill path know which diff to fetch for a given
+comment. The existing `MiningDatabase._ensure_db` performs a lightweight
+migration matching the pattern in `bb_review/db/queue_db.py`:
 
 ```python
 cols = {row[1] for row in conn.execute("PRAGMA table_info(mined_comments)").fetchall()}
+if "diff_revision" not in cols:
+    conn.execute("ALTER TABLE mined_comments ADD COLUMN diff_revision INTEGER")
 if "diff_hunk" not in cols:
     conn.execute("ALTER TABLE mined_comments ADD COLUMN diff_hunk TEXT")
 ```
 
-Existing rows keep `NULL`. No re-fetch needed unless `--with-diff-hunks` is
-used.
+Existing rows keep `NULL` for both. No re-fetch needed unless
+`--with-diff-hunks` is used.
 
-`MinedComment` (dataclass) gains `diff_hunk: str | None = None`. `RBComment`
-in `bb_review/triage/models.py` also gains `diff_hunk: str | None = None`
-(and `diff_revision: int | None = None`, see "Diff revision discovery"
-below). These are additive, non-breaking enrichments — the triage flow
-ignores both.
+`MinedComment` (dataclass) gains `diff_revision: int | None = None` and
+`diff_hunk: str | None = None`. `RBComment` in `bb_review/triage/models.py`
+gains the same two fields. These are additive, non-breaking enrichments —
+the triage flow ignores both.
 
 `record_review_request` keeps its current signature (`list[RBComment]`);
-the new `diff_hunk` field on `RBComment` flows straight into the INSERT.
+the new fields on `RBComment` flow straight into the INSERT.
 
 Two new `MiningDatabase` methods, both keyed by RB's natural identifiers
 (no internal row id exposed):
 
 - `get_comments_missing_hunks(rr_id) -> list[MinedComment]` — diff comments
-  for `rr_id` where `diff_hunk IS NULL AND file_path IS NOT NULL`.
+  for `rr_id` where `diff_hunk IS NULL AND file_path IS NOT NULL`. Each
+  returned `MinedComment` carries its `diff_revision` so the backfill path
+  can fetch the right diff without re-querying RB.
 - `update_comment_diff_hunk(rr_id, comment_id, hunk)` — `UPDATE
   mined_comments SET diff_hunk = ? WHERE rr_id = ? AND comment_id = ? AND
   file_path IS NOT NULL`.
