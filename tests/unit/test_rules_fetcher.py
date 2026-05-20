@@ -302,3 +302,111 @@ def test_fetch_with_diff_hunks_continues_when_get_diff_fails(tmp_path: Path):
     assert counts["fetched"] == 1
     saved = db.get_comments_for_repo("r")
     assert saved[0].diff_hunk is None
+
+
+def test_fetch_with_diff_hunks_backfills_cached_rr(tmp_path: Path):
+    db = MiningDatabase(tmp_path / "m.db")
+    # Cache an RR ahead of time with one diff comment and no hunk.
+    db.record_review_request(
+        rr_id=1,
+        repository="r",
+        rr_status="submitted",
+        rr_summary="cached",
+        submitter="x",
+        branch="main",
+        rb_last_updated="d",
+        comments=[
+            RBComment(
+                review_id=10,
+                comment_id=20,
+                reviewer="bob",
+                text="check",
+                file_path="src/a.c",
+                line_number=2,
+                diff_revision=3,
+            )
+        ],
+    )
+
+    rr = {
+        "id": 1,
+        "status": "submitted",
+        "last_updated": "2026-05-10T00:00:00",
+        "links": {"submitter": {"title": "alice"}},
+    }
+    raw_diff = _diff_for_line("src/a.c", 2)
+    rb = MockRBClient(
+        repo_review_requests=[rr],
+        diffs_by_rev={(1, 3): MockDiffInfo(diff_revision=3, raw_diff=raw_diff)},
+    )
+
+    # Will fail loudly if the backfill path ever calls into the comment fetcher.
+    class _ExplodingFetcher:
+        def fetch_all_comments(self, rr_id):
+            raise AssertionError("backfill must NOT re-fetch comments for an already-cached RR")
+
+    counts = fetch_repo_rules_data(
+        rb_client=rb,
+        mining_db=db,
+        repo_name="r",
+        rb_repo_name="rb",
+        bot_username="bot",
+        count=10,
+        with_diff_hunks=True,
+        comment_fetcher=_ExplodingFetcher(),
+    )
+    assert counts["fetched"] == 0
+    assert counts["skipped"] == 0  # neither fully skipped nor refetched
+    assert counts["hunks_backfilled"] == 1
+
+    saved = db.get_comments_for_repo("r")
+    assert saved[0].diff_hunk is not None
+    assert "@@ -1,2 +1,3 @@" in saved[0].diff_hunk
+
+
+def test_fetch_without_diff_hunks_does_not_backfill_cached_rr(tmp_path: Path):
+    db = MiningDatabase(tmp_path / "m.db")
+    db.record_review_request(
+        rr_id=1,
+        repository="r",
+        rr_status="submitted",
+        rr_summary="cached",
+        submitter="x",
+        branch="main",
+        rb_last_updated="d",
+        comments=[
+            RBComment(
+                review_id=10,
+                comment_id=20,
+                reviewer="bob",
+                text="check",
+                file_path="src/a.c",
+                line_number=2,
+                diff_revision=3,
+            )
+        ],
+    )
+
+    rr = {
+        "id": 1,
+        "status": "submitted",
+        "last_updated": "2026-05-10T00:00:00",
+        "links": {"submitter": {"title": "alice"}},
+    }
+    rb = MockRBClient(repo_review_requests=[rr])
+    fetcher = _RecordingCommentFetcher({})
+
+    counts = fetch_repo_rules_data(
+        rb_client=rb,
+        mining_db=db,
+        repo_name="r",
+        rb_repo_name="rb",
+        bot_username="bot",
+        count=10,
+        with_diff_hunks=False,
+        comment_fetcher=fetcher,
+    )
+    assert counts["skipped"] == 1
+    assert counts["hunks_backfilled"] == 0
+    saved = db.get_comments_for_repo("r")
+    assert saved[0].diff_hunk is None
