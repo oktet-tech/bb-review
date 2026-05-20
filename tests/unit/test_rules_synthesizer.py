@@ -64,11 +64,16 @@ def test_format_comments_artifact_handles_body_comments():
     assert "overall looks fine" in artifact
 
 
-def test_build_rules_prompt_includes_repo_and_sections():
+def test_build_rules_prompt_includes_repo_and_imperative_framing():
     prompt = build_rules_prompt("myrepo", "ARTIFACT TEXT", existing_patterns=None)
     assert "myrepo" in prompt
-    assert "Recurring Mistakes" in prompt
-    assert "False-Positive Candidates" in prompt
+    # Audience and voice are pinned: AI reviewer agent, imperative.
+    assert "AI code-review agent" in prompt
+    assert "imperative voice" in prompt
+    # Each rule must carry a concrete code sample.
+    assert "fenced code block" in prompt
+    # The prompt forbids generic bucket sections in favor of topic-named ones.
+    assert "Do not use generic bucket sections" in prompt
     assert ".bb_review_mined_comments.md" in prompt
 
 
@@ -76,6 +81,8 @@ def test_build_rules_prompt_includes_existing_patterns():
     prompt = build_rules_prompt("myrepo", "ARTIFACT", existing_patterns="EXISTING RULES BLOCK")
     assert "EXISTING RULES BLOCK" in prompt
     assert "only output rules that are NEW" in prompt
+    # When existing patterns are present, the agent must match their style.
+    assert "Match its heading style" in prompt
 
 
 class FakeRepoManager:

@@ -62,11 +62,18 @@ def build_rules_prompt(
     prompt = f"""You are drafting a code-review rules document for the \
 repository `{repo_name}`.
 
+The audience for this document is an AI code-review agent that will read \
+it before reviewing patches against this repo. Write every rule as a \
+direct instruction TO that agent -- in imperative voice, telling it what \
+to flag, what NOT to flag, and what to verify. Do not describe what human \
+reviewers do; tell the reviewer agent what to do.
+
 You are given a collection of real comments that human reviewers left on \
 past review requests for this repository. They are written to the file \
 `.bb_review_mined_comments.md` in your current working directory -- read \
 it first. The repository source code is checked out in the same directory, \
-so you may open and read files to ground and verify the rules you write.
+so you may (and should) open and read files to ground and verify the rules \
+you write, and to extract realistic code samples for each rule.
 
 How to interpret the comments:
 - Each comment is tagged with its review request, the RR status, the \
@@ -77,29 +84,78 @@ confirmed mistakes and are strong rule candidates.
 these as weak signals and as false-positive candidates.
 - When a comment is followed by a fenced diff hunk, that hunk is the \
 ground-truth code the reviewer was looking at -- use it to verify the rule \
-before including it.
+and to lift a concrete code sample for the rule.
 - A pattern that recurs across multiple distinct RRs matters more than a \
 one-off remark.
 
-Produce a Markdown document with these sections:
-1. `# Draft Review Rules: {repo_name}` -- the title.
-2. `## Recurring Mistakes` -- concrete mistakes reviewers repeatedly flag, \
-each a bullet with a short rationale, ordered by how often they recur.
-3. `## Conventions & Patterns` -- coding conventions and expected patterns \
-the comments reveal.
-4. `## False-Positive Candidates` -- patterns drawn from `dropped` issues \
-that look like problems but reviewers considered acceptable.
+Required style and shape for each rule:
+- Imperative voice aimed at the reviewer agent. Use phrases like \
+"Do NOT flag ...", "Always verify ...", "Treat X as acceptable -- it is \
+intentional", "Flag any call to Y that does not ...".
+- Every rule MUST include a short fenced code block (in the repo's primary \
+language) that demonstrates the pattern. When useful, show both a correct \
+example and a buggy example as separate fenced blocks under "Correct \
+Pattern" / "Bug" sub-headings.
+- Keep prose to one or two short sentences per rule. The code sample \
+carries the meaning; the prose explains the verdict ("acceptable", "bug", \
+"requires checking ...").
+- Lift code from the actual checkout when possible. If you cannot find a \
+real example, derive one from the diff hunk attached to the comment and \
+say so.
 
-For each rule, prefer concrete, checkable statements over vague advice. \
-Where a comment references a specific file, open it to confirm the rule is \
-accurate before including it.
+Structure: produce a single Markdown document titled \
+`# Draft Review Rules: {repo_name}`, followed by topic-named `##` sections \
+(one per rule or tightly-related rule cluster). Do not use generic bucket \
+sections like "Recurring Mistakes" or "False-Positive Candidates" -- give \
+each rule a descriptive heading naming the pattern (e.g. \
+`## Indirect Includes (Acceptable)`, `## Resource Cleanup`, \
+`## eftest_verdict_fail (Exit Function)`).
+
+Worked example of the required shape (style reference only, do not copy \
+content):
+
+```
+## eftest_verdict_fail (Exit Function)
+
+```c
+// These functions EXIT the process -- code after them is unreachable.
+// Do NOT flag "missing error handling" or "dead code" after these.
+if (result != expected)
+    eftest_verdict_fail("Mismatch: got %d, expected %d", result, expected);
+```
+```
+
+```
+## Resource Cleanup
+
+### Correct Pattern
+```c
+rc = allocate_resource(&res);
+if (rc != 0)
+    return rc;
+// ... use resource ...
+cleanup:
+    free_resource(res);
+```
+
+### Bug: Missing Cleanup on Error
+```c
+rc = allocate_resource(&res);
+if (rc != 0)
+    return rc;  // OK -- nothing to clean up yet
+rc = do_work(res);
+if (rc != 0)
+    return rc;  // BUG: res is leaked
+```
+```
 """
 
     if existing_patterns:
         prompt += f"""
 An existing `technical-patterns.md` already documents rules for this repo. \
-Do NOT repeat anything already covered there -- only output rules that are \
-NEW relative to it:
+Match its heading style, code-sample format, and tone. Do NOT repeat \
+anything already covered there -- only output rules that are NEW relative \
+to it:
 
 <existing-technical-patterns>
 {existing_patterns}
