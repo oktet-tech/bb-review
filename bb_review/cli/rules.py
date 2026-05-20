@@ -37,8 +37,23 @@ def rules() -> None:
 @click.option("--count", default=30, help="Max recent review requests to mine.")
 @click.option("--days", default=0, help="Only mine RRs updated within N days (0 = no limit).")
 @click.option("--refresh", is_flag=True, help="Re-fetch RRs even if already cached.")
+@click.option(
+    "--with-diff-hunks",
+    is_flag=True,
+    help=(
+        "Also fetch and cache the diff hunk for each diff comment. "
+        "Backfills missing hunks on already-cached RRs."
+    ),
+)
 @click.pass_context
-def rules_fetch(ctx: click.Context, repo_name: str, count: int, days: int, refresh: bool) -> None:
+def rules_fetch(
+    ctx: click.Context,
+    repo_name: str,
+    count: int,
+    days: int,
+    refresh: bool,
+    with_diff_hunks: bool,
+) -> None:
     """Fetch reviewer comments for REPO_NAME into the mining cache."""
     config = get_config(ctx)
     repo_manager = RepoManager(config.get_all_repos())
@@ -75,6 +90,7 @@ def rules_fetch(ctx: click.Context, repo_name: str, count: int, days: int, refre
         count=count,
         days=days,
         refresh=refresh,
+        with_diff_hunks=with_diff_hunks,
         on_progress=_progress,
     )
     click.echo()
@@ -82,7 +98,8 @@ def rules_fetch(ctx: click.Context, repo_name: str, count: int, days: int, refre
         f"Done: {counts['total']} RRs found, "
         f"{counts['fetched']} fetched, "
         f"{counts['skipped']} skipped, "
-        f"{counts['comments']} comments cached."
+        f"{counts['comments']} comments cached, "
+        f"{counts.get('hunks_backfilled', 0)} hunks backfilled."
     )
 
 
