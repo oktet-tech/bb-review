@@ -4,6 +4,7 @@ Reuses the binary-discovery helpers from the review reviewers but runs the
 agent without the review-specific patch-file lifecycle or output parsing.
 """
 
+from collections.abc import Callable, Iterable
 import json
 import logging
 import os
@@ -11,6 +12,8 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 
 from ..reviewers.claude_code import find_claude_binary
 from ..reviewers.codex import find_codex_binary
@@ -74,13 +77,19 @@ def _run_claude(
     transcript_path: Path | None,
     max_turns: int,
 ) -> str:
-    """Run Claude Code in headless mode and return its result text."""
+    """Run Claude Code in headless streaming mode and return its result text.
+
+    Uses `--output-format stream-json --verbose` so we can render per-turn
+    progress to stderr while the agent works, instead of buffering for the
+    full duration and looking hung.
+    """
     claude_bin = find_claude_binary(binary_path)
     cmd = [
         claude_bin,
         "-p",
         "--output-format",
-        "json",
+        "stream-json",
+        "--verbose",
         "--max-turns",
         str(max_turns),
         "--allowedTools",
@@ -88,47 +97,127 @@ def _run_claude(
     ]
     if model:
         cmd.extend(["--model", model])
-    if transcript_path:
-        cmd.append("--verbose")
 
     logger.info(f"Running Claude Code in {repo_path}")
     print(f"  Command: {' '.join(cmd)}", file=sys.stderr)
 
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(repo_path),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+
+    timed_out = False
+
+    def _kill() -> None:
+        nonlocal timed_out
+        timed_out = True
+        try:
+            proc.kill()
+        except Exception:  # noqa: BLE001 - best-effort cleanup
+            pass
+
+    watchdog = threading.Timer(timeout, _kill)
+    watchdog.start()
+    start = time.monotonic()
+
     try:
-        result = subprocess.run(
-            cmd,
-            cwd=str(repo_path),
-            input=prompt,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired as e:
-        raise AgentRunError(f"Claude Code timed out after {timeout}s") from e
+        assert proc.stdin is not None
+        try:
+            proc.stdin.write(prompt)
+            proc.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass
 
-    if result.returncode != 0:
-        raise AgentRunError(
-            f"Claude Code exited with code {result.returncode}: "
-            f"{result.stderr or result.stdout or 'unknown error'}"
-        )
+        assert proc.stdout is not None
 
-    output = result.stdout.strip()
-    if not output:
-        raise AgentRunError("Claude Code returned empty output")
+        def _on_progress(line: str) -> None:
+            print(line, file=sys.stderr)
+
+        result_text, transcript_lines = _consume_claude_stream(proc.stdout, _on_progress, start)
+        proc.wait()
+    finally:
+        watchdog.cancel()
+
+    if timed_out:
+        raise AgentRunError(f"Claude Code timed out after {timeout}s")
+
+    if proc.returncode != 0:
+        tail = "\n".join(transcript_lines[-5:]) or "unknown error"
+        raise AgentRunError(f"Claude Code exited with code {proc.returncode}: {tail}")
+
     if transcript_path:
-        transcript_path.write_text(output)
+        transcript_path.write_text("\n".join(transcript_lines) + "\n")
 
-    try:
-        envelope = json.loads(output)
-        if isinstance(envelope, list):
-            envelope = envelope[-1] if envelope else {}
-        text = envelope.get("result", "")
-    except json.JSONDecodeError as e:
-        raise AgentRunError(f"Failed to parse Claude Code JSON output: {e}") from e
-
-    if not text:
+    if not result_text:
         raise AgentRunError("Claude Code produced no result text")
-    return text
+    return result_text
+
+
+def _consume_claude_stream(
+    lines: Iterable[str],
+    on_progress: Callable[[str], None],
+    start_monotonic: float,
+) -> tuple[str, list[str]]:
+    """Parse stream-json output from Claude Code.
+
+    Drives per-turn progress callbacks and extracts the final result text.
+
+    Args:
+        lines: Iterable of raw stdout lines (newline-stripped or not).
+        on_progress: Callable invoked once per assistant turn with a
+            user-facing one-line summary.
+        start_monotonic: `time.monotonic()` captured before launch; used to
+            stamp elapsed seconds in progress lines.
+
+    Returns:
+        Tuple of (final_result_text, all_raw_lines).
+    """
+    raw: list[str] = []
+    result_text = ""
+    turn = 0
+    for line in lines:
+        stripped = line.rstrip("\n")
+        if not stripped:
+            continue
+        raw.append(stripped)
+        try:
+            event = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        etype = event.get("type")
+        if etype == "assistant":
+            turn += 1
+            msg = event.get("message") or {}
+            content = msg.get("content") or []
+            tools: list[str] = []
+            texts: list[str] = []
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                btype = block.get("type")
+                if btype == "tool_use":
+                    tools.append(str(block.get("name", "?")))
+                elif btype == "text":
+                    text = block.get("text", "")
+                    if text:
+                        texts.append(text)
+            elapsed = int(time.monotonic() - start_monotonic)
+            if tools:
+                detail = f"tool: {', '.join(tools)}"
+            elif texts:
+                first_line = texts[0].strip().splitlines()[0] if texts[0].strip() else ""
+                detail = (first_line[:80] + "...") if len(first_line) > 80 else first_line or "<empty>"
+            else:
+                detail = "(no content)"
+            on_progress(f"  [turn {turn}, {elapsed}s] {detail}")
+        elif etype == "result":
+            result_text = event.get("result", "") or result_text
+    return result_text, raw
 
 
 def _run_codex(
