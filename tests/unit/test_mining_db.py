@@ -196,3 +196,97 @@ def test_schema_migration_adds_diff_columns(tmp_path: Path):
     conn.close()
     assert row[0] == "existing comment"
     assert row[1] is None
+
+
+def test_get_comments_missing_hunks_returns_only_eligible_rows(tmp_path: Path):
+    db = MiningDatabase(tmp_path / "m.db")
+    db.record_review_request(
+        rr_id=10,
+        repository="r",
+        rr_status="submitted",
+        rr_summary="s",
+        submitter="b",
+        branch="main",
+        rb_last_updated="d",
+        comments=[
+            # Diff comment, hunk already present -- excluded.
+            RBComment(
+                review_id=1,
+                comment_id=100,
+                reviewer="a",
+                text="t",
+                file_path="src/a.c",
+                line_number=5,
+                diff_revision=2,
+                diff_hunk="@@ existing",
+            ),
+            # Diff comment, hunk missing -- included.
+            RBComment(
+                review_id=1,
+                comment_id=101,
+                reviewer="a",
+                text="t",
+                file_path="src/b.c",
+                line_number=8,
+                diff_revision=2,
+            ),
+            # Body comment (no file) -- excluded.
+            RBComment(
+                review_id=1,
+                comment_id=102,
+                reviewer="a",
+                text="t",
+                is_body_comment=True,
+            ),
+        ],
+    )
+    missing = db.get_comments_missing_hunks(10)
+    assert [c.comment_id for c in missing] == [101]
+    assert missing[0].diff_revision == 2
+
+
+def test_update_comment_diff_hunk_sets_value(tmp_path: Path):
+    db = MiningDatabase(tmp_path / "m.db")
+    db.record_review_request(
+        rr_id=10,
+        repository="r",
+        rr_status="submitted",
+        rr_summary="s",
+        submitter="b",
+        branch="main",
+        rb_last_updated="d",
+        comments=[
+            RBComment(
+                review_id=1,
+                comment_id=101,
+                reviewer="a",
+                text="t",
+                file_path="src/b.c",
+                line_number=8,
+                diff_revision=2,
+            ),
+        ],
+    )
+    db.update_comment_diff_hunk(rr_id=10, comment_id=101, hunk="@@ filled")
+    comments = db.get_comments_for_repo("r")
+    assert comments[0].diff_hunk == "@@ filled"
+
+
+def test_update_comment_diff_hunk_ignores_body_comments(tmp_path: Path):
+    db = MiningDatabase(tmp_path / "m.db")
+    db.record_review_request(
+        rr_id=10,
+        repository="r",
+        rr_status="submitted",
+        rr_summary="s",
+        submitter="b",
+        branch="main",
+        rb_last_updated="d",
+        comments=[
+            RBComment(review_id=1, comment_id=200, reviewer="a", text="t", is_body_comment=True),
+        ],
+    )
+    # WHERE file_path IS NOT NULL guards against accidental body-comment writes.
+    db.update_comment_diff_hunk(rr_id=10, comment_id=200, hunk="@@ should not apply")
+    comments = db.get_comments_for_repo("r")
+    assert comments[0].diff_hunk is None

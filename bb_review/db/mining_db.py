@@ -256,3 +256,62 @@ class MiningDatabase:
             review_request_count=rr_count,
             comment_count=comment_count,
         )
+
+    def get_comments_missing_hunks(self, rr_id: int) -> list[MinedComment]:
+        """Return diff comments for `rr_id` whose `diff_hunk` is NULL.
+
+        Body comments (no `file_path`) are excluded -- they have no hunk to fill.
+        Each returned MinedComment carries its `diff_revision` so the backfill
+        path can fetch the right diff without re-querying RB.
+        """
+        with self._connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT c.rr_id, r.rr_status, c.review_id, c.comment_id,
+                       c.reviewer, c.text, c.file_path, c.line_number,
+                       c.is_body_comment, c.issue_opened, c.issue_status,
+                       c.reply_to_id, c.diff_revision, c.diff_hunk
+                FROM mined_comments c
+                JOIN mined_review_requests r ON r.rr_id = c.rr_id
+                WHERE c.rr_id = ?
+                  AND c.diff_hunk IS NULL
+                  AND c.file_path IS NOT NULL
+                ORDER BY c.id
+                """,
+                (rr_id,),
+            ).fetchall()
+        return [
+            MinedComment(
+                rr_id=row["rr_id"],
+                rr_status=row["rr_status"],
+                review_id=row["review_id"],
+                comment_id=row["comment_id"],
+                reviewer=row["reviewer"],
+                text=row["text"],
+                file_path=row["file_path"],
+                line_number=row["line_number"],
+                is_body_comment=bool(row["is_body_comment"]),
+                issue_opened=bool(row["issue_opened"]),
+                issue_status=row["issue_status"],
+                reply_to_id=row["reply_to_id"],
+                diff_revision=row["diff_revision"],
+                diff_hunk=row["diff_hunk"],
+            )
+            for row in rows
+        ]
+
+    def update_comment_diff_hunk(self, rr_id: int, comment_id: int, hunk: str) -> None:
+        """Set the diff_hunk for a previously-cached diff comment.
+
+        The `file_path IS NOT NULL` guard prevents accidentally writing a
+        hunk to a body comment if the caller passes the wrong comment_id.
+        """
+        with self._connection() as conn:
+            conn.execute(
+                """
+                UPDATE mined_comments
+                SET diff_hunk = ?
+                WHERE rr_id = ? AND comment_id = ? AND file_path IS NOT NULL
+                """,
+                (hunk, rr_id, comment_id),
+            )
