@@ -331,16 +331,11 @@ def run_opencode_review(
     opencode_bin = find_opencode_binary(binary_path)
     logger.debug(f"Using opencode binary: {opencode_bin}")
 
-    # Create temp files in the repo directory so @filename syntax works
-    # (opencode resolves @ paths relative to cwd)
+    # Patch lives on disk so the agent can read it via Read tool. The prompt
+    # itself is passed as a positional argument -- opencode's CLI no longer
+    # supports the @filename inclusion syntax.
     patch_path = None
-    prompt_path = repo_path / ".bb_review_prompt.md"
-
-    # Write prompt to file in repo directory
-    prompt_path.write_text(prompt)
-
     if not at_reviewed_state:
-        # Create patch file in repo directory
         patch_path = repo_path / ".bb_review_patch.diff"
         patch_path.write_text(patch_content)
 
@@ -360,15 +355,16 @@ def run_opencode_review(
         if transcript_path:
             cmd.extend(["--print-logs", "--log-level", "DEBUG"])
 
-        # Use @filename to include the prompt - file must be relative to cwd (repo_path)
-        # The prompt itself references the patch file when in fallback mode
-        cmd.append("@.bb_review_prompt.md")
+        # Pass the prompt as the positional message argument.
+        cmd.append(prompt)
 
         logger.info(f"Running opencode in {repo_path}")
 
-        # Log full command for debugging (to stderr so user can see it)
-        print(f"  Command: {' '.join(cmd)}", file=sys.stderr)
+        # Log command without the prompt body (last arg) -- prompts are long.
+        cmd_preview = " ".join(cmd[:-1]) + f" <prompt {len(prompt)} chars>"
+        print(f"  Command: {cmd_preview}", file=sys.stderr)
         logger.debug(f"Full command: {cmd}")
+        logger.debug(f"Prompt:\n{prompt}")
 
         # Run opencode
         result = subprocess.run(
@@ -416,13 +412,11 @@ def run_opencode_review(
         raise OpenCodeTimeoutError(f"OpenCode execution timed out after {timeout} seconds") from e
 
     finally:
-        # Clean up temp files in repo directory
-        for tmp_path in [patch_path, prompt_path]:
-            if tmp_path and tmp_path.exists():
-                try:
-                    tmp_path.unlink()
-                except Exception:
-                    pass
+        if patch_path and patch_path.exists():
+            try:
+                patch_path.unlink()
+            except Exception:
+                pass
 
 
 def run_opencode_agent(
