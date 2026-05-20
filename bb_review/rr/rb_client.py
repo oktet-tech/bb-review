@@ -167,34 +167,37 @@ class ReviewBoardClient:
             logger.debug(f"curl data: {data}")
 
         # Retry on transient curl errors (timeout, connection refused/reset)
-        retryable_codes = {7, 28, 56}
+        # and on upstream-unavailable HTTP statuses from the RB load balancer.
+        retryable_curl_codes = {7, 28, 56}
+        retryable_http_codes = {502, 503, 504}
         max_retries = 2
+        status_code = 0
+        body = ""
         for attempt in range(max_retries + 1):
             result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode == 0 or result.returncode not in retryable_codes:
-                break
-            if attempt < max_retries:
+
+            if result.returncode != 0:
+                if result.returncode in retryable_curl_codes and attempt < max_retries:
+                    delay = 2 * (attempt + 1)
+                    logger.warning(
+                        f"curl failed for {url} (exit {result.returncode}), retrying in {delay}s..."
+                    )
+                    time.sleep(delay)
+                    continue
+                detail = (
+                    result.stderr.strip() or f"exit code {result.returncode} (timeout or connection error)"
+                )
+                logger.error(f"curl failed for {url}: {detail}")
+                raise RuntimeError(f"curl failed: {detail}")
+
+            status_code, body = _split_status_and_body(result.stdout)
+
+            if status_code in retryable_http_codes and attempt < max_retries:
                 delay = 2 * (attempt + 1)
-                logger.warning(f"curl failed for {url} (exit {result.returncode}), retrying in {delay}s...")
+                logger.warning(f"HTTP {status_code} from {url}, retrying in {delay}s...")
                 time.sleep(delay)
-
-        if result.returncode != 0:
-            detail = result.stderr.strip() or f"exit code {result.returncode} (timeout or connection error)"
-            logger.error(f"curl failed for {url}: {detail}")
-            raise RuntimeError(f"curl failed: {detail}")
-
-        # Parse response - last line is status code
-        lines = result.stdout.rsplit("\n", 1)
-        if len(lines) == 2:
-            body, status = lines
-            try:
-                status_code = int(status.strip())
-            except ValueError:
-                status_code = 0
-                body = result.stdout
-        else:
-            body = result.stdout
-            status_code = 0
+                continue
+            break
 
         return status_code, body
 
@@ -281,33 +284,19 @@ class ReviewBoardClient:
             url = f"{url}?{query}"
 
         status, body = self._curl(url)
-
-        try:
-            return json.loads(body)
-        except json.JSONDecodeError:
-            logger.error(f"Invalid JSON response: {body[:200]}")
-            return {"stat": "fail", "err": {"msg": f"Invalid JSON (HTTP {status})"}}
+        return _decode_api_response(status, body, path)
 
     def _api_post(self, path: str, data: dict | None = None) -> dict:
         """Make a POST request to the API."""
         url = f"{self.url}{path}"
         status, body = self._curl(url, method="POST", data=data)
-
-        try:
-            return json.loads(body)
-        except json.JSONDecodeError:
-            logger.error(f"Invalid JSON response: {body[:200]}")
-            return {"stat": "fail", "err": {"msg": f"Invalid JSON (HTTP {status})"}}
+        return _decode_api_response(status, body, path)
 
     def _api_put(self, path: str, data: dict | None = None) -> dict:
         """Make a PUT request to the API."""
         url = f"{self.url}{path}"
         status, body = self._curl(url, method="PUT", data=data)
-
-        try:
-            return json.loads(body)
-        except json.JSONDecodeError:
-            return {"stat": "fail", "err": {"msg": f"Invalid JSON (HTTP {status})"}}
+        return _decode_api_response(status, body, path)
 
     def get_review_request(self, review_request_id: int) -> dict:
         """Get a review request by ID."""
@@ -915,3 +904,37 @@ def _parse_datetime(dt_str: str | None) -> datetime | None:
         return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+def _split_status_and_body(stdout: str) -> tuple[int, str]:
+    """Split curl `-w '\\n%{http_code}'` output into (status_code, body).
+
+    Falls back to (0, full_stdout) if the trailing status code is missing
+    or unparseable, matching the prior inline logic.
+    """
+    lines = stdout.rsplit("\n", 1)
+    if len(lines) != 2:
+        return 0, stdout
+    body, status = lines
+    try:
+        return int(status.strip()), body
+    except ValueError:
+        return 0, stdout
+
+
+def _decode_api_response(status: int, body: str, path: str) -> dict:
+    """Decode an RB API JSON body, raising on upstream 5xx HTML pages.
+
+    A 5xx without JSON means the load balancer / Apache returned an HTML
+    error page (typically after `_curl` retries were exhausted). Raise so
+    callers see a clear failure instead of silently treating it as an
+    empty result.
+    """
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as err:
+        if 500 <= status < 600:
+            logger.error(f"HTTP {status} from {path}: {body[:200]}")
+            raise RuntimeError(f"Review Board returned HTTP {status} for {path}") from err
+        logger.error(f"Invalid JSON response: {body[:200]}")
+        return {"stat": "fail", "err": {"msg": f"Invalid JSON (HTTP {status})"}}
