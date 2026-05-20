@@ -121,6 +121,12 @@ def rules_fetch(
     type=click.Path(path_type=Path),
     help="Save the agent transcript to this path.",
 )
+@click.option(
+    "--max-turns",
+    default=40,
+    type=int,
+    help="Max agentic turns (Claude only; Codex ignores).",
+)
 @click.pass_context
 def rules_draft(
     ctx: click.Context,
@@ -128,6 +134,7 @@ def rules_draft(
     method: str,
     model: str | None,
     transcript: Path | None,
+    max_turns: int,
 ) -> None:
     """Draft guides/REPO_NAME/draft-rules.md from cached comments."""
     config = get_config(ctx)
@@ -144,6 +151,7 @@ def rules_draft(
             method=method,
             model=model,
             transcript_path=transcript,
+            max_turns=max_turns,
         )
     except (RulesDraftError, RepoManagerError) as e:
         click.echo(f"Error: {e}", err=True)

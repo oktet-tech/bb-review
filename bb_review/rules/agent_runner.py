@@ -23,6 +23,9 @@ class AgentRunError(Exception):
     """Error running an agent CLI."""
 
 
+DEFAULT_MAX_TURNS = 40
+
+
 def run_agent(
     method: str,
     repo_path: Path,
@@ -31,6 +34,7 @@ def run_agent(
     timeout: int = 600,
     binary_path: str | None = None,
     transcript_path: Path | None = None,
+    max_turns: int = DEFAULT_MAX_TURNS,
 ) -> str:
     """Run an agent CLI in `repo_path` and return its final text output.
 
@@ -42,6 +46,8 @@ def run_agent(
         timeout: Timeout in seconds.
         binary_path: Optional explicit binary path.
         transcript_path: If set, the raw agent output is saved here.
+        max_turns: Max agentic turns. Only applied for 'claude' (Codex CLI
+            has no equivalent flag).
 
     Returns:
         The agent's final text output.
@@ -51,7 +57,9 @@ def run_agent(
             output.
     """
     if method == "claude":
-        return _run_claude(repo_path, prompt, model, timeout, binary_path or "claude", transcript_path)
+        return _run_claude(
+            repo_path, prompt, model, timeout, binary_path or "claude", transcript_path, max_turns
+        )
     if method == "codex":
         return _run_codex(repo_path, prompt, model, timeout, binary_path or "codex", transcript_path)
     raise AgentRunError(f"Unknown agent method: {method!r} (expected 'claude' or 'codex')")
@@ -64,6 +72,7 @@ def _run_claude(
     timeout: int,
     binary_path: str,
     transcript_path: Path | None,
+    max_turns: int,
 ) -> str:
     """Run Claude Code in headless mode and return its result text."""
     claude_bin = find_claude_binary(binary_path)
@@ -73,7 +82,7 @@ def _run_claude(
         "--output-format",
         "json",
         "--max-turns",
-        "40",
+        str(max_turns),
         "--allowedTools",
         "Read,Grep,Glob,Bash",
     ]

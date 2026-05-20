@@ -120,6 +120,25 @@ def test_rules_draft_forwards_model(runner: CliRunner, config_path: Path, monkey
     )
     assert result.exit_code == 0
     assert captured["model"] == "opus"
+    # Default max_turns matches DEFAULT_MAX_TURNS in agent_runner.
+    assert captured["max_turns"] == 40
+
+
+def test_rules_draft_forwards_max_turns(runner: CliRunner, config_path: Path, monkeypatch, tmp_path: Path):
+    out_file = tmp_path / "draft-rules.md"
+    captured = {}
+
+    def _capture(**kw):
+        captured.update(kw)
+        return out_file
+
+    monkeypatch.setattr("bb_review.cli.rules.draft_rules", _capture)
+    result = runner.invoke(
+        main,
+        ["--config", str(config_path), "rules", "draft", "testrepo", "--max-turns", "80"],
+    )
+    assert result.exit_code == 0
+    assert captured["max_turns"] == 80
 
 
 def test_rules_draft_handles_missing_cache(runner: CliRunner, config_path: Path, monkeypatch):

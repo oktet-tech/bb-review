@@ -126,6 +126,7 @@ def draft_rules(
     timeout: int = 600,
     binary_path: str | None = None,
     transcript_path: Path | None = None,
+    max_turns: int = 40,
     run_agent_fn: Callable[..., str] = run_agent,
 ) -> Path:
     """Draft a rules file for a repository from its cached reviewer comments.
@@ -144,6 +145,7 @@ def draft_rules(
         timeout: Agent timeout in seconds.
         binary_path: Optional explicit agent binary path.
         transcript_path: If set, the agent transcript is saved here.
+        max_turns: Max agentic turns (Claude only; Codex ignores).
         run_agent_fn: Agent runner callable (overridable for tests).
 
     Returns:
@@ -181,6 +183,7 @@ def draft_rules(
             timeout=timeout,
             binary_path=binary_path,
             transcript_path=transcript_path,
+            max_turns=max_turns,
         )
     finally:
         artifact_path.unlink(missing_ok=True)
