@@ -44,6 +44,8 @@ class MinedComment:
     issue_opened: bool
     issue_status: str | None
     reply_to_id: int | None
+    diff_revision: int | None = None
+    diff_hunk: str | None = None
 
 
 @dataclass
@@ -92,7 +94,9 @@ class MiningDatabase:
                     is_body_comment INTEGER NOT NULL DEFAULT 0,
                     issue_opened INTEGER NOT NULL DEFAULT 0,
                     issue_status TEXT,
-                    reply_to_id INTEGER
+                    reply_to_id INTEGER,
+                    diff_revision INTEGER,
+                    diff_hunk TEXT
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_mined_rr_repository
@@ -101,6 +105,12 @@ class MiningDatabase:
                     ON mined_comments(rr_id);
                 """
             )
+            # Migrations for caches created before the diff columns existed.
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(mined_comments)").fetchall()}
+            if "diff_revision" not in cols:
+                conn.execute("ALTER TABLE mined_comments ADD COLUMN diff_revision INTEGER")
+            if "diff_hunk" not in cols:
+                conn.execute("ALTER TABLE mined_comments ADD COLUMN diff_hunk TEXT")
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
@@ -169,8 +179,9 @@ class MiningDatabase:
                     INSERT INTO mined_comments
                         (rr_id, review_id, comment_id, reviewer, text,
                          file_path, line_number, is_body_comment,
-                         issue_opened, issue_status, reply_to_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         issue_opened, issue_status, reply_to_id,
+                         diff_revision, diff_hunk)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         rr_id,
@@ -184,6 +195,8 @@ class MiningDatabase:
                         int(c.issue_opened),
                         c.issue_status,
                         c.reply_to_id,
+                        c.diff_revision,
+                        c.diff_hunk,
                     ),
                 )
 
@@ -195,7 +208,7 @@ class MiningDatabase:
                 SELECT c.rr_id, r.rr_status, c.review_id, c.comment_id,
                        c.reviewer, c.text, c.file_path, c.line_number,
                        c.is_body_comment, c.issue_opened, c.issue_status,
-                       c.reply_to_id
+                       c.reply_to_id, c.diff_revision, c.diff_hunk
                 FROM mined_comments c
                 JOIN mined_review_requests r ON r.rr_id = c.rr_id
                 WHERE r.repository = ?
@@ -217,6 +230,8 @@ class MiningDatabase:
                 issue_opened=bool(row["issue_opened"]),
                 issue_status=row["issue_status"],
                 reply_to_id=row["reply_to_id"],
+                diff_revision=row["diff_revision"],
+                diff_hunk=row["diff_hunk"],
             )
             for row in rows
         ]
