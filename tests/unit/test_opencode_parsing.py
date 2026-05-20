@@ -192,6 +192,34 @@ class TestBuildReviewPrompt:
 
         assert "patch" in prompt.lower()
 
+    def test_prompt_with_skill_name(self):
+        """When skill_name is set, prompt instructs OpenCode to invoke the skill."""
+        prompt = build_review_prompt(
+            repo_name="test-repo",
+            review_id=1,
+            summary="Test",
+            guidelines_context="",
+            focus_areas=["bugs"],
+            skill_name="net-drv-ts",
+        )
+
+        assert "/net-drv-ts" in prompt
+        assert "Read `.opencode/" not in prompt
+
+    def test_prompt_with_skill_name_skips_inline_guidelines(self):
+        """skill_name takes precedence over guidelines_context."""
+        prompt = build_review_prompt(
+            repo_name="test-repo",
+            review_id=1,
+            summary="Test",
+            guidelines_context="This text should NOT appear when a skill is set.",
+            focus_areas=["bugs"],
+            skill_name="net-drv-ts",
+        )
+
+        assert "This text should NOT appear" not in prompt
+        assert "/net-drv-ts" in prompt
+
 
 class TestCheckOpenCodeAvailable:
     """Tests for check_opencode_available function."""
@@ -210,3 +238,26 @@ class TestCheckOpenCodeAvailable:
         available, msg = check_opencode_available(str(fake_path))
 
         assert available is False
+
+
+class TestBuildSeriesReviewPrompt:
+    """Tests for build_series_review_prompt function."""
+
+    def test_series_prompt_with_skill_name(self):
+        """Series prompt instructs OpenCode to invoke the named skill."""
+        from types import SimpleNamespace
+
+        from bb_review.reviewers.opencode import build_series_review_prompt
+
+        reviews = [SimpleNamespace(review_request_id=1, summary="r1", description=None)]
+        prompt = build_series_review_prompt(
+            repo_name="test-repo",
+            reviews=reviews,
+            base_ref="main",
+            guidelines_context="",
+            focus_areas=["bugs"],
+            skill_name="net-drv-ts",
+        )
+
+        assert "/net-drv-ts" in prompt
+        assert "invoke the /net-drv-ts skill" in prompt
