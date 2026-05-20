@@ -38,6 +38,11 @@ def format_comments_artifact(comments: list[MinedComment]) -> str:
             )
             body = c.text.strip().replace("\n", "\n  ")
             lines.append(f"  {body}")
+            if c.diff_hunk:
+                lines.append("  ```diff")
+                for hunk_line in c.diff_hunk.splitlines():
+                    lines.append(f"  {hunk_line}")
+                lines.append("  ```")
         lines.append("")
 
     return "\n".join(lines)
@@ -70,6 +75,9 @@ reviewer, and an issue status.
 confirmed mistakes and are strong rule candidates.
 - `issue status = dropped` -> the author pushed back or disagreed. Treat \
 these as weak signals and as false-positive candidates.
+- When a comment is followed by a fenced diff hunk, that hunk is the \
+ground-truth code the reviewer was looking at -- use it to verify the rule \
+before including it.
 - A pattern that recurs across multiple distinct RRs matters more than a \
 one-off remark.
 

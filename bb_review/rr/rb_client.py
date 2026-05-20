@@ -763,6 +763,36 @@ class ReviewBoardClient:
         logger.info(f"Fetched {len(pending)} recent reviews")
         return pending
 
+    def resolve_repository_id(self, name_or_id: str) -> str:
+        """Resolve an RB repository name to its numeric ID.
+
+        RB's `?repository=` filter on `/api/review-requests/` only accepts
+        the numeric repo ID, not the human-readable name. This helper looks
+        up the ID via `/api/repositories/?name=...` so callers can pass
+        either form.
+
+        Args:
+            name_or_id: A numeric repo ID (returned unchanged) or RB repo name.
+
+        Returns:
+            Numeric repo ID as a string.
+
+        Raises:
+            RuntimeError: If no repository matches the given name.
+        """
+        if name_or_id.isdigit():
+            return name_or_id
+
+        result = self._api_get("/api/repositories/", {"name": name_or_id})
+        repos = result.get("repositories", [])
+        if not repos:
+            raise RuntimeError(f"No Review Board repository found with name '{name_or_id}'")
+        repo_id = str(repos[0].get("id", ""))
+        if not repo_id:
+            raise RuntimeError(f"Review Board repository '{name_or_id}' has no id field")
+        logger.debug(f"Resolved RB repository '{name_or_id}' to id {repo_id}")
+        return repo_id
+
     def list_repo_review_requests(
         self,
         repository: str,
@@ -777,7 +807,9 @@ class ReviewBoardClient:
         de-duplicated by id, and sorted by last_updated descending.
 
         Args:
-            repository: RB repository name or id.
+            repository: RB repository name or numeric id. Names are resolved
+                to ids via `resolve_repository_id` since RB's
+                `?repository=` filter only accepts the numeric id.
             statuses: Statuses to include, e.g. ["submitted", "discarded"].
             limit: Max number of review requests to return.
             days: If > 0, only include RRs updated within this many days.
@@ -785,10 +817,11 @@ class ReviewBoardClient:
         Returns:
             Review request dicts, newest first, capped at `limit`.
         """
+        repo_id = self.resolve_repository_id(repository)
         merged: dict[int, dict] = {}
         for status in statuses:
             params: dict[str, str] = {
-                "repository": repository,
+                "repository": repo_id,
                 "status": status,
                 "max-results": str(limit),
             }

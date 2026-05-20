@@ -29,6 +29,8 @@ def _comment(**kw) -> MinedComment:
         issue_opened=True,
         issue_status="resolved",
         reply_to_id=None,
+        diff_revision=None,
+        diff_hunk=None,
     )
     defaults.update(kw)
     return MinedComment(**defaults)
@@ -178,3 +180,28 @@ def test_draft_rules_includes_existing_patterns(tmp_path: Path):
         run_agent_fn=fake_run_agent,
     )
     assert "ALREADY DOCUMENTED RULE" in captured["prompt"]
+
+
+def test_format_comments_artifact_renders_diff_hunk_when_present():
+    artifact = format_comments_artifact(
+        [
+            _comment(
+                file_path="src/a.c",
+                line_number=2,
+                diff_hunk="@@ -1,2 +1,3 @@\n context\n+added\n context",
+            )
+        ]
+    )
+    assert "```diff" in artifact
+    assert "+added" in artifact
+    assert "```" in artifact.split("```diff", 1)[1]  # closing fence is present
+
+
+def test_format_comments_artifact_omits_diff_block_when_hunk_missing():
+    artifact = format_comments_artifact([_comment(diff_hunk=None)])
+    assert "```diff" not in artifact
+
+
+def test_build_rules_prompt_mentions_diff_hunks():
+    prompt = build_rules_prompt("repo", "ARTIFACT", existing_patterns=None)
+    assert "diff hunk" in prompt.lower()

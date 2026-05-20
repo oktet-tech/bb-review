@@ -132,3 +132,62 @@ def test_rules_draft_handles_missing_cache(runner: CliRunner, config_path: Path,
     result = runner.invoke(main, ["--config", str(config_path), "rules", "draft", "testrepo"])
     assert result.exit_code == 1
     assert "No cached comments" in result.output
+
+
+def test_rules_fetch_forwards_with_diff_hunks(runner: CliRunner, config_path: Path, monkeypatch):
+    class StubRBClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def connect(self):
+            return None
+
+    monkeypatch.setattr("bb_review.rr.rb_client.ReviewBoardClient", StubRBClient)
+
+    captured = {}
+
+    def fake_fetch(**kw):
+        captured.update(kw)
+        return {
+            "total": 0,
+            "fetched": 0,
+            "skipped": 0,
+            "comments": 0,
+            "hunks_backfilled": 0,
+        }
+
+    monkeypatch.setattr("bb_review.cli.rules.fetch_repo_rules_data", fake_fetch)
+
+    result = runner.invoke(
+        main,
+        ["--config", str(config_path), "rules", "fetch", "testrepo", "--with-diff-hunks"],
+    )
+    assert result.exit_code == 0
+    assert captured["with_diff_hunks"] is True
+
+
+def test_rules_fetch_reports_hunks_backfilled(runner: CliRunner, config_path: Path, monkeypatch):
+    class StubRBClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def connect(self):
+            return None
+
+    monkeypatch.setattr("bb_review.rr.rb_client.ReviewBoardClient", StubRBClient)
+    monkeypatch.setattr(
+        "bb_review.cli.rules.fetch_repo_rules_data",
+        lambda **kw: {
+            "total": 3,
+            "fetched": 1,
+            "skipped": 1,
+            "comments": 4,
+            "hunks_backfilled": 1,
+        },
+    )
+    result = runner.invoke(
+        main,
+        ["--config", str(config_path), "rules", "fetch", "testrepo", "--with-diff-hunks"],
+    )
+    assert result.exit_code == 0
+    assert "1 hunks backfilled" in result.output

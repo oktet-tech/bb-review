@@ -130,3 +130,48 @@ class TestFetchAllComments:
         fetcher = RBCommentFetcher(client, "bot")
         result = fetcher.fetch_all_comments(100)
         assert len(result) == 0
+
+
+def test_fetcher_sets_diff_revision_from_filediff_href():
+    """RBCommentFetcher should populate RBComment.diff_revision from the
+    /diffs/{rev}/ segment of the filediff href."""
+    from bb_review.rr.rb_fetcher import RBCommentFetcher
+
+    class StubClient:
+        bot_username = "bot"
+        _filediff_cache: dict = {7: [{"id": 99, "dest_file": "src/a.c"}]}
+
+        def _warm_filediff_cache(self, rr_id):
+            return None
+
+        def get_reviews(self, rr_id):
+            return [
+                {
+                    "id": 1,
+                    "body_top": "",
+                    "links": {"user": {"href": "/api/users/alice/"}},
+                }
+            ]
+
+        def get_review_diff_comments(self, rr_id, review_id):
+            return [
+                {
+                    "id": 555,
+                    "text": "fix",
+                    "first_line": 12,
+                    "issue_opened": True,
+                    "issue_status": "open",
+                    "links": {"filediff": {"href": "/api/review-requests/7/diffs/3/files/99/"}},
+                }
+            ]
+
+        def get_review_replies(self, rr_id, review_id):
+            return []
+
+    fetcher = RBCommentFetcher(StubClient(), bot_username="bot")
+    comments = fetcher.fetch_all_comments(7)
+
+    diff_comments = [c for c in comments if not c.is_body_comment]
+    assert len(diff_comments) == 1
+    assert diff_comments[0].diff_revision == 3
+    assert diff_comments[0].file_path == "src/a.c"

@@ -48,6 +48,8 @@ class RBComment:
     issue_status: str | None = None
     reply_to_id: int | None = None
     is_body_comment: bool = False
+    diff_revision: int | None = None
+    diff_hunk: str | None = None
 
 
 @dataclass

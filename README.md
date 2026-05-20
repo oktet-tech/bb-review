@@ -526,12 +526,9 @@ The cache database is intentionally separate from `reviews.db` so you can
 delete `~/.bb_review/rules_mining.db` and re-fetch freely while iterating on
 the synthesis prompt.
 
-Known limitation: `rules fetch` passes `repositories[].rb_repo_name` straight
-to the RB `/api/review-requests/?repository=` filter, which only accepts the
-**numeric repo ID**, not the repository name. For the rules-fetch flow, set
-`rb_repo_name` to the numeric ID (e.g. `"67"`). Other parts of the tool that
-match RB-side name strings expect the human-readable name, so the field's
-correct value currently depends on which workflow you use.
+`rules fetch` accepts either form of `repositories[].rb_repo_name`: a
+human-readable name (resolved through `/api/repositories/?name=...`) or a
+numeric repository ID.
 
 ## Per-Repository Review Guides
 
