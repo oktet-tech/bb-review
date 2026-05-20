@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 import logging
+import os
 from pathlib import Path
 import re
 import shutil
@@ -342,9 +343,14 @@ def run_opencode_review(
     try:
         # Build command
         # Note: Don't use --agent plan as it doesn't produce stdout output
+        # Pass --dir explicitly so OpenCode runs against the checkout dir even
+        # when invoked from another project (subprocess cwd alone isn't enough
+        # -- OpenCode resolves its project root from PWD/config, not getcwd).
         cmd = [
             opencode_bin,
             "run",
+            "--dir",
+            str(repo_path),
             "--title",
             f"Review-{review_id}",
         ]
@@ -366,10 +372,14 @@ def run_opencode_review(
         logger.debug(f"Full command: {cmd}")
         logger.debug(f"Prompt:\n{prompt}")
 
-        # Run opencode
+        # Reset PWD so child sees the checkout dir; Python's cwd= chdir's but
+        # leaves PWD pointing at the parent process's directory, which trips
+        # tools that prefer PWD over getcwd().
+        env = {**os.environ, "PWD": str(repo_path)}
         result = subprocess.run(
             cmd,
             cwd=str(repo_path),
+            env=env,
             capture_output=True,
             text=True,
             timeout=timeout,
