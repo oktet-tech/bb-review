@@ -29,6 +29,7 @@ class MockRBClient:
         diffs: dict[int, MockDiffInfo] | None = None,
         repositories: dict[int, dict] | None = None,
         review_request_infos: dict[int, ReviewRequestInfo] | None = None,
+        repo_review_requests: list[dict] | None = None,
     ):
         """Initialize the mock client.
 
@@ -44,6 +45,7 @@ class MockRBClient:
         self.review_request_infos = review_request_infos or {}
         self.posted_reviews: list[dict[str, Any]] = []
         self._connected = False
+        self.repo_review_requests = repo_review_requests or []
 
     def connect(self) -> None:
         """Mock connection (always succeeds)."""
@@ -167,6 +169,16 @@ class MockRBClient:
     def get_pending_reviews(self, limit: int = 50) -> list:
         """Get mock pending reviews (returns empty by default)."""
         return []
+
+    def list_repo_review_requests(
+        self,
+        repository: str,
+        statuses: list[str],
+        limit: int = 50,
+        days: int = 0,
+    ) -> list[dict]:
+        """Return the configured review request dicts, capped at `limit`."""
+        return self.repo_review_requests[:limit]
 
     def reset(self) -> None:
         """Clear posted reviews history."""
