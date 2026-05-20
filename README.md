@@ -493,6 +493,10 @@ runnable synthesis pass via an agent.
 # 1. Cache reviewer comments for a repo from the last N submitted+discarded RRs
 uv run bb-review rules fetch <repo> --count 60
 
+# Optionally also cache the diff hunk each comment was made on
+# (also backfills missing hunks on RRs already in the cache).
+uv run bb-review rules fetch <repo> --count 60 --with-diff-hunks
+
 # 2. Inspect what was cached
 uv run bb-review rules show <repo>
 
@@ -521,6 +525,13 @@ How the pieces fit together:
 - The output `draft-rules.md` is a non-destructive standalone file — review
   it and fold what you keep into the curated `technical-patterns.md` (or
   other guide files) yourself.
+- `--with-diff-hunks` is opt-in. On new RRs it fetches the unified diff
+  hunk for each diff comment (one extra RB call per `(rr_id, diff_revision)`,
+  memoized) and stores it next to the comment. On RRs that are already
+  cached, the same flag *backfills* only the missing hunks — comments
+  themselves are not re-fetched. When a hunk is present the synthesis
+  artifact renders it as a fenced ` ```diff ` block under the comment, and
+  the agent treats it as ground-truth code for the rule.
 
 The cache database is intentionally separate from `reviews.db` so you can
 delete `~/.bb_review/rules_mining.db` and re-fetch freely while iterating on
