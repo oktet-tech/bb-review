@@ -479,6 +479,60 @@ uv run bb-review queue list --status todo          # See what needs attention
 Queue states: `todo` -> `next` -> `in_progress` -> `done`/`failed`.
 Items can also be set to `ignore`. Failed items can be retried via `set --status next`.
 
+### Drafting Repo Rules from Past Reviews
+
+Bootstrap `guides/{repo}/` content from the actual comments human reviewers
+have left on past review requests. Useful for seeding a new repo guide or
+augmenting an existing `technical-patterns.md` with material the reviewers
+already care about.
+
+Two-step flow: a fast, cacheable fetch from Review Board, then a separately
+runnable synthesis pass via an agent.
+
+```bash
+# 1. Cache reviewer comments for a repo from the last N submitted+discarded RRs
+uv run bb-review rules fetch <repo> --count 60
+
+# 2. Inspect what was cached
+uv run bb-review rules show <repo>
+
+# 3. Run an agent to synthesize a draft rules document
+uv run bb-review rules draft <repo> --method claude --model opus
+
+# Output:
+#   guides/<repo>/draft-rules.md
+```
+
+How the pieces fit together:
+
+- `rules fetch` queries RB for the N most-recent **submitted + discarded**
+  review requests for the repo (both carry full human review history), pulls
+  reviewer comments via the existing fetcher (the bot's own comments are
+  excluded), and upserts them into `~/.bb_review/rules_mining.db`. Already
+  cached RRs are skipped unless `--refresh` is passed, so re-running the fetch
+  is incremental and safe.
+- `rules draft` loads cached comments, checks out the repo at its default
+  branch (the agent runs with cwd = checkout so it can read referenced
+  files), writes a comment artifact, and runs the agent with a synthesis
+  prompt. The prompt instructs it to weight `resolved` issues highest, treat
+  `dropped` issues as false-positive candidates, and prioritize rules that
+  recur across multiple RRs. If `guides/<repo>/technical-patterns.md` exists
+  it is passed as context so suggestions are *new* rather than duplicates.
+- The output `draft-rules.md` is a non-destructive standalone file — review
+  it and fold what you keep into the curated `technical-patterns.md` (or
+  other guide files) yourself.
+
+The cache database is intentionally separate from `reviews.db` so you can
+delete `~/.bb_review/rules_mining.db` and re-fetch freely while iterating on
+the synthesis prompt.
+
+Known limitation: `rules fetch` passes `repositories[].rb_repo_name` straight
+to the RB `/api/review-requests/?repository=` filter, which only accepts the
+**numeric repo ID**, not the repository name. For the rules-fetch flow, set
+`rb_repo_name` to the numeric ID (e.g. `"67"`). Other parts of the tool that
+match RB-side name strings expect the human-readable name, so the field's
+correct value currently depends on which workflow you use.
+
 ## Per-Repository Review Guides
 
 BB Review supports two levels of per-repo review customization:
