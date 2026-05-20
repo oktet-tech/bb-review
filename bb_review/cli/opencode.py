@@ -253,15 +253,8 @@ def run_opencode_for_review(
     if guidelines.ignore_paths:
         raw_diff = filter_diff_by_paths(raw_diff, guidelines.ignore_paths)
 
-    # OpenCode uses flat deploy -- convert to file list for prompt
-    skill_files = (
-        [str(p.relative_to(repo_path)) for p in deploy_result.deployed_files]
-        if deploy_result.deployed_files
-        else None
-    )
-
     guidelines_context = ""
-    if not skill_files:
+    if not deploy_result.has_skill:
         if guidelines.context:
             guidelines_context = guidelines.context
         if guidelines.custom_rules:
@@ -279,7 +272,7 @@ def run_opencode_for_review(
         at_reviewed_state=at_reviewed_state,
         changed_files=changed_files,
         verbose=verbose,
-        skill_files=skill_files,
+        skill_name=deploy_result.skill_name,
     )
 
     click.echo(f"    Running OpenCode analysis ({len(raw_diff)} chars diff)...")
