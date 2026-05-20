@@ -65,6 +65,7 @@ class RBCommentFetcher:
             diff_comments = self.rb_client.get_review_diff_comments(rr_id, review_id)
             for dc in diff_comments:
                 file_path = self._resolve_file_path(rr_id, dc)
+                diff_revision = self._resolve_diff_revision(dc)
                 comments.append(
                     RBComment(
                         review_id=review_id,
@@ -75,6 +76,7 @@ class RBCommentFetcher:
                         line_number=dc.get("first_line"),
                         issue_opened=dc.get("issue_opened", False),
                         issue_status=dc.get("issue_status"),
+                        diff_revision=diff_revision,
                     )
                 )
 
@@ -110,6 +112,15 @@ class RBCommentFetcher:
         if match:
             return match.group(1)
         return "unknown"
+
+    def _resolve_diff_revision(self, diff_comment: dict) -> int | None:
+        """Extract the diff revision from a diff comment's filediff href."""
+        links = diff_comment.get("links", {})
+        href = links.get("filediff", {}).get("href", "")
+        match = re.search(r"/diffs/(\d+)/", href)
+        if match:
+            return int(match.group(1))
+        return None
 
     def _resolve_file_path(self, rr_id: int, diff_comment: dict) -> str | None:
         """Resolve the file path for a diff comment using the filediff cache."""
