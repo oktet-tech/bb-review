@@ -27,6 +27,7 @@ class MockRBClient:
         self,
         reviews: dict[int, dict] | None = None,
         diffs: dict[int, MockDiffInfo] | None = None,
+        diffs_by_rev: dict[tuple[int, int], MockDiffInfo] | None = None,
         repositories: dict[int, dict] | None = None,
         review_request_infos: dict[int, ReviewRequestInfo] | None = None,
         repo_review_requests: list[dict] | None = None,
@@ -41,6 +42,7 @@ class MockRBClient:
         """
         self.reviews = reviews or {}
         self.diffs = diffs or {}
+        self.diffs_by_rev = diffs_by_rev or {}
         self.repositories = repositories or {}
         self.review_request_infos = review_request_infos or {}
         self.posted_reviews: list[dict[str, Any]] = []
@@ -119,6 +121,8 @@ class MockRBClient:
     def get_diff(self, review_request_id: int, diff_revision: int | None = None) -> MockDiffInfo:
         """Get mock diff info.
 
+        Precedence: `diffs_by_rev[(rr_id, rev)]` > `diffs[rr_id]` > default.
+
         Args:
             review_request_id: Review ID.
             diff_revision: Optional specific revision.
@@ -126,6 +130,10 @@ class MockRBClient:
         Returns:
             MockDiffInfo instance.
         """
+        if diff_revision is not None:
+            keyed = self.diffs_by_rev.get((review_request_id, diff_revision))
+            if keyed is not None:
+                return keyed
         if review_request_id in self.diffs:
             return self.diffs[review_request_id]
 
