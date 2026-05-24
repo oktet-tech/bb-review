@@ -91,10 +91,12 @@ class FakeRepoManager:
     def __init__(self, repo_path: Path, default_branch: str = "main"):
         self._repo_path = repo_path
         self._default_branch = default_branch
+        self._repo_sentinel = object()
         self.checked_out: list[str] = []
+        self.resets: list[str] = []
 
-    def ensure_clone(self, name: str) -> None:
-        return None
+    def ensure_clone(self, name: str):
+        return self._repo_sentinel
 
     def get_repo(self, name: str):
         return SimpleNamespace(default_branch=self._default_branch)
@@ -104,6 +106,10 @@ class FakeRepoManager:
 
     def get_local_path(self, name: str) -> Path:
         return self._repo_path
+
+    def _reset_working_tree(self, repo, name: str) -> None:
+        assert repo is self._repo_sentinel
+        self.resets.append(name)
 
 
 def _seed_db(tmp_path: Path) -> MiningDatabase:
@@ -148,10 +154,11 @@ def test_draft_rules_writes_draft_file(tmp_path: Path):
         captured.update(kwargs)
         return "# Draft Review Rules: myrepo\n\nrule one"
 
+    repo_manager = FakeRepoManager(repo_path)
     out_path = draft_rules(
         repo_name="myrepo",
         mining_db=db,
-        repo_manager=FakeRepoManager(repo_path),
+        repo_manager=repo_manager,
         guides_dir=guides_dir,
         run_agent_fn=fake_run_agent,
     )
@@ -162,6 +169,9 @@ def test_draft_rules_writes_draft_file(tmp_path: Path):
     assert not (repo_path / ".bb_review_mined_comments.md").exists()
     # The agent prompt mentions the repo and the comment text.
     assert "myrepo" in captured["prompt"]
+    # Working tree is reset both before the branch switch (recovery from a
+    # previous crashed run) and after the agent runs (cleanup for next time).
+    assert repo_manager.resets == ["myrepo", "myrepo"]
 
 
 def test_draft_rules_includes_existing_patterns(tmp_path: Path):

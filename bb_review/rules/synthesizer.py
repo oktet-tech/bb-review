@@ -216,8 +216,11 @@ def draft_rules(
             f"No cached comments for '{repo_name}'. Run 'bb-review rules fetch {repo_name}' first."
         )
 
-    repo_manager.ensure_clone(repo_name)
+    repo = repo_manager.ensure_clone(repo_name)
     repo_config = repo_manager.get_repo(repo_name)
+    # A previous crashed agent run can leave the checkout dirty (e.g. modified
+    # pyproject.toml); without resetting, the branch switch below fails.
+    repo_manager._reset_working_tree(repo, repo_name)
     repo_manager.checkout(repo_name, repo_config.default_branch)
     repo_path = repo_manager.get_local_path(repo_name)
 
@@ -243,6 +246,9 @@ def draft_rules(
         )
     finally:
         artifact_path.unlink(missing_ok=True)
+        # The agent may have edited tracked files in the checkout; reset so the
+        # next run can switch branches without a "would be overwritten" error.
+        repo_manager._reset_working_tree(repo, repo_name)
 
     if not output.strip():
         raise RulesDraftError("Agent produced empty output")
