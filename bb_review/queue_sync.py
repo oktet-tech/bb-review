@@ -1,11 +1,11 @@
 """Sync logic: fetch review requests from RB and reconcile with queue."""
 
-from collections.abc import Callable
 import logging
 
 from .db.queue_db import QueueDatabase
 from .db.queue_models import QueueItem, QueueStatus
 from .models import PendingReview
+from .progress import NullProgressReporter, ProgressReporter
 from .rr.rb_client import ReviewBoardClient
 
 
@@ -24,7 +24,7 @@ def sync_queue(
     submitter: str | None = None,
     bot_only: bool = False,
     prune: bool = True,
-    on_progress: Callable[[int, int], None] | None = None,
+    reporter: ProgressReporter | None = None,
 ) -> dict[str, int]:
     """Fetch recent RRs from Review Board and reconcile with the queue.
 
@@ -47,39 +47,47 @@ def sync_queue(
         submitter: Filter by submitter username.
         bot_only: If True, only fetch RRs assigned to the bot user.
         prune: If True, delete queue items no longer on RB.
-        on_progress: Called with (current, total) after each RR is fetched.
+        reporter: Optional ProgressReporter for surfacing progress.
 
     Returns:
         Dict with counts: inserted, updated (reset), skipped, total, pruned.
     """
+    reporter = reporter or NullProgressReporter()
     from_user = submitter
     if bot_only:
-        # Fetch only reviews assigned to the bot
-        pending = rb_client.get_pending_reviews(limit=limit, on_progress=on_progress)
+        pending = rb_client.get_pending_reviews(limit=limit, reporter=reporter)
     else:
         pending = rb_client.get_recent_reviews(
             days=days,
             limit=limit,
             repository=repository,
             from_user=from_user,
-            on_progress=on_progress,
+            reporter=reporter,
         )
 
     counts = {
-        "inserted": 0,
-        "updated": 0,
-        "skipped": 0,
-        "analyzed": 0,
-        "total": len(pending),
-        "pruned": 0,
+        'inserted': 0,
+        'updated': 0,
+        'skipped': 0,
+        'analyzed': 0,
+        'total': len(pending),
+        'pruned': 0,
     }
 
+    if pending:
+        reporter.checkpoint(
+            f'Reconciling {len(pending)} review requests against local queue...'
+        )
+
     for pr in pending:
-        _sync_one(rb_client, queue_db, pr, counts)
+        _sync_one(rb_client, queue_db, pr, counts, reporter)
 
     if prune:
         fetched_rr_ids = {pr.review_request_id for pr in pending}
-        counts["pruned"] = _prune_gone(queue_db, fetched_rr_ids)
+        # Only emit the checkpoint when we actually have items to scan against.
+        if queue_db.list_items(limit=1):
+            reporter.checkpoint('Pruning items no longer on RB...')
+        counts['pruned'] = _prune_gone(queue_db, fetched_rr_ids)
 
     return counts
 
@@ -96,7 +104,7 @@ def _prune_gone(queue_db: QueueDatabase, fetched_rr_ids: set[int]) -> int:
     for item in all_items:
         if item.review_request_id not in fetched_rr_ids and item.status in _PRUNABLE_STATUSES:
             queue_db.delete_item(item.review_request_id)
-            logger.info(f"r/{item.review_request_id}: pruned (no longer on RB)")
+            logger.info(f'r/{item.review_request_id}: pruned (no longer on RB)')
             pruned += 1
 
     return pruned
@@ -105,18 +113,18 @@ def _prune_gone(queue_db: QueueDatabase, fetched_rr_ids: set[int]) -> int:
 def _classify_change(existing: QueueItem | None, pr: PendingReview) -> str:
     """Determine what changed between the stored snapshot and fresh RB data."""
     if existing is None:
-        return ""
+        return ''
     # Use > not != — if _get_latest_diff_revision transiently fails and
     # returns 0, we'd false-positive on every synced item.
     if pr.diff_revision > existing.diff_revision and existing.diff_revision > 0:
-        return "new_diff"
+        return 'new_diff'
     if pr.issue_open_count > existing.issue_open_count:
-        return "issues_opened"
+        return 'issues_opened'
     if pr.issue_open_count < existing.issue_open_count:
-        return "issues_closed"
+        return 'issues_closed'
     if pr.ship_it_count > existing.ship_it_count:
-        return "ship_it"
-    return ""
+        return 'ship_it'
+    return ''
 
 
 def _sync_one(
@@ -124,6 +132,7 @@ def _sync_one(
     queue_db: QueueDatabase,
     pr: PendingReview,
     counts: dict[str, int],
+    reporter: ProgressReporter,
 ) -> None:
     """Reconcile a single PendingReview with the queue."""
     existing = queue_db.get(pr.review_request_id)
@@ -132,30 +141,39 @@ def _sync_one(
     # overwrite a real stored value and trigger a false "new diff" reset.
     if existing and pr.diff_revision == 0 and existing.diff_revision > 0:
         logger.debug(
-            f"r/{pr.review_request_id}: API returned diff_revision=0, keeping stored={existing.diff_revision}"
+            f'r/{pr.review_request_id}: API returned diff_revision=0, '
+            f'keeping stored={existing.diff_revision}'
         )
         pr.diff_revision = existing.diff_revision
 
     change_reason = _classify_change(existing, pr)
 
-    # Distinguish commit-message-only updates from real code changes
-    if change_reason == "new_diff" and existing:
+    # Distinguish commit-message-only updates from real code changes.
+    if change_reason == 'new_diff' and existing:
+        reporter.item_event(
+            f'r/{pr.review_request_id}: checking diff '
+            f'{existing.diff_revision}->{pr.diff_revision} for content change...'
+        )
         if rb_client.diffs_equal(pr.review_request_id, existing.diff_revision, pr.diff_revision):
-            change_reason = "new_msg"
+            change_reason = 'new_msg'
             logger.info(
-                f"r/{pr.review_request_id}: diff {existing.diff_revision}->{pr.diff_revision} is message-only"
+                f'r/{pr.review_request_id}: diff '
+                f'{existing.diff_revision}->{pr.diff_revision} is message-only'
             )
 
-    # Check if there's already a non-fake analysis for this exact diff
+    # Check if there's already a non-fake analysis for this exact diff.
     if existing and existing.diff_revision == pr.diff_revision:
         has_analysis = queue_db.has_non_fake_analysis(
             pr.review_request_id,
             pr.diff_revision,
         )
         if has_analysis:
-            counts["analyzed"] += 1
-            logger.debug(f"r/{pr.review_request_id}: already analyzed (diff {pr.diff_revision}), skipping")
-            # Still update metadata and change_reason
+            counts['analyzed'] += 1
+            logger.debug(
+                f'r/{pr.review_request_id}: already analyzed '
+                f'(diff {pr.diff_revision}), skipping'
+            )
+            # Still update metadata and change_reason.
             queue_db.upsert(
                 review_request_id=pr.review_request_id,
                 diff_revision=pr.diff_revision,
@@ -171,7 +189,7 @@ def _sync_one(
             )
             return
 
-    skip_reset = change_reason == "new_msg"
+    skip_reset = change_reason == 'new_msg'
     action, reset = queue_db.upsert(
         review_request_id=pr.review_request_id,
         diff_revision=pr.diff_revision,
@@ -187,11 +205,13 @@ def _sync_one(
         skip_reset=skip_reset,
     )
 
-    if action == "inserted":
-        counts["inserted"] += 1
-        logger.debug(f"r/{pr.review_request_id}: inserted as todo")
-    elif action == "updated" and reset:
-        counts["updated"] += 1
-        logger.info(f"r/{pr.review_request_id}: new diff {pr.diff_revision}, reset to todo")
+    if action == 'inserted':
+        counts['inserted'] += 1
+        logger.debug(f'r/{pr.review_request_id}: inserted as todo')
+    elif action == 'updated' and reset:
+        counts['updated'] += 1
+        logger.info(
+            f'r/{pr.review_request_id}: new diff {pr.diff_revision}, reset to todo'
+        )
     else:
-        counts["skipped"] += 1
+        counts['skipped'] += 1
