@@ -532,8 +532,20 @@ class UnifiedApp(App):
             rb_client.connect()
             self.call_from_thread(self._log, "  Connected to Review Board")
 
+            from bb_review.ui.progress_reporter import TUIProgressReporter
+
             fetcher = RBCommentFetcher(rb_client, config.reviewboard.bot_username)
-            comments = fetcher.fetch_all_comments(rr_id)
+            fetch_task_key = f"triage-fetch-{rr_id}"
+            self.call_from_thread(self._task_start, fetch_task_key, f"triage-fetch r/{rr_id}")
+            try:
+                fetch_reporter = TUIProgressReporter(
+                    self,
+                    task_key=fetch_task_key,
+                    label=f'triage-fetch r/{rr_id}',
+                )
+                comments = fetcher.fetch_all_comments(rr_id, reporter=fetch_reporter)
+            finally:
+                self.call_from_thread(self._task_done, fetch_task_key)
             if not comments:
                 self.call_from_thread(self._log, "  No comments found")
                 self.call_from_thread(self.notify, "No comments on this review", severity="information")
