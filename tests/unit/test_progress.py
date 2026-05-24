@@ -1,7 +1,5 @@
 """Tests for TUIProgressReporter (throttled, thread-safe progress)."""
 
-from types import SimpleNamespace
-
 from bb_review.ui.progress_reporter import TUIProgressReporter
 
 
