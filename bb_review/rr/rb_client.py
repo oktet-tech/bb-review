@@ -1,6 +1,5 @@
 """Review Board API client with Kerberos support via curl."""
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import json
@@ -10,9 +9,13 @@ import re
 import subprocess
 import tempfile
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..models import PendingReview
+
+
+if TYPE_CHECKING:
+    from ..progress import ProgressReporter
 
 
 logger = logging.getLogger(__name__)
@@ -314,35 +317,39 @@ class ReviewBoardClient:
     def get_pending_reviews(
         self,
         limit: int = 50,
-        on_progress: Callable[[int, int], None] | None = None,
+        reporter: 'ProgressReporter | None' = None,
     ) -> list[PendingReview]:
         """Get review requests where bot user is a reviewer but hasn't reviewed."""
-        logger.debug(f"Fetching pending reviews for {self.bot_username}")
+        from ..progress import NullProgressReporter
 
+        reporter = reporter or NullProgressReporter()
+        logger.debug(f'Fetching pending reviews for {self.bot_username}')
+
+        reporter.checkpoint('Fetching pending reviews assigned to bot...')
         result = self._api_get(
-            "/api/review-requests/",
+            '/api/review-requests/',
             {
-                "to-users": self.bot_username,
-                "status": "pending",
-                "max-results": str(limit),
+                'to-users': self.bot_username,
+                'status': 'pending',
+                'max-results': str(limit),
             },
         )
 
-        review_requests = result.get("review_requests", [])
+        review_requests = result.get('review_requests', [])
         total = len(review_requests)
+        reporter.checkpoint(f'Got {total} review requests from RB, hydrating...')
         pending = []
 
         for i, rr in enumerate(review_requests):
-            if self._has_bot_reviewed(rr["id"]):
+            if self._has_bot_reviewed(rr['id']):
                 logger.debug(f"Skipping {rr['id']} - already reviewed")
             else:
                 pending_review = self._to_pending_review(rr)
                 if pending_review:
                     pending.append(pending_review)
-            if on_progress:
-                on_progress(i + 1, total)
+            reporter.tick(i + 1, total)
 
-        logger.info(f"Found {len(pending)} pending reviews")
+        logger.info(f'Found {len(pending)} pending reviews')
         return pending
 
     def _has_bot_reviewed(self, review_request_id: int) -> bool:
@@ -719,7 +726,7 @@ class ReviewBoardClient:
         limit: int = 200,
         repository: str | None = None,
         from_user: str | None = None,
-        on_progress: Callable[[int, int], None] | None = None,
+        reporter: 'ProgressReporter | None' = None,
     ) -> list[PendingReview]:
         """Fetch recently-updated pending review requests from RB.
 
@@ -728,33 +735,39 @@ class ReviewBoardClient:
             limit: Max results to return.
             repository: Filter by repository name (RB repo ID or name).
             from_user: Filter by submitter username.
-            on_progress: Called with (current, total) after each RR is processed.
+            reporter: Optional ProgressReporter for surfacing progress.
         """
-        cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00")
+        from ..progress import NullProgressReporter
+
+        reporter = reporter or NullProgressReporter()
+        cutoff = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%dT00:00:00')
         params: dict[str, str] = {
-            "status": "pending",
-            "last-updated-from": cutoff,
-            "max-results": str(limit),
+            'status': 'pending',
+            'last-updated-from': cutoff,
+            'max-results': str(limit),
         }
         if repository:
-            params["repository"] = repository
+            params['repository'] = repository
         if from_user:
-            params["from-user"] = from_user
+            params['from-user'] = from_user
 
-        logger.debug(f"Fetching recent reviews: days={days}, limit={limit}")
-        result = self._api_get("/api/review-requests/", params)
-        review_requests = result.get("review_requests", [])
+        logger.debug(f'Fetching recent reviews: days={days}, limit={limit}')
+        reporter.checkpoint(
+            f'Fetching review requests from RB (last {days} days, max {limit})...'
+        )
+        result = self._api_get('/api/review-requests/', params)
+        review_requests = result.get('review_requests', [])
         total = len(review_requests)
+        reporter.checkpoint(f'Got {total} review requests from RB, hydrating...')
 
         pending = []
         for i, rr in enumerate(review_requests):
             pr = self._to_pending_review(rr)
             if pr:
                 pending.append(pr)
-            if on_progress:
-                on_progress(i + 1, total)
+            reporter.tick(i + 1, total)
 
-        logger.info(f"Fetched {len(pending)} recent reviews")
+        logger.info(f'Fetched {len(pending)} recent reviews')
         return pending
 
     def resolve_repository_id(self, name_or_id: str) -> str:
