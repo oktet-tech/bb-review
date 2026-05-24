@@ -2,9 +2,14 @@
 
 import logging
 import re
+from typing import TYPE_CHECKING
 
 from ..triage.models import RBComment
 from .rb_client import ReviewBoardClient
+
+
+if TYPE_CHECKING:
+    from ..progress import ProgressReporter
 
 
 logger = logging.getLogger(__name__)
@@ -21,7 +26,12 @@ class RBCommentFetcher:
         self.rb_client = rb_client
         self.bot_username = bot_username
 
-    def fetch_all_comments(self, rr_id: int, include_bot: bool = False) -> list[RBComment]:
+    def fetch_all_comments(
+        self,
+        rr_id: int,
+        include_bot: bool = False,
+        reporter: 'ProgressReporter | None' = None,
+    ) -> list[RBComment]:
         """Fetch all comments for a review request.
 
         Returns a flat list of RBComment covering:
@@ -32,23 +42,31 @@ class RBCommentFetcher:
         Args:
             rr_id: Review request ID.
             include_bot: If True, include comments from the bot user.
+            reporter: Optional ProgressReporter for surfacing progress.
         """
+        from ..progress import NullProgressReporter
+
+        reporter = reporter or NullProgressReporter()
+        reporter.checkpoint(f'Fetching comments for r/{rr_id}...')
+
         reviews = self.rb_client.get_reviews(rr_id)
         comments: list[RBComment] = []
 
         # Pre-warm filediff cache for resolving file paths from filediff links
         self.rb_client._warm_filediff_cache(rr_id)
 
-        for review in reviews:
+        total = len(reviews)
+        for i, review in enumerate(reviews):
             reviewer = self._extract_username(review)
             if not include_bot and reviewer == self.bot_username:
-                logger.debug(f"Skipping bot review {review.get('id')}")
+                logger.debug(f'Skipping bot review {review.get("id")}')
+                reporter.tick(i + 1, total)
                 continue
 
-            review_id = review["id"]
+            review_id = review['id']
 
             # Body top as a body comment
-            body_top = (review.get("body_top") or "").strip()
+            body_top = (review.get('body_top') or '').strip()
             if body_top:
                 comments.append(
                     RBComment(
@@ -69,13 +87,13 @@ class RBCommentFetcher:
                 comments.append(
                     RBComment(
                         review_id=review_id,
-                        comment_id=dc["id"],
+                        comment_id=dc['id'],
                         reviewer=reviewer,
-                        text=dc.get("text", ""),
+                        text=dc.get('text', ''),
                         file_path=file_path,
-                        line_number=dc.get("first_line"),
-                        issue_opened=dc.get("issue_opened", False),
-                        issue_status=dc.get("issue_status"),
+                        line_number=dc.get('first_line'),
+                        issue_opened=dc.get('issue_opened', False),
+                        issue_status=dc.get('issue_status'),
                         diff_revision=diff_revision,
                     )
                 )
@@ -87,12 +105,12 @@ class RBCommentFetcher:
                 if not include_bot and reply_reviewer == self.bot_username:
                     continue
 
-                reply_body = (reply.get("body_top") or "").strip()
+                reply_body = (reply.get('body_top') or '').strip()
                 if reply_body:
                     comments.append(
                         RBComment(
                             review_id=review_id,
-                            comment_id=reply["id"],
+                            comment_id=reply['id'],
                             reviewer=reply_reviewer,
                             text=reply_body,
                             is_body_comment=True,
@@ -100,7 +118,9 @@ class RBCommentFetcher:
                         )
                     )
 
-        logger.info(f"Fetched {len(comments)} comments for RR #{rr_id}")
+            reporter.tick(i + 1, total)
+
+        logger.info(f'Fetched {len(comments)} comments for RR #{rr_id}')
         return comments
 
     def _extract_username(self, resource: dict) -> str:
