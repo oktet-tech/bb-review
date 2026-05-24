@@ -22,7 +22,24 @@
       "Bash(codex --version)",
       "Bash(codex:*)",
       "Bash(mkdir -p _files)",
-      "Bash(mv comments_*.md review_*.json _files/)"
+      "Bash(mv comments_*.md review_*.json _files/)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl -s \"https://api.github.com/repos/masoncl/review-prompts/git/trees/main?recursive=1\")",
+      "Bash(claude -p --output-format stream-json)",
+      "Bash(opencode --help)",
+      "Bash(claude -p --help)",
+      "Bash(git apply *)",
+      "Read(//Users/kostik/.codex/**)",
+      "WebFetch(domain:developers.openai.com)",
+      "Skill(superpowers:writing-plans)",
+      "Skill(superpowers:subagent-driven-development)",
+      "Skill(superpowers:finishing-a-development-branch)",
+      "Bash(sed -n '60,220p' tests/mocks/rb_client.py)",
+      "Bash(sed -n '1,90p' tests/cli/test_queue.py)",
+      "Skill(superpowers:using-git-worktrees)",
+      "Skill(superpowers:systematic-debugging)",
+      "Bash(opencode models *)",
+      "Bash(opencode auth *)"
     ]
   }
 }
