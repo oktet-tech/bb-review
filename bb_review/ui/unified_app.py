@@ -721,15 +721,15 @@ class UnifiedApp(App):
             self.call_from_thread(self._log, "Connected to Review Board")
 
             from bb_review.queue_sync import sync_queue
+            from bb_review.ui.progress_reporter import TUIProgressReporter
 
-            def on_progress(current: int, total: int) -> None:
-                self.call_from_thread(self._task_start, "sync", f"sync {current}/{total}")
+            reporter = TUIProgressReporter(self, task_key='sync', label='sync')
 
             counts = sync_queue(
                 rb_client=rb_client,
                 queue_db=self._queue_db,
                 days=self._sync_days,
-                on_progress=on_progress,
+                reporter=reporter,
             )
 
             summary = (
@@ -792,15 +792,15 @@ class UnifiedApp(App):
             self.call_from_thread(self._log, "Connected to Review Board")
 
             from bb_review.queue_sync import sync_queue
+            from bb_review.ui.progress_reporter import TUIProgressReporter
 
-            def on_progress(current: int, total: int) -> None:
-                self.call_from_thread(self._task_start, "my_reviews_sync", f"my-sync {current}/{total}")
+            reporter = TUIProgressReporter(self, task_key='my_reviews_sync', label='my-sync')
 
             counts = sync_queue(
                 rb_client=rb_client,
                 queue_db=self._my_reviews_db,
                 submitter=username,
-                on_progress=on_progress,
+                reporter=reporter,
             )
 
             summary = (
@@ -849,8 +849,15 @@ class UnifiedApp(App):
             )
             rb_client.connect()
 
+            from bb_review.ui.progress_reporter import TUIProgressReporter
+
             fetcher = RBCommentFetcher(rb_client, config.reviewboard.bot_username)
-            all_comments = fetcher.fetch_all_comments(rr_id)
+            issues_reporter = TUIProgressReporter(
+                self,
+                task_key=task_key,
+                label=f'issues r/{rr_id}',
+            )
+            all_comments = fetcher.fetch_all_comments(rr_id, reporter=issues_reporter)
 
             # Keep only open issues
             open_issues = [c for c in all_comments if c.issue_opened and c.issue_status in (None, "open")]
