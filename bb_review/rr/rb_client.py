@@ -145,6 +145,11 @@ class ReviewBoardClient:
         if self.use_kerberos:
             cmd.extend(["--negotiate", "-u", ":"])
 
+        if self.api_token and not headers:
+            headers = {
+                "Authorization": f"token {self.api_token}"
+            }
+
         # Method
         if method != "GET":
             cmd.extend(["-X", method])
